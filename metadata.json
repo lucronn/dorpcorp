@@ -1,0 +1,6 @@
+{
+  "name": "Curtis Click Portfolio",
+  "description": "A premium, interactive web portfolio featuring 3D particle typography, fluid wavelength backgrounds, and aggressive depth perception.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
