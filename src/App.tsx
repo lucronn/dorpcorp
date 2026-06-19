@@ -115,7 +115,7 @@ export default function App() {
               className="w-full max-w-[500px] pointer-events-auto"
             >
               {/* Top Section */}
-              <div className="flex flex-col items-start z-10 w-full relative mb-8">
+              <div className="flex flex-col items-start z-10 w-full relative mb-8 opacity-0 pointer-events-none">
                 <div id="project-number" className="font-mono text-xs text-[#f5f2eb]/40 tracking-[0.4em] leading-none mb-4 font-semibold uppercase">
                   Project {String(activeProjectIndex + 1).padStart(2, '0')} // 04
                 </div>
@@ -125,7 +125,7 @@ export default function App() {
               </div>
 
               {/* Middle textual content */}
-              <div className="z-10 text-left mb-10">
+              <div className="z-10 text-left mb-10 opacity-0 pointer-events-none">
                 <h3 id="project-title" className="text-4xl sm:text-5xl lg:text-6xl font-semibold text-[#f5f2eb] mb-6 tracking-tight font-serif drop-shadow-[0_4px_32px_rgba(0,0,0,0.9)]">
                   {project.title}
                 </h3>
@@ -136,7 +136,7 @@ export default function App() {
 
               {/* Tags & Actions */}
               <div className="z-10 flex flex-col gap-8">
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 opacity-0 pointer-events-none">
                   {project.tags.map(tag => (
                      <span key={tag} className="project-tag px-3 py-1.5 bg-[#f5f2eb]/5 backdrop-blur-sm border border-[#e1d6c0]/20 rounded-full text-[10px] font-mono text-[#f5f2eb]/80 tracking-widest shadow-sm">
                        {tag}
@@ -145,12 +145,24 @@ export default function App() {
                 </div>
                 
                 <div className="flex gap-4">
-                  <button id="project-repo-btn" className="flex items-center gap-2 px-6 py-3 bg-black/20 backdrop-blur-md hover:bg-[#f5f2eb]/10 rounded-full border border-[#f5f2eb]/10 text-[11px] font-mono tracking-widest text-[#f5f2eb] transition-all cursor-pointer">
-                      <Github size={14} /> REPO
-                  </button>
-                  <button id="project-live-btn" className="flex items-center gap-2 px-6 py-3 bg-[#c14b2a]/80 hover:bg-[#a64023] shadow-[0_0_30px_rgba(193,75,42,0.3)] text-[#f9f8f3] rounded-full text-[11px] font-bold tracking-widest font-mono transition-all cursor-pointer backdrop-blur-md">
-                      <ExternalLink size={14} /> LIVE
-                  </button>
+                  <motion.button 
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -20 }}
+                      transition={{ duration: 0.6, delay: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                      id="project-repo-btn" 
+                      className="flex items-center gap-2 px-8 py-4 bg-black/40 backdrop-blur-md hover:bg-[#f5f2eb]/20 rounded-full border-2 border-[#f5f2eb]/40 text-sm font-mono tracking-widest text-[#f5f2eb] transition-all cursor-pointer shadow-[0_4px_16px_rgba(0,0,0,0.5)]">
+                      <Github size={16} /> REPO
+                  </motion.button>
+                  <motion.button 
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -20 }}
+                      transition={{ duration: 0.6, delay: 0.75, ease: [0.16, 1, 0.3, 1] }}
+                      id="project-live-btn" 
+                      className="flex items-center gap-2 px-8 py-4 bg-[#c14b2a]/90 hover:bg-[#a64023] shadow-[0_0_40px_rgba(193,75,42,0.6)] text-[#f9f8f3] rounded-full border-2 border-[#f9f8f3]/60 text-sm font-bold tracking-widest font-mono transition-all cursor-pointer backdrop-blur-md">
+                      <ExternalLink size={16} /> LIVE
+                  </motion.button>
                 </div>
               </div>
             </motion.div>

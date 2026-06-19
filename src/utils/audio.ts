@@ -10,8 +10,8 @@ class AudioEngine {
   private isInitialized: boolean = false;
   private lastMalletPlay: number = 0;
 
-  // Cinematic scale frequencies (Eb Major / C Pentatonic scale for rich ethereal sounds of space)
-  private scale = [130.81, 146.83, 164.81, 196.00, 220.00, 261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25, 783.99, 880.00];
+  // Cinematic scale frequencies (A minor / Space Pipe Organ scale for huge ethereal cinematic sounds)
+  private scale = [55.00, 65.41, 82.41, 110.00, 130.81, 164.81, 220.00, 261.63, 329.63, 440.00, 523.25, 659.25, 880.00, 1046.50];
 
   init() {
     if (this.isInitialized) return;
@@ -33,12 +33,14 @@ class AudioEngine {
 
       this.isInitialized = true;
       this.startAmbientDrones();
+      this.startHeartbeat();
     } catch (e) {
       console.warn("Web Audio API not supported", e);
     }
   }
 
   setMute(muted: boolean) {
+
     this.isMuted = muted;
     if (!this.isInitialized && !muted) {
       this.init();
@@ -61,8 +63,9 @@ class AudioEngine {
   private startAmbientDrones() {
     if (!this.ctx || !this.droneFilter) return;
 
-    // We build 3 subtle warm waves for minor-7th / major-9th drone elements
-    const freqs = [65.41, 98.00, 130.81, 196.00]; // Low C, G, C, G harmonics
+    // Deep resonant Hans Zimmer interstellar hum (A over pedal point)
+    // Rich, vibrating organ drones
+    const freqs = [55.00, 110.00, 164.81, 220.00, 329.63]; // A1, A2, E3, A3, E4
     
     freqs.forEach((freq, idx) => {
       if (!this.ctx || !this.droneFilter) return;
@@ -70,12 +73,15 @@ class AudioEngine {
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
       
-      // Mix sine and triangle for smooth analog texture
-      osc.type = idx % 2 === 0 ? 'sine' : 'triangle';
+      // Mix of sawtooth and square for that huge pipe organ weight
+      osc.type = idx % 2 === 0 ? 'sawtooth' : 'square';
       osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
       
-      // Gain is kept very low and slowly moves to simulate drifting atmosphere
-      const vol = 0.04 - (idx * 0.005);
+      // Detune very slightly for massive width
+      osc.detune.setValueAtTime(idx * 2, this.ctx.currentTime);
+      
+      // Gain is kept very low and slowly moves to simulate a massive breathing cathedral
+      const vol = (idx < 2) ? 0.04 : 0.015 - (idx * 0.002);
       gain.gain.setValueAtTime(vol, this.ctx.currentTime);
       
       osc.connect(gain);
@@ -100,52 +106,97 @@ class AudioEngine {
     }, 2000);
   }
 
-  // Play a soft mallet note matching the current cursor position/speed
+  private startHeartbeat() {
+    if (!this.ctx) return;
+    setInterval(() => {
+      if (!this.ctx || this.isMuted || !this.masterGain) return;
+      
+      const now = this.ctx.currentTime;
+      
+      // Lub
+      const subOsc = this.ctx.createOscillator();
+      const subGain = this.ctx.createGain();
+      subOsc.type = 'sine';
+      subOsc.frequency.setValueAtTime(45, now);
+      subOsc.frequency.exponentialRampToValueAtTime(30, now + 0.3);
+      
+      subGain.gain.setValueAtTime(0, now);
+      subGain.gain.linearRampToValueAtTime(0.06, now + 0.05);
+      subGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
+      
+      subOsc.connect(subGain);
+      subGain.connect(this.masterGain);
+      subOsc.start(now);
+      subOsc.stop(now + 0.35);
+
+      // Dub
+      const subOsc2 = this.ctx.createOscillator();
+      const subGain2 = this.ctx.createGain();
+      subOsc2.type = 'sine';
+      subOsc2.frequency.setValueAtTime(50, now + 0.35);
+      subOsc2.frequency.exponentialRampToValueAtTime(25, now + 0.9);
+      
+      subGain2.gain.setValueAtTime(0, now + 0.35);
+      subGain2.gain.linearRampToValueAtTime(0.045, now + 0.4);
+      subGain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.8);
+
+      subOsc2.connect(subGain2);
+      subGain2.connect(this.masterGain);
+      subOsc2.start(now + 0.35);
+      subOsc2.stop(now + 1.0);
+    }, 1300); // 46 BPM, slow calm heartbeat
+  }
+
+  // Deep space star-death 'scream' sound matching the current cursor position/speed
   playInteractiveMallet(intensity: number, relativeX: number) {
     if (!this.ctx || this.isMuted || !this.masterGain) return;
     
     const now = this.ctx.currentTime;
-    // Throttle mallets to stay pleasant and not crowded
-    if (now - this.lastMalletPlay < 0.08) return;
+    // Throttle significantly more to keep it subtle
+    if (now - this.lastMalletPlay < 0.8) return;
     this.lastMalletPlay = now;
 
     // Pick scale note based on horizontal cursor placement
     const noteIdx = Math.floor(relativeX * (this.scale.length - 1));
     const freq = this.scale[Math.max(0, Math.min(noteIdx, this.scale.length - 1))];
 
-    // Create custom bell/mallet synth voice
-    const osc = this.ctx.createOscillator();
-    const subOsc = this.ctx.createOscillator();
-    const volumeNode = this.ctx.createGain();
     const filter = this.ctx.createBiquadFilter();
-
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, now);
-
-    // Give it a subtle glass harmonic
-    subOsc.type = 'triangle';
-    subOsc.frequency.setValueAtTime(freq * 1.501, now); // Sweet perfect fifth or fifth octave overtones
-
-    // Smooth LP bandpass to make it warm
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(freq * 2.5, now);
-    filter.Q.setValueAtTime(1.0, now);
-
-    volumeNode.gain.setValueAtTime(0, now);
-    // Exponential spike then decay
-    volumeNode.gain.linearRampToValueAtTime(0.06 * intensity, now + 0.01);
-    volumeNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.8 + intensity * 0.4);
-
-    osc.connect(filter);
-    subOsc.connect(filter);
-    filter.connect(volumeNode);
-    volumeNode.connect(this.masterGain);
-
-    osc.start(now);
-    subOsc.start(now);
+    const screamGain = this.ctx.createGain();
     
-    osc.stop(now + 1.5);
-    subOsc.stop(now + 1.5);
+    // Very deep dissonant drone that pitches down
+    const screamOsc = this.ctx.createOscillator();
+    const screamOsc2 = this.ctx.createOscillator();
+    
+    // Extremely deep pitch
+    screamOsc.type = 'sawtooth';
+    screamOsc.frequency.setValueAtTime(freq * 0.125, now);
+    screamOsc.frequency.exponentialRampToValueAtTime(10, now + 3.0); // Dropping pitch
+
+    // Detuned second oscillator for beating/wobble effect
+    screamOsc2.type = 'triangle';
+    screamOsc2.frequency.setValueAtTime((freq * 0.125) * 1.03, now);
+    screamOsc2.frequency.exponentialRampToValueAtTime(9, now + 3.0);
+
+    // Keep it VERY quiet/subtle
+    screamGain.gain.setValueAtTime(0, now);
+    screamGain.gain.linearRampToValueAtTime(0.008 * intensity, now + 0.4); 
+    screamGain.gain.exponentialRampToValueAtTime(0.0001, now + 4.0);
+
+    // Resonant lowpass to make it howl and scream in the distance
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(100, now);
+    filter.frequency.exponentialRampToValueAtTime(30, now + 3.0);
+    filter.Q.setValueAtTime(2.0, now);
+
+    screamOsc.connect(screamGain);
+    screamOsc2.connect(screamGain);
+    screamGain.connect(filter);
+    filter.connect(this.masterGain);
+
+    screamOsc.start(now);
+    screamOsc2.start(now);
+    screamOsc.stop(now + 4.0);
+    screamOsc2.stop(now + 4.0);
   }
 
   // Cinematic swell on project card stage transition
@@ -154,58 +205,54 @@ class AudioEngine {
     
     const now = this.ctx.currentTime;
     
-    // Low sweeping synthesizer
-    const synthOsc = this.ctx.createOscillator();
+    // Huge Pipe Organ Swell
+    const filter = this.ctx.createBiquadFilter();
     const synthGain = this.ctx.createGain();
-    const synthFilter = this.ctx.createBiquadFilter();
-
-    synthOsc.type = 'sawtooth';
-    // Deep luxurious base pitch that rises/falls based on stage index
-    const baseFreq = 55 + (stageIndex * 11); // Frequencies: 55Hz, 66Hz, 77Hz, 88Hz, 99Hz, 110Hz
-    synthOsc.frequency.setValueAtTime(baseFreq, now);
-    synthOsc.frequency.exponentialRampToValueAtTime(baseFreq * 1.5, now + 0.5);
-
-    synthFilter.type = 'lowpass';
-    synthFilter.frequency.setValueAtTime(120, now);
-    synthFilter.frequency.exponentialRampToValueAtTime(550, now + 0.25);
-    synthFilter.frequency.exponentialRampToValueAtTime(80, now + 1.2);
+    
+    // Epic cinematic chord progression (Hans Zimmer style)
+    // Am -> F -> G -> Em -> Am
+    const progressions = [
+      [55.00, 110.00, 164.81, 261.63], // Am (A1, A2, E3, C4)
+      [43.65, 87.31, 130.81, 220.00],  // F  (F1, F2, C3, A3)
+      [49.00, 98.00, 146.83, 196.00],  // G  (G1, G2, D3, G3)
+      [41.20, 82.41, 123.47, 164.81],  // Em (E1, E2, B2, E3)
+    ];
+    
+    const chordFrequencies = progressions[stageIndex % progressions.length];
+    
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(150, now);
+    filter.frequency.exponentialRampToValueAtTime(1200, now + 2.0);
+    filter.frequency.exponentialRampToValueAtTime(80, now + 5.0);
+    filter.Q.setValueAtTime(2.0, now);
 
     synthGain.gain.setValueAtTime(0, now);
-    synthGain.gain.linearRampToValueAtTime(0.12, now + 0.15);
-    synthGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.8);
+    synthGain.gain.linearRampToValueAtTime(0.06, now + 1.8);
+    synthGain.gain.exponentialRampToValueAtTime(0.0001, now + 6.0);
 
-    synthOsc.connect(synthFilter);
-    synthFilter.connect(synthGain);
+    filter.connect(synthGain);
     synthGain.connect(this.masterGain);
 
-    // Ethereal chime chord alongside deep sweeping synthesizer
-    const highFrequencies = [261.63, 311.13, 392.00, 466.16].map(f => f * (1 + (stageIndex % 3) * 0.2));
-    
-    highFrequencies.forEach((freq, i) => {
-      if (!this.ctx || !this.masterGain) return;
+    chordFrequencies.forEach((freq, idx) => {
+      if (!this.ctx) return;
       
-      const bellOsc = this.ctx.createOscillator();
-      const bellGain = this.ctx.createGain();
-      
-      bellOsc.type = 'triangle';
-      bellOsc.frequency.setValueAtTime(freq, now + i * 0.05); // staggered arpeggio
-      
-      bellGain.gain.setValueAtTime(0, now);
-      bellGain.gain.linearRampToValueAtTime(0.02, now + i * 0.05 + 0.01);
-      bellGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.5);
-      
-      bellOsc.connect(bellGain);
-      bellGain.connect(this.masterGain);
-      
-      bellOsc.start(now);
-      bellOsc.stop(now + 2.0);
+      // We create multiple massive detuned oscillators per note for sheer scale
+      for (let detune = -1; detune <= 1; detune++) {
+        const osc = this.ctx.createOscillator();
+        osc.type = (idx + detune) % 2 === 0 ? 'sawtooth' : 'square';
+        
+        // Massive width through detuning
+        osc.frequency.setValueAtTime(freq, now);
+        osc.detune.setValueAtTime(detune * 6, now);
+        
+        osc.connect(filter);
+        osc.start(now);
+        osc.stop(now + 6.0);
+      }
     });
-
-    synthOsc.start(now);
-    synthOsc.stop(now + 2.0);
   }
 
-  // Energy ripple pop click
+  // Deep cinematic sub-drop impact
   playRippleShockwave() {
     if (!this.ctx || this.isMuted || !this.masterGain) return;
 
@@ -214,17 +261,17 @@ class AudioEngine {
     const noiseGain = this.ctx.createGain();
     
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(180, now);
-    osc.frequency.exponentialRampToValueAtTime(40, now + 0.15);
+    osc.frequency.setValueAtTime(100, now);
+    osc.frequency.exponentialRampToValueAtTime(20, now + 0.8);
 
-    noiseGain.gain.setValueAtTime(0.12, now);
-    noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+    noiseGain.gain.setValueAtTime(0.15, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
 
     osc.connect(noiseGain);
     noiseGain.connect(this.masterGain);
 
     osc.start(now);
-    osc.stop(now + 0.3);
+    osc.stop(now + 1.5);
   }
 }
 

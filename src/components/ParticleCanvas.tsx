@@ -62,6 +62,7 @@ const drawStageLayoutTemplate = (
    if (width <= 0 || height <= 0) return;
    
    const isTracer = mode === 'tracer';
+   if (isTracer) return; // Hide all faint background vectors/text so only particles are seen
    
    // Theme Palette Colors
    const colorRust = isTracer ? `rgba(193, 75, 42, ${opacity * 0.20})` : '#c14b2a';   // terracotta accent
@@ -121,206 +122,125 @@ const drawStageLayoutTemplate = (
    else if (index >= 2 && index <= 5) {
       const pIndex = index - 2;
       const p = projects[pIndex];
+      const isMobile = width < 640;
       
-      const padding = width < 1024 ? 24 : 64; 
-      const maxW = 1000;
-      const cardW = Math.min(width - padding * 2, maxW);
-      const cardX = (width - cardW) / 2;
-      const cardH = Math.min(height - padding * 2, 600);
-      const cardY = (height - cardH) / 2;
-      
-      const innerPad = width < 1024 ? 32 : 48;
+      const containerPad = isMobile ? 24 : 64;
+      const hudMaxW = 500;
+      const hudX = containerPad;
+      const descMaxW = Math.min(hudMaxW, width - containerPad * 2);
 
-      ctx.lineWidth = isTracer ? 1.0 : 1.5;
+      const numH = 16; // text-base
+      const catH = 16; // text-base
+      const topPartH = numH + 24 + catH + 48;
       
-      // 1. Draw elegant corner brackets (matches colorRust terracotta)
-      ctx.fillStyle = colorRust;
-      ctx.strokeStyle = colorRust;
-      const cs = Math.min(40, width * 0.1); 
-      const th = isTracer ? 1 : 2; 
+      const titleFontSize = isMobile ? 64 : width < 1024 ? 90 : 120;
+      // approximate 1.625 line height for description
+      const descLineH = isMobile ? 42 : 52; 
       
-      // Top-Left corner bracket
-      ctx.fillRect(cardX, cardY, cs, th);
-      ctx.fillRect(cardX, cardY, th, cs);
-      
-      // Top-Right corner bracket
-      ctx.fillRect(cardX + cardW - cs, cardY, cs, th);
-      ctx.fillRect(cardX + cardW - th, cardY, th, cs);
-      
-      // Bottom-Left corner bracket
-      ctx.fillRect(cardX, cardY + cardH - th, cs, th);
-      ctx.fillRect(cardX, cardY + cardH - cs, th, cs);
-      
-      // Bottom-Right corner bracket
-      ctx.fillRect(cardX + cardW - cs, cardY + cardH - th, cs, th);
-      ctx.fillRect(cardX + cardW - th, cardY + cardH - cs, th, cs);
-
-      // 2. Draw Icon capsule/vector outline
-      const iconX = cardX + innerPad;
-      const iconY = cardY + innerPad;
-      const iconW = 64;
-      const iconH = 64;
-      
-      ctx.strokeStyle = colorRust;
-      ctx.strokeRect(iconX, iconY, iconW, iconH);
-      
-      // Draw decorative vector icon shapes inside the box
-      ctx.beginPath();
-      const cx = iconX + iconW / 2;
-      const cy = iconY + iconH / 2;
-      if (pIndex === 0) { // Layers shape
-        for (let j = 0; j < 3; j++) {
-          const dy = j * 6 - 6;
-          const dx = j * 3 - 3;
-          ctx.strokeRect(cx - 12 - dx, cy - 7 + dy, 24, 14);
-        }
-      } else if (pIndex === 1) { // Database shape
-        for (let j = 0; j < 3; j++) {
-          const dcy = cy - 12 + j * 9;
-          ctx.ellipse(cx, dcy, 12, 4, 0, 0, Math.PI * 2);
-          ctx.moveTo(cx - 12, dcy);
-          ctx.lineTo(cx - 12, dcy + 5);
-          ctx.ellipse(cx, dcy + 5, 12, 4, 0, 0, Math.PI);
-          ctx.moveTo(cx + 12, dcy);
-          ctx.lineTo(cx + 12, dcy + 5);
-        }
-      } else if (pIndex === 2) { // Zap shape
-        ctx.moveTo(cx + 4, cy - 14);
-        ctx.lineTo(cx - 10, cy + 2);
-        ctx.lineTo(cx - 1, cy + 2);
-        ctx.lineTo(cx - 6, cy + 14);
-        ctx.lineTo(cx + 10, cy - 2);
-        ctx.lineTo(cx + 1, cy - 2);
-        ctx.closePath();
-      } else if (pIndex === 3) { // Globe shape
-        ctx.ellipse(cx, cy, 14, 14, 0, 0, Math.PI * 2);
-        ctx.ellipse(cx, cy, 5, 14, 0, 0, Math.PI * 2);
-        ctx.ellipse(cx, cy, 14, 4, 0, 0, Math.PI * 2);
-      }
-      ctx.stroke();
-
-      // 3. Project Number text ("01 // 04")
-      ctx.fillStyle = colorRust;
-      ctx.font = `bold ${width < 768 ? 14 : 16}px "JetBrains Mono", monospace`;
-      const numString = `${String(pIndex + 1).padStart(2, '0')} // 04`;
-      ctx.textAlign = 'right';
-      ctx.fillText(numString, cardX + cardW - innerPad, cardY + innerPad + 32);
-
-      // 4. Category line title (rust)
-      ctx.fillStyle = colorRust;
-      ctx.font = `bold ${width < 768 ? 11 : 13}px "JetBrains Mono", monospace`;
-      ctx.textAlign = 'left';
-      const catFallbackY = cardY + cardH - (width < 768 ? 180 : 200);
-      ctx.fillText(p.category.toUpperCase(), cardX + innerPad, catFallbackY);
-
-      // 5. Main Title header text in Ivory/Gold
-      ctx.fillStyle = colorLight;
-      ctx.strokeStyle = colorRust;
-      ctx.lineWidth = isTracer ? 0.5 : 1;
-      ctx.font = `bold ${width < 768 ? 26 : 42}px "Playfair Display", Georgia, serif`;
-      ctx.textAlign = 'left';
-      const titleFallbackY = catFallbackY + (width < 768 ? 36 : 48);
-      ctx.strokeText(p.title, cardX + innerPad, titleFallbackY);
-      ctx.fillText(p.title, cardX + innerPad, titleFallbackY);
-
-      // 6. Beautiful Paragraph text wrapped exactly dynamic to DOM description element width
-      ctx.fillStyle = colorLight;
-      ctx.font = `400 ${width < 768 ? 13 : 16}px "Inter", sans-serif`;
-      ctx.textAlign = 'left';
-
-      const descFallbackY = titleFallbackY + (width < 768 ? 22 : 32);
+      ctx.font = `300 ${isMobile ? 26 : 32}px "Inter", sans-serif`;
       const words = p.description.split(' ');
       let line = '';
-      let currentDescY = descFallbackY;
-      const maxDescW = Math.min(650, cardW - innerPad * 2);
-      const descX = cardX + innerPad;
-      
+      let descLines = 0;
       for (let n = 0; n < words.length; n++) {
         const testLine = line + words[n] + ' ';
-        const metrics = ctx.measureText(testLine);
-        if (metrics.width > maxDescW && n > 0) {
-          ctx.fillText(line, descX, currentDescY);
+        if (ctx.measureText(testLine).width > descMaxW && n > 0) {
           line = words[n] + ' ';
-          currentDescY += width < 768 ? 18 : 24;
+          descLines++;
         } else {
           line = testLine;
         }
       }
-      ctx.fillText(line, descX, currentDescY);
+      if (line !== '') descLines++;
+      const descH = descLines * descLineH;
+      const midPartH = titleFontSize + 32 + descH + 48;
 
-      // 7. Dynamic Tag outlines matching actual rendering positions
-      const tagsY = cardY + cardH - innerPad;
-      ctx.font = `bold ${width < 768 ? 10 : 12}px "JetBrains Mono", monospace`;
-      let tagX = cardX + innerPad;
+      const tagH = 36;
+      const btnHTotal = 50;
+      const botPartH = tagH + 48 + btnHTotal;
+
+      // Calculate total HUD height to perfectly vertical-align with tailwind flex rules
+      const totalH = topPartH + midPartH + botPartH;
+      const hudY = isMobile ? (height - containerPad - totalH) : ((height - totalH) / 2);
+
+      let currentY = hudY;
+      ctx.lineWidth = 1.5;
+
+      // 1. Draw Project Number and Category
+      ctx.fillStyle = colorLight;
+      ctx.font = `600 18px "JetBrains Mono", monospace`;
+      ctx.textAlign = 'left';
+      (ctx as any).letterSpacing = "0.4em";
+      const pNumStr = `PROJECT ${String(pIndex + 1).padStart(2, '0')} // 04`;
+      ctx.fillText(pNumStr, hudX, currentY + numH);
+      currentY += numH + 24;
+      
+      ctx.font = `bold 20px "JetBrains Mono", monospace`;
+      (ctx as any).letterSpacing = "0.1em";
+      ctx.fillStyle = '#4deeea';
+      ctx.fillText(p.category.toUpperCase(), hudX, currentY + catH);
+      currentY += catH + 48;
+
+      // 2. Title and Description
+      ctx.fillStyle = colorLight;
+      ctx.strokeStyle = colorRust;
+      ctx.lineWidth = 1.0; // Moderate stroke for headline
+      ctx.font = `bold ${titleFontSize}px "Playfair Display", Georgia, serif`;
+      (ctx as any).letterSpacing = "-0.02em";
+      ctx.strokeText(p.title, hudX, currentY + titleFontSize * 0.8);
+      ctx.fillText(p.title, hudX, currentY + titleFontSize * 0.8);
+      currentY += titleFontSize + 32;
+
+      ctx.font = `200 ${isMobile ? 26 : 32}px "Inter", sans-serif`;
+      (ctx as any).letterSpacing = "0px";
+      line = '';
+      let lineY = currentY + (isMobile ? 26 : 32);
+      for (let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + ' ';
+        if (ctx.measureText(testLine).width > descMaxW && n > 0) {
+          ctx.fillText(line.trim(), hudX, lineY);
+          line = words[n] + ' ';
+          lineY += descLineH;
+        } else {
+          line = testLine;
+        }
+      }
+      if (line.trim().length > 0) {
+        ctx.fillText(line.trim(), hudX, lineY);
+      }
+      currentY = lineY + 48;
+
+      // 3. Tags
+      ctx.font = `400 16px "JetBrains Mono", monospace`;
+      (ctx as any).letterSpacing = "0.1em";
+      let tagX = hudX;
+      let tagY = currentY + 14;
+      
       p.tags.forEach(tag => {
         const tw = ctx.measureText(tag).width;
-        const tagPaddingX = 20; // px-5
-        const tagPaddingY = 8; // py-2
-        const tagW = tw + tagPaddingX * 2;
-        const tagH = (width < 768 ? 10 : 12) + tagPaddingY * 2;
+        const twTotal = tw + 32; 
         
-        ctx.strokeStyle = colorLight;
-        ctx.beginPath();
-        if (ctx.roundRect) {
-          ctx.roundRect(tagX, tagsY - tagH / 2 - 4 - 24, tagW, tagH, tagH / 2);
-        } else {
-          ctx.rect(tagX, tagsY - tagH / 2 - 4 - 24, tagW, tagH);
+        if (tagX + twTotal > hudX + descMaxW) {
+            tagX = hudX;
+            tagY += tagH + 12;
         }
+        ctx.strokeStyle = colorLight;
+        ctx.lineWidth = 1.0;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(tagX, tagY - tagH / 2 - 2, twTotal, tagH, tagH / 2);
+        else ctx.rect(tagX, tagY - tagH / 2 - 2, twTotal, tagH);
         ctx.stroke();
         
         ctx.fillStyle = colorLight;
         ctx.textAlign = 'center';
-        ctx.fillText(tag, tagX + tagW / 2, tagsY - tagH / 2 - 4 + tagH / 2 + (width < 768 ? 3 : 4) - 24);
-        tagX += tagW + 12; // gap-3
+        ctx.fillText(tag, tagX + twTotal / 2, tagY + 4);
+        
+        tagX += twTotal + 12;
       });
-
-      // 8. Buttons capsules: REPO & LIVE outline/fill matching actual HTML positioning
-      const btnW = 100;
-      const btnH = 40;
-      const btnY = cardY + cardH - innerPad - btnH;
-      const btnX2 = cardX + cardW - innerPad - btnW;
-      const btnX1 = btnX2 - 16 - btnW; // gap-4
-
-      ctx.strokeStyle = colorLight;
-      ctx.lineWidth = isTracer ? 0.5 : 1;
-      ctx.beginPath();
-      if (ctx.roundRect) {
-        ctx.roundRect(btnX1, btnY, btnW, btnH, 12);
-      } else {
-        ctx.rect(btnX1, btnY, btnW, btnH);
-      }
-      ctx.stroke();
       
-      ctx.textAlign = 'center';
-      ctx.font = `bold 12px "JetBrains Mono", monospace`;
-      ctx.fillStyle = colorLight;
-      ctx.fillText("REPO", btnX1 + btnW / 2, btnY + btnH / 2 + 4);
+      currentY = tagY + 18 + 48;
 
-      if (isTracer) {
-         ctx.strokeStyle = colorRust;
-         ctx.lineWidth = 0.5;
-         ctx.beginPath();
-         if (ctx.roundRect) {
-           ctx.roundRect(btnX2, btnY, btnW, btnH, 12);
-         } else {
-           ctx.rect(btnX2, btnY, btnW, btnH);
-         }
-         ctx.stroke();
-      } else {
-         ctx.fillStyle = colorRust;
-         ctx.beginPath();
-         if (ctx.roundRect) {
-           ctx.roundRect(btnX2, btnY, btnW, btnH, 12);
-         } else {
-           ctx.rect(btnX2, btnY, btnW, btnH);
-         }
-         ctx.fill();
-      }
-      
-      ctx.textAlign = 'center';
-      ctx.font = `bold 12px "JetBrains Mono", monospace`;
-      ctx.fillStyle = colorLight;
-      ctx.fillText("LIVE", btnX2 + btnW / 2, btnY + btnH / 2 + 4);
+      // 4. Buttons (REPO/LIVE)
+      // REMOVED: Using HTML overlay buttons instead so they remain fully interactive
    } else {
       // Plasma energized A.I. Engineering layout
       const fontSize = Math.min(width * 0.15, 160);
@@ -358,7 +278,8 @@ const generateTargetsForStage = (index: number, width: number, height: number): 
    drawStageLayoutTemplate(ctx, index, width, height, 'full');
    
    const tData = ctx.getImageData(0, 0, width, height).data;
-   const density = width < 768 ? 1.5 : 1.0; 
+   // Higher density mapping (lower float value means tighter, more dense particle placement)
+   const density = width < 768 ? 0.7 : 0.45; 
    for (let y = 0; y < height; y += density) {
       for (let x = 0; x < width; x += density) {
           const idx = (Math.floor(y) * width + Math.floor(x)) * 4;
@@ -419,13 +340,18 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
               return;
            }
            
-           const t = coords[targetIndex % coords.length];
+           const totalTargetable = particlesRef.current.length - 180;
+           const mappedIndex = (coords.length > totalTargetable) 
+              ? Math.floor((targetIndex / totalTargetable) * coords.length)
+              : targetIndex % coords.length;
+              
+           const safeIndex = Math.min(Math.max(0, Math.floor(mappedIndex)), coords.length - 1);
+           const t = coords[safeIndex] || coords[0];
            targetIndex++;
            
-           // If we wrap around coords, add progressive jitter to form a thicker cloud instead of stacking perfectly
-           const overlapCount = Math.floor(targetIndex / coords.length);
-           const jitterX = overlapCount > 0 ? (Math.random() - 0.5) * Math.min(overlapCount, 2) * 1.5 : 0;
-           const jitterY = overlapCount > 0 ? (Math.random() - 0.5) * Math.min(overlapCount, 2) * 1.5 : 0;
+           // Removed random fuzzy jitter to keep particle edges crisp
+           const jitterX = 0;
+           const jitterY = 0;
            
            p.targetX = t.x + jitterX;
            p.targetY = t.y + jitterY;
@@ -508,7 +434,7 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
       
       // Compute initial coordinates based on stage 0
       const initialCoords = generateTargetsForStage(0, ww, wh);
-      const particleCount = Math.min(25000, Math.max(6000, initialCoords.length));
+      const particleCount = Math.min(120000, Math.max(20000, initialCoords.length));
       
       for (let i = 0; i < particleCount; i++) {
         const t = initialCoords[i % initialCoords.length] || { x: ww/2, y: wh/2, color: fallbackColor };
@@ -524,7 +450,7 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
           vz: 0,
           color: col,
           baseColor: col,
-          size: Math.max(0.6, 0.9 + Math.random() * 0.9),
+          size: Math.max(0.6, 0.2 + Math.random() * 0.9), // Fine but visible structure
         });
       }
       
@@ -649,10 +575,19 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
            const dy = p.targetY - p.y;
            const dist = dx*dx + dy*dy;
            
+           const isTypographyMode = stageRef.current >= 2 && stageRef.current <= 5;
+           
+           // Distance-Field style boundary enforcement
+           // Particles closer to their target have exponentially higher restorative spring tension,
+           // securing the edges of character boundaries like a solid crystal lattice to ensure legibility.
+           const springTension = isTypographyMode 
+               ? Math.max(0.08, Math.min(0.75, 40.0 / Math.max(1, dist)))
+               : 0.08;
+           
            // High performance spring settle
            if (dist > 1.0) {
-             p.x += dx * 0.08 * attractionMultiplier;
-             p.y += dy * 0.08 * attractionMultiplier;
+             p.x += dx * springTension * attractionMultiplier;
+             p.y += dy * springTension * attractionMultiplier;
            } else {
              if (attractionMultiplier > 0.01) {
                p.x = p.targetX;
@@ -661,8 +596,8 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
            }
            
            // Breathtaking gentle 3D wave float motion (applies wider floating ranges when released)
-           const floatScaleX = 1.0 + (1 - attractionMultiplier) * 3.0; 
-           const floatScaleY = 1.0 + (1 - attractionMultiplier) * 3.0;
+           const floatScaleX = isTypographyMode ? 0 : (1 - attractionMultiplier) * 0.5; 
+           const floatScaleY = isTypographyMode ? 0 : (1 - attractionMultiplier) * 0.5;
            const floatSpeed = 0.012;
            const floatX = Math.sin(time * floatSpeed + p.targetY * 0.015 + i * 0.012) * floatScaleX;
            const floatY = Math.cos(time * floatSpeed * 0.9 + p.targetX * 0.015 + i * 0.012) * floatScaleY;
@@ -670,11 +605,12 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
            
            p.z += (floatZ - p.z) * 0.05;
  
-           const drawX = Math.round(p.x + floatX);
-           const drawY = Math.round(p.y + floatY);
+           // Un-rounded coordinates allow sub-pixel precision and very smooth rendering limits jagged noise
+           const drawX = p.x + floatX;
+           const drawY = p.y + floatY;
            
            const scaleOffset = p.z * 0.01;
-           let drawSize = Math.round(Math.max(1, p.size * (1 + scaleOffset) * 1.5)); // Increase size slightly to compensate for lower density
+           let drawSize = Math.max(0.5, p.size * (1 + scaleOffset)); // Sub-pixel accurate precise sizing
            
            // Mouse interaction (Spacetime Wormhole / Event Horizon)
            const mdx = mouseRef.current.x - drawX;
@@ -682,7 +618,13 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
            const mDist = Math.sqrt(mdx * mdx + mdy * mdy);
            
            if (mDist < 200) {
-             const mForce = Math.pow((200 - mDist) / 200, 1.5); // non-linear gravity well
+             let mForce = Math.pow((200 - mDist) / 200, 1.5); // non-linear gravity well
+             
+             // Structural core protection (Distance-field boundary logic)
+             // Greatly reduce the disruption on particles that define the crystal logic of typography boundaries
+             if (isTypographyMode && dist < 15) {
+                mForce *= (dist / 15) * 0.4; // Massively reduced disruption at core to preserve legibility
+             }
              
              // Event horizon gravity pull (pulls INTO the center) + immense orbital framing
              const tx = -mdy / (mDist || 1);
@@ -752,12 +694,12 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
            if (i % 24 === 0) { // Twinkle stars
              const sparkleWeight = Math.sin(time * 0.075 + i * 0.12);
              if (sparkleWeight > 0.8) {
-               drawSizeFinal += Math.round((sparkleWeight - 0.8) * 6.0);
+               drawSizeFinal += (sparkleWeight - 0.8) * 4.0;
              }
            } else if (i % 41 === 0) { // Warm luxury gold or Plasma flares
              const goldWeight = Math.sin(time * 0.09 + i * 0.14);
              if (goldWeight > 0.82) {
-               drawSizeFinal += Math.round((goldWeight - 0.82) * 7.0);
+               drawSizeFinal += (goldWeight - 0.82) * 5.0;
              }
            }
            
