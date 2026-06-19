@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Layers, Database, Zap, Globe } from 'lucide-react';
+import { audio } from '../utils/audio';
 
 export const projects = [
   {
@@ -44,23 +45,28 @@ interface Particle {
   color: string;
   baseColor: string;
   size: number;
+  isCosmicAmbient?: boolean;
+  driftSpeed?: number;
 }
 
-const PARTICLE_COUNT = 24000;
+// Remove static PARTICLE_COUNT
 
-const generateTargetsForStage = (index: number, width: number, height: number): {x: number, y: number, color: string}[] => {
-   if (width <= 0 || height <= 0) return [];
-   const canvas = document.createElement('canvas');
-   canvas.width = width;
-   canvas.height = height;
-   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-   const coords: {x: number, y: number, color: string}[] = [];
-   if (!ctx) return coords;
-
+const drawStageLayoutTemplate = (
+  ctx: CanvasRenderingContext2D,
+  index: number,
+  width: number,
+  height: number,
+  mode: 'full' | 'tracer',
+  opacity: number = 1.0
+) => {
+   if (width <= 0 || height <= 0) return;
+   
+   const isTracer = mode === 'tracer';
+   
    // Theme Palette Colors
-   const colorRust = '#c14b2a';   // terracotta accent
-   const colorLight = '#f5f2eb';  // luxurious ivory
-   const colorGold = '#f3cb6d';   // sparkling warm gold
+   const colorRust = isTracer ? `rgba(193, 75, 42, ${opacity * 0.20})` : '#c14b2a';   // terracotta accent
+   const colorLight = isTracer ? `rgba(245, 242, 235, ${opacity * 0.15})` : '#f5f2eb';  // luxurious ivory
+   const colorGold = isTracer ? `rgba(243, 203, 109, ${opacity * 0.18})` : '#f3cb6d';   // sparkling warm gold
 
    ctx.fillStyle = colorLight;
    ctx.strokeStyle = colorLight;
@@ -70,14 +76,21 @@ const generateTargetsForStage = (index: number, width: number, height: number): 
       
       // Draw subtitle label
       ctx.fillStyle = colorRust;
-      ctx.font = `bold ${Math.max(12, width * 0.015)}px "JetBrains Mono", monospace`;
+      ctx.font = `800 ${Math.max(16, width * 0.018)}px "JetBrains Mono", monospace`;
       ctx.textAlign = 'center';
+      (ctx as any).letterSpacing = width < 768 ? "2px" : "6px";
       ctx.fillText("CURTIS CLICK  //  PORTFOLIO", width / 2, height / 2 - fontSize * 0.7);
 
       // Draw main name
       ctx.fillStyle = colorLight;
-      ctx.font = `900 ${fontSize}px "Inter", sans-serif`;
+      ctx.strokeStyle = colorRust;
+      ctx.lineWidth = isTracer ? 1.0 : (width < 768 ? 2 : 4);
+      ctx.font = `800 ${fontSize}px "Inter", sans-serif`;
+      (ctx as any).letterSpacing = width < 768 ? "6px" : "16px";
+      
+      ctx.strokeText("CURTIS CLICK", width / 2, height / 2);
       ctx.fillText("CURTIS CLICK", width / 2, height / 2);
+      (ctx as any).letterSpacing = "0px";
    } 
    else if (index === 1) {
       const maxW = 1200;
@@ -86,56 +99,45 @@ const generateTargetsForStage = (index: number, width: number, height: number): 
       const headerX = mx + pxLayout;
       const headerY = height / 2 - 40;
       
-      ctx.font = `bold 14px "JetBrains Mono", monospace`;
+      ctx.font = `800 ${Math.max(16, width * 0.018)}px "JetBrains Mono", monospace`;
       ctx.fillStyle = colorRust;
       ctx.textAlign = 'left';
-      ctx.fillText("01 // SELECTED WORKS", headerX, headerY - 50);
+      (ctx as any).letterSpacing = "4px";
+      ctx.fillText("01 // SELECTED WORKS", headerX, headerY - 60);
 
       ctx.fillStyle = colorLight;
-      ctx.font = `900 ${Math.min(width * 0.05, 54)}px "Inter", sans-serif`;
+      ctx.strokeStyle = colorRust;
+      ctx.lineWidth = isTracer ? 1.0 : (width < 768 ? 2 : 3);
+      ctx.font = `900 ${Math.min(width * 0.07, 72)}px "Inter", sans-serif`;
+      (ctx as any).letterSpacing = "2px";
+      
+      ctx.strokeText("ENGINEERED EXPERIENCES", headerX, headerY);
+      ctx.strokeText("FOR THE MODERN WEB.", headerX, headerY + Math.min(width * 0.08, 84));
+      
       ctx.fillText("ENGINEERED EXPERIENCES", headerX, headerY);
-      ctx.fillText("FOR THE MODERN WEB.", headerX, headerY + Math.min(width * 0.06, 64));
+      ctx.fillText("FOR THE MODERN WEB.", headerX, headerY + Math.min(width * 0.08, 84));
+      (ctx as any).letterSpacing = "0px";
    }
    else if (index >= 2 && index <= 5) {
-      const drawProjectCards = false;
-
-      if (drawProjectCards) {
-         const pIndex = index - 2;
-         const p = projects[pIndex];
-         
-         // Step A: Attempt to locate physical, actual DOM layout nodes
-      const cardEl = document.getElementById('project-card');
-      const iconEl = document.getElementById('project-icon');
-      const numberEl = document.getElementById('project-number');
-      const categoryEl = document.getElementById('project-category');
-      const titleEl = document.getElementById('project-title');
-      const descriptionEl = document.getElementById('project-description');
-      const tagEls = document.querySelectorAll('.project-tag');
-      const repoBtnEl = document.getElementById('project-repo-btn');
-      const liveBtnEl = document.getElementById('project-live-btn');
-
-      // Use a responsive absolute fallback in case element bounds are not yet loaded
+      const pIndex = index - 2;
+      const p = projects[pIndex];
+      
       const padding = width < 1024 ? 24 : 64; 
       const maxW = 1000;
-      const cardFallbackW = Math.min(width - padding * 2, maxW);
-      const cardFallbackX = (width - cardFallbackW) / 2;
-      const aspectH = Math.min(height - padding * 2, 600);
-      const cardFallbackH = aspectH;
-      const cardFallbackY = (height - cardFallbackH) / 2;
+      const cardW = Math.min(width - padding * 2, maxW);
+      const cardX = (width - cardW) / 2;
+      const cardH = Math.min(height - padding * 2, 600);
+      const cardY = (height - cardH) / 2;
+      
+      const innerPad = width < 1024 ? 32 : 48;
 
-      const cardRect = cardEl ? cardEl.getBoundingClientRect() : null;
-      const cardX = cardRect ? cardRect.left : cardFallbackX;
-      const cardY = cardRect ? cardRect.top : cardFallbackY;
-      const cardW = cardRect ? cardRect.width : cardFallbackW;
-      const cardH = cardRect ? cardRect.height : cardFallbackH;
-
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = isTracer ? 1.0 : 1.5;
       
       // 1. Draw elegant corner brackets (matches colorRust terracotta)
       ctx.fillStyle = colorRust;
       ctx.strokeStyle = colorRust;
       const cs = Math.min(40, width * 0.1); 
-      const th = 2; 
+      const th = isTracer ? 1 : 2; 
       
       // Top-Left corner bracket
       ctx.fillRect(cardX, cardY, cs, th);
@@ -154,11 +156,10 @@ const generateTargetsForStage = (index: number, width: number, height: number): 
       ctx.fillRect(cardX + cardW - th, cardY + cardH - cs, th, cs);
 
       // 2. Draw Icon capsule/vector outline
-      const iconRect = iconEl ? iconEl.getBoundingClientRect() : null;
-      const iconX = iconRect ? iconRect.left : cardX + (width < 768 ? 24 : 48);
-      const iconY = iconRect ? iconRect.top : cardY + (width < 768 ? 24 : 48);
-      const iconW = iconRect ? iconRect.width : (width < 768 ? 40 : 48) + 16;
-      const iconH = iconRect ? iconRect.height : (width < 768 ? 40 : 48) + 16;
+      const iconX = cardX + innerPad;
+      const iconY = cardY + innerPad;
+      const iconW = 64;
+      const iconH = 64;
       
       ctx.strokeStyle = colorRust;
       ctx.strokeRect(iconX, iconY, iconW, iconH);
@@ -199,226 +200,127 @@ const generateTargetsForStage = (index: number, width: number, height: number): 
       ctx.stroke();
 
       // 3. Project Number text ("01 // 04")
-      const numRect = numberEl ? numberEl.getBoundingClientRect() : null;
       ctx.fillStyle = colorRust;
       ctx.font = `bold ${width < 768 ? 14 : 16}px "JetBrains Mono", monospace`;
-      
-      const numString = numberEl ? (numberEl.textContent || "").trim() : `${String(pIndex + 1).padStart(2, '0')} // 04`;
-      if (numRect) {
-         ctx.textAlign = 'right';
-         ctx.fillText(numString, numRect.left + numRect.width, numRect.top + numRect.height * 0.82);
-      } else {
-         ctx.textAlign = 'right';
-         ctx.fillText(numString, cardX + cardW - (width < 768 ? 24 : 48), cardY + (width < 768 ? 32 : 56));
-      }
+      const numString = `${String(pIndex + 1).padStart(2, '0')} // 04`;
+      ctx.textAlign = 'right';
+      ctx.fillText(numString, cardX + cardW - innerPad, cardY + innerPad + 32);
 
       // 4. Category line title (rust)
-      const catRect = categoryEl ? categoryEl.getBoundingClientRect() : null;
       ctx.fillStyle = colorRust;
       ctx.font = `bold ${width < 768 ? 11 : 13}px "JetBrains Mono", monospace`;
       ctx.textAlign = 'left';
-      if (catRect) {
-         ctx.fillText(p.category.toUpperCase(), catRect.left, catRect.top + catRect.height * 0.82);
-      } else {
-         const catFallbackY = cardY + cardH - (width < 768 ? 240 : 280);
-         ctx.fillText(p.category.toUpperCase(), cardX + (width < 768 ? 24 : 48), catFallbackY);
-      }
+      const catFallbackY = cardY + cardH - (width < 768 ? 180 : 200);
+      ctx.fillText(p.category.toUpperCase(), cardX + innerPad, catFallbackY);
 
       // 5. Main Title header text in Ivory/Gold
-      const titleRect = titleEl ? titleEl.getBoundingClientRect() : null;
       ctx.fillStyle = colorLight;
+      ctx.strokeStyle = colorRust;
+      ctx.lineWidth = isTracer ? 0.5 : 1;
       ctx.font = `bold ${width < 768 ? 26 : 42}px "Playfair Display", Georgia, serif`;
       ctx.textAlign = 'left';
-      if (titleRect) {
-         ctx.fillText(p.title, titleRect.left, titleRect.top + titleRect.height * 0.78);
-      } else {
-         const catFallbackY = cardY + cardH - (width < 768 ? 240 : 280);
-         const titleFallbackY = catFallbackY + (width < 768 ? 30 : 54);
-         ctx.fillText(p.title, cardX + (width < 768 ? 24 : 48), titleFallbackY);
-      }
+      const titleFallbackY = catFallbackY + (width < 768 ? 36 : 48);
+      ctx.strokeText(p.title, cardX + innerPad, titleFallbackY);
+      ctx.fillText(p.title, cardX + innerPad, titleFallbackY);
 
       // 6. Beautiful Paragraph text wrapped exactly dynamic to DOM description element width
-      const descRect = descriptionEl ? descriptionEl.getBoundingClientRect() : null;
       ctx.fillStyle = colorLight;
       ctx.font = `400 ${width < 768 ? 13 : 16}px "Inter", sans-serif`;
       ctx.textAlign = 'left';
 
-      if (descRect) {
-         const words = p.description.split(' ');
-         let line = '';
-         let currentDescY = descRect.top + (width < 768 ? 12 : 14);
-         const maxDescW = descRect.width;
-         
-         for (let n = 0; n < words.length; n++) {
-           const testLine = line + words[n] + ' ';
-           const metrics = ctx.measureText(testLine);
-           if (metrics.width > maxDescW && n > 0) {
-             ctx.fillText(line, descRect.left, currentDescY);
-             line = words[n] + ' ';
-             currentDescY += width < 768 ? 19 : 24;
-           } else {
-             line = testLine;
-           }
-         }
-         ctx.fillText(line, descRect.left, currentDescY);
-      } else {
-         // Fallback calculation matching standard responsive heights
-         const catFallbackY = cardY + cardH - (width < 768 ? 240 : 280);
-         const titleFallbackY = catFallbackY + (width < 768 ? 30 : 54);
-         const descFallbackY = titleFallbackY + (width < 768 ? 22 : 32);
-         const words = p.description.split(' ');
-         let line = '';
-         let currentDescY = descFallbackY;
-         const maxDescW = Math.min(650, cardW - (width < 768 ? 48 : 96));
-         
-         for (let n = 0; n < words.length; n++) {
-           const testLine = line + words[n] + ' ';
-           const metrics = ctx.measureText(testLine);
-           if (metrics.width > maxDescW && n > 0) {
-             ctx.fillText(line, cardX + (width < 768 ? 24 : 48), currentDescY);
-             line = words[n] + ' ';
-             currentDescY += width < 768 ? 18 : 24;
-           } else {
-             line = testLine;
-           }
-         }
-         ctx.fillText(line, cardX + (width < 768 ? 24 : 48), currentDescY);
+      const descFallbackY = titleFallbackY + (width < 768 ? 22 : 32);
+      const words = p.description.split(' ');
+      let line = '';
+      let currentDescY = descFallbackY;
+      const maxDescW = Math.min(650, cardW - innerPad * 2);
+      const descX = cardX + innerPad;
+      
+      for (let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + ' ';
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > maxDescW && n > 0) {
+          ctx.fillText(line, descX, currentDescY);
+          line = words[n] + ' ';
+          currentDescY += width < 768 ? 18 : 24;
+        } else {
+          line = testLine;
+        }
       }
+      ctx.fillText(line, descX, currentDescY);
 
       // 7. Dynamic Tag outlines matching actual rendering positions
-      if (tagEls && tagEls.length > 0) {
-         ctx.font = `bold ${width < 768 ? 10 : 12}px "JetBrains Mono", monospace`;
-         tagEls.forEach((tagEl) => {
-           const r = tagEl.getBoundingClientRect();
-           const text = (tagEl.textContent || "").trim();
-           
-           // Draw rounded capsule around tag coordinates
-           ctx.strokeStyle = colorLight;
-           ctx.lineWidth = 1;
-           ctx.beginPath();
-           if (ctx.roundRect) {
-             ctx.roundRect(r.left, r.top, r.width, r.height, r.height / 2);
-           } else {
-             ctx.rect(r.left, r.top, r.width, r.height);
-           }
-           ctx.stroke();
-           
-           // Print tag text perfectly centered
-           ctx.fillStyle = colorLight;
-           ctx.textAlign = 'center';
-           ctx.fillText(text, r.left + r.width / 2, r.top + r.height / 2 + (width < 768 ? 3 : 4));
-         });
-      } else {
-         // Fallback rendering
-         const tagsY = cardY + cardH - (width < 768 ? 32 : 48);
-         ctx.font = `bold ${width < 768 ? 10 : 12}px "JetBrains Mono", monospace`;
-         let tagX = cardX + (width < 768 ? 24 : 48);
-         p.tags.forEach(tag => {
-           const tw = ctx.measureText(tag).width;
-           const tagPaddingX = width < 768 ? 12 : 16;
-           const tagPaddingY = width < 768 ? 5 : 6;
-           const tagW = tw + tagPaddingX * 2;
-           const tagH = (width < 768 ? 10 : 12) + tagPaddingY * 2;
-           
-           ctx.strokeStyle = colorLight;
-           ctx.beginPath();
-           if (ctx.roundRect) {
-             ctx.roundRect(tagX, tagsY - tagH / 2 - 4, tagW, tagH, tagH / 2);
-           } else {
-             ctx.rect(tagX, tagsY - tagH / 2 - 4, tagW, tagH);
-           }
-           ctx.stroke();
-           
-           ctx.fillStyle = colorLight;
-           ctx.fillText(tag, tagX + tagPaddingX, tagsY + (width < 768 ? 1 : 2));
-           tagX += tagW + (width < 768 ? 8 : 12);
-         });
-      }
+      const tagsY = cardY + cardH - innerPad;
+      ctx.font = `bold ${width < 768 ? 10 : 12}px "JetBrains Mono", monospace`;
+      let tagX = cardX + innerPad;
+      p.tags.forEach(tag => {
+        const tw = ctx.measureText(tag).width;
+        const tagPaddingX = 20; // px-5
+        const tagPaddingY = 8; // py-2
+        const tagW = tw + tagPaddingX * 2;
+        const tagH = (width < 768 ? 10 : 12) + tagPaddingY * 2;
+        
+        ctx.strokeStyle = colorLight;
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(tagX, tagsY - tagH / 2 - 4 - 24, tagW, tagH, tagH / 2);
+        } else {
+          ctx.rect(tagX, tagsY - tagH / 2 - 4 - 24, tagW, tagH);
+        }
+        ctx.stroke();
+        
+        ctx.fillStyle = colorLight;
+        ctx.textAlign = 'center';
+        ctx.fillText(tag, tagX + tagW / 2, tagsY - tagH / 2 - 4 + tagH / 2 + (width < 768 ? 3 : 4) - 24);
+        tagX += tagW + 12; // gap-3
+      });
 
       // 8. Buttons capsules: REPO & LIVE outline/fill matching actual HTML positioning
-      const repoRect = repoBtnEl ? repoBtnEl.getBoundingClientRect() : null;
-      const liveRect = liveBtnEl ? liveBtnEl.getBoundingClientRect() : null;
+      const btnW = 100;
+      const btnH = 40;
+      const btnY = cardY + cardH - innerPad - btnH;
+      const btnX2 = cardX + cardW - innerPad - btnW;
+      const btnX1 = btnX2 - 16 - btnW; // gap-4
 
-      // Draw REPO outline
-      if (repoRect) {
-         ctx.strokeStyle = colorLight;
-         ctx.lineWidth = 1;
-         ctx.beginPath();
-         if (ctx.roundRect) {
-           ctx.roundRect(repoRect.left, repoRect.top, repoRect.width, repoRect.height, 12);
-         } else {
-           ctx.rect(repoRect.left, repoRect.top, repoRect.width, repoRect.height);
-         }
-         ctx.stroke();
-         
-         ctx.textAlign = 'center';
-         ctx.font = `bold ${width < 768 ? 10 : 11}px "JetBrains Mono", monospace`;
-         ctx.fillStyle = colorLight;
-         ctx.fillText("REPO", repoRect.left + repoRect.width / 2, repoRect.top + repoRect.height / 2 + 4);
+      ctx.strokeStyle = colorLight;
+      ctx.lineWidth = isTracer ? 0.5 : 1;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(btnX1, btnY, btnW, btnH, 12);
       } else {
-         // Button fallbacks
-         const btnW = width < 768 ? 80 : 100;
-         const btnH = width < 768 ? 28 : 36;
-         const btnY = cardY + cardH - (width < 768 ? 44 : 64);
-         const btnX2 = cardX + cardW - (width < 768 ? 24 : 48) - btnW;
-         const btnX1 = btnX2 - (width < 768 ? 10 : 14) - btnW;
-
-         ctx.strokeStyle = colorLight;
-         ctx.beginPath();
-         if (ctx.roundRect) {
-           ctx.roundRect(btnX1, btnY, btnW, btnH, 8);
-         } else {
-           ctx.rect(btnX1, btnY, btnW, btnH);
-         }
-         ctx.stroke();
-         
-         ctx.textAlign = 'center';
-         ctx.font = `bold ${width < 768 ? 10 : 11}px "JetBrains Mono", monospace`;
-         ctx.fillStyle = colorLight;
-         ctx.fillText("REPO", btnX1 + btnW / 2, btnY + btnH / 2 + 4);
+        ctx.rect(btnX1, btnY, btnW, btnH);
       }
+      ctx.stroke();
+      
+      ctx.textAlign = 'center';
+      ctx.font = `bold 12px "JetBrains Mono", monospace`;
+      ctx.fillStyle = colorLight;
+      ctx.fillText("REPO", btnX1 + btnW / 2, btnY + btnH / 2 + 4);
 
-      // Draw LIVE Button
-      if (liveRect) {
+      if (isTracer) {
          ctx.strokeStyle = colorRust;
-         ctx.fillStyle = colorRust;
-         ctx.lineWidth = 1;
+         ctx.lineWidth = 0.5;
          ctx.beginPath();
          if (ctx.roundRect) {
-           ctx.roundRect(liveRect.left, liveRect.top, liveRect.width, liveRect.height, 12);
+           ctx.roundRect(btnX2, btnY, btnW, btnH, 12);
          } else {
-           ctx.rect(liveRect.left, liveRect.top, liveRect.width, liveRect.height);
+           ctx.rect(btnX2, btnY, btnW, btnH);
          }
-         ctx.fill();
          ctx.stroke();
-
-         ctx.textAlign = 'center';
-         ctx.font = `bold ${width < 768 ? 10 : 11}px "JetBrains Mono", monospace`;
-         ctx.fillStyle = '#ffffff';
-         ctx.fillText("LIVE", liveRect.left + liveRect.width / 2, liveRect.top + liveRect.height / 2 + 4);
       } else {
-         // Fallback LIVE button
-         const btnW = width < 768 ? 80 : 100;
-         const btnH = width < 768 ? 28 : 36;
-         const btnY = cardY + cardH - (width < 768 ? 44 : 64);
-         const btnX2 = cardX + cardW - (width < 768 ? 24 : 48) - btnW;
-
-         ctx.strokeStyle = colorRust;
          ctx.fillStyle = colorRust;
          ctx.beginPath();
          if (ctx.roundRect) {
-           ctx.roundRect(btnX2, btnY, btnW, btnH, 8);
+           ctx.roundRect(btnX2, btnY, btnW, btnH, 12);
          } else {
            ctx.rect(btnX2, btnY, btnW, btnH);
          }
          ctx.fill();
-         ctx.stroke();
-
-         ctx.textAlign = 'center';
-         ctx.font = `bold ${width < 768 ? 10 : 11}px "JetBrains Mono", monospace`;
-         ctx.fillStyle = '#ffffff';
-         ctx.fillText("LIVE", btnX2 + btnW / 2, btnY + btnH / 2 + 4);
       }
+      
+      ctx.textAlign = 'center';
+      ctx.font = `bold 12px "JetBrains Mono", monospace`;
+      ctx.fillStyle = colorLight;
+      ctx.fillText("LIVE", btnX2 + btnW / 2, btnY + btnH / 2 + 4);
    } else {
       // Plasma energized A.I. Engineering layout
       const fontSize = Math.min(width * 0.15, 160);
@@ -427,23 +329,41 @@ const generateTargetsForStage = (index: number, width: number, height: number): 
       ctx.textBaseline = 'middle';
       
       // Draw energetic plasma text
-      ctx.fillStyle = '#4deeea'; // Plasma cyan-blue
-      ctx.font = `900 italic ${fontSize}px "Inter", sans-serif`;
+      ctx.fillStyle = isTracer ? `rgba(77, 238, 234, ${opacity * 0.20})` : '#4deeea'; // Plasma cyan-blue
+      ctx.strokeStyle = colorRust;
+      ctx.lineWidth = isTracer ? 0.8 : (width < 768 ? 2 : 4);
+      ctx.font = `800 italic ${fontSize}px "Inter", sans-serif`;
+      (ctx as any).letterSpacing = "8px";
+      ctx.strokeText("A.I.", width / 2, height / 2 - fontSize * 0.4);
       ctx.fillText("A.I.", width / 2, height / 2 - fontSize * 0.4);
       
-      ctx.fillStyle = '#e0f7fa'; // Bright energizing white-cyan
-      ctx.font = `900 ${Math.min(width * 0.1, 120)}px "Inter", sans-serif`;
+      ctx.fillStyle = isTracer ? `rgba(224, 247, 250, ${opacity * 0.15})` : '#e0f7fa'; // Bright energizing white-cyan
+      ctx.font = `800 ${Math.min(width * 0.1, 120)}px "Inter", sans-serif`;
+      (ctx as any).letterSpacing = width < 768 ? "6px" : "12px";
+      ctx.strokeText("ENGINEERING", width / 2, height / 2 + fontSize * 0.2);
       ctx.fillText("ENGINEERING", width / 2, height / 2 + fontSize * 0.2);
+      (ctx as any).letterSpacing = "0px";
    }
-}
+};
+
+const generateTargetsForStage = (index: number, width: number, height: number): {x: number, y: number, color: string}[] => {
+   if (width <= 0 || height <= 0) return [];
+   const canvas = document.createElement('canvas');
+   canvas.width = width;
+   canvas.height = height;
+   const ctx = canvas.getContext('2d', { willReadFrequently: true });
+   const coords: {x: number, y: number, color: string}[] = [];
+   if (!ctx) return coords;
+
+   drawStageLayoutTemplate(ctx, index, width, height, 'full');
    
-const tData = ctx.getImageData(0, 0, width, height).data;
-   const density = 2.0; 
+   const tData = ctx.getImageData(0, 0, width, height).data;
+   const density = width < 768 ? 1.5 : 1.0; 
    for (let y = 0; y < height; y += density) {
       for (let x = 0; x < width; x += density) {
           const idx = (Math.floor(y) * width + Math.floor(x)) * 4;
           const alpha = tData[idx + 3];
-          if (alpha > 50) {
+          if (alpha > 80) {
               const r = tData[idx];
               const g = tData[idx + 1];
               const b = tData[idx + 2];
@@ -475,6 +395,11 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
   const particlesRef = useRef<Particle[]>([]);
   const stageRef = useRef(stage);
   const lastStageChangeRef = useRef<number>(Date.now());
+  const mouseRef = useRef({ x: -1000, y: -1000 });
+  const ripplesRef = useRef<{x: number, y: number, life: number}[]>([]);
+  const mappingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const scrollVelocityRef = useRef(0);
+  const lastScrollYRef = useRef(window.scrollY || document.documentElement.scrollTop);
 
   // Helper system to dynamically recalculate target mapping coordinates for particles
   const mapParticlesToStage = (targetStage: number, triggerBurst: boolean) => {
@@ -487,37 +412,54 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
     stageTargetsRef.current[targetStage] = coords;
     
     if (particlesRef.current.length > 0) {
-       particlesRef.current.forEach((p, i) => {
-           const t = coords[i % coords.length];
-           p.targetX = t.x;
-           p.targetY = t.y;
+       let targetIndex = 0;
+       particlesRef.current.forEach((p) => {
+           if (p.isCosmicAmbient) {
+              // Cosmic stars drift freely based on cosmic physics, they are not mapped to stage targets.
+              return;
+           }
+           
+           const t = coords[targetIndex % coords.length];
+           targetIndex++;
+           
+           // If we wrap around coords, add progressive jitter to form a thicker cloud instead of stacking perfectly
+           const overlapCount = Math.floor(targetIndex / coords.length);
+           const jitterX = overlapCount > 0 ? (Math.random() - 0.5) * Math.min(overlapCount, 2) * 1.5 : 0;
+           const jitterY = overlapCount > 0 ? (Math.random() - 0.5) * Math.min(overlapCount, 2) * 1.5 : 0;
+           
+           p.targetX = t.x + jitterX;
+           p.targetY = t.y + jitterY;
            p.baseColor = t.color;
            p.color = t.color;
            
            if (triggerBurst) {
-              // Scatter burst only on transition swipes
+              // Scatter burst on transition swipes
               p.vx = (Math.random() - 0.5) * 65;
               p.vy = (Math.random() - 0.5) * 65;
               p.vz = (Math.random() - 0.5) * 110;
            }
        });
-    }
+     }
   };
 
   // Listen for stage-transition changes and align dynamically
   useEffect(() => {
+    const prevStage = stageRef.current;
     stageRef.current = stage;
     lastStageChangeRef.current = Date.now();
     
-    if (stage >= 2) {
-        // Wait 350ms of transition settling of Framer motion, then map precisely to real DOM bounds
-        const timer = setTimeout(() => {
-           mapParticlesToStage(stage, true);
-        }, 350);
-        return () => clearTimeout(timer);
-    } else {
-        mapParticlesToStage(stage, true);
-    }
+    // Clear any pending mapping timers from previous transitions
+    mappingTimersRef.current.forEach(clearTimeout);
+    mappingTimersRef.current = [];
+
+    const isProjectToProject = (stage >= 2 && stage <= 5) && (prevStage >= 2 && prevStage <= 5);
+    
+    // Trigger the layout change instantly once with a spectacular explosion burst!
+    mapParticlesToStage(stage, !isProjectToProject);
+
+    return () => {
+      // no-op
+    };
   }, [stage]);
 
   useEffect(() => {
@@ -533,19 +475,42 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
       const ww = window.innerWidth;
       const wh = window.innerHeight;
       
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = Math.min(1.5, window.devicePixelRatio || 1);
       canvas.width = ww * dpr;
       canvas.height = wh * dpr;
       ctx.scale(dpr, dpr);
       canvas.style.width = `${ww}px`;
       canvas.style.height = `${wh}px`;
       
-      // Compute initial coordinates based on stage 0
-      const initialCoords = generateTargetsForStage(0, ww, wh);
       const tempParticles: Particle[] = [];
       const fallbackColor = '#f5f2eb';
+
+      // Design choice: 180 beautiful background cosmic stars that drift and swirl with parallax
+      const numStars = 180;
+      for (let s = 0; s < numStars; s++) {
+        const starColor = Math.random() > 0.65 ? '#ebaa75' : '#f5f2eb'; // Amber copper/gold or soft white
+        tempParticles.push({
+          x: Math.random() * ww,
+          y: Math.random() * wh,
+          z: (Math.random() - 0.5) * 400,
+          targetX: 0,
+          targetY: 0,
+          vx: (Math.random() - 0.5) * 0.4,
+          vy: (Math.random() - 0.5) * 0.4,
+          vz: 0,
+          color: starColor,
+          baseColor: starColor,
+          size: Math.max(0.8, 1.2 + Math.random() * 1.8),
+          isCosmicAmbient: true,
+          driftSpeed: 0.12 + Math.random() * 0.35,
+        });
+      }
       
-      for (let i = 0; i < PARTICLE_COUNT; i++) {
+      // Compute initial coordinates based on stage 0
+      const initialCoords = generateTargetsForStage(0, ww, wh);
+      const particleCount = Math.min(25000, Math.max(6000, initialCoords.length));
+      
+      for (let i = 0; i < particleCount; i++) {
         const t = initialCoords[i % initialCoords.length] || { x: ww/2, y: wh/2, color: fallbackColor };
         const col = t.color || fallbackColor;
         tempParticles.push({
@@ -580,15 +545,36 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
          ctx.clearRect(0, 0, currentW, currentH);
          time++;
          
+         const elapsed = Date.now() - lastStageChangeRef.current;
+
+         // High performance chromatic aberration shift tracker peaking during rapid stage swipes
+         let chromaticShift = 0;
+         if (elapsed < 900) {
+           const pTransit = elapsed / 900;
+           chromaticShift = Math.sin(pTransit * Math.PI) * 15.0; // Peak 15px shift
+         }
+
+         // Draw subtle tracer layout lines to anchor the edges of text beautifully
+         // Fades in to reach perfect clarity as particles stabilize
+         let tracerOpacity = 0.85;
+         if (elapsed < 1200) {
+           const pTransit = elapsed / 1200;
+           tracerOpacity = 0.15 + pTransit * 0.70;
+         }
+         ctx.save();
+         drawStageLayoutTemplate(ctx, stageRef.current, currentW, currentH, 'tracer', tracerOpacity);
+         ctx.restore();
+
+         // Damp scroll velocity physics wind force
+         scrollVelocityRef.current *= 0.92;
+         
          const particles = particlesRef.current;
          let lastColor = '';
-         
-         const elapsed = Date.now() - lastStageChangeRef.current;
          
          // Smooth attraction decay to disintegrate particles once settled
          let attractionMultiplier = 1.0;
          if (elapsed > 1200) {
-           attractionMultiplier = Math.max(0, 1 - (elapsed - 1200) / 800);
+           attractionMultiplier = Math.max(0.65, 1 - (elapsed - 1200) / 800);
          }
          
          // Smoothly fade canvas overall alpha to preserve clear text readability
@@ -600,8 +586,57 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
          ctx.globalAlpha = globalAlpha;
          
          for (let i = 0; i < particles.length; i++) {
-           const p = particles[i];
+            const p = particles[i];
+            if (p.isCosmicAmbient) {
+              // Particle is an ambient cosmic star — let it float across the sky with scrolls!
+              p.y -= scrollVelocityRef.current * (p.driftSpeed || 0.2);
+              p.x += Math.sin(time * 0.005 + i) * 0.15; // Slow wavy float
+              
+              // Standard loop encapsulation coordinates to keep them on screen infinitely
+              if (p.y < 0) p.y = currentH;
+              if (p.y > currentH) p.y = 0;
+              if (p.x < 0) p.x = currentW;
+              if (p.x > currentW) p.x = 0;
+              
+              // Apply hover magnetic gravity to cosmic stars as well
+              const mdx = mouseRef.current.x - p.x;
+              const mdy = mouseRef.current.y - p.y;
+              const mDist = Math.sqrt(mdx * mdx + mdy * mdy);
+              if (mDist < 140) {
+                 const mForce = (140 - mDist) / 140;
+                 // Swirl them around mouse
+                 const tx = -mdy / (mDist || 1);
+                 const ty = mdx / (mDist || 1);
+                 p.vx += tx * mForce * 1.6;
+                 p.vy += ty * mForce * 1.6;
+              }
+              
+              p.x += p.vx;
+              p.y += p.vy;
+              p.vx *= 0.94;
+              p.vy *= 0.94;
+              
+              let drawSize = p.size;
+              if (i % 6 === 0) {
+                 const sparkleWeight = Math.sin(time * 0.05 + i);
+                 if (sparkleWeight > 0.72) {
+                    drawSize += (sparkleWeight - 0.72) * 4;
+                 }
+              }
+              
+              if (lastColor !== p.color) {
+                 ctx.fillStyle = p.color;
+                 lastColor = p.color;
+              }
+              ctx.fillRect(Math.round(p.x), Math.round(p.y), Math.round(Math.max(1, drawSize)), Math.round(Math.max(1, drawSize)));
+              continue; // Skip layout spring updates
+            }
            
+           // Blow particles in vertical axis matching scroll speed, creating elegant trail cascades!
+           p.vy -= scrollVelocityRef.current * 0.16;
+           // Also add a minor lateral dispersion (turbulence) proportional to scroll velocity
+           p.vx += Math.sin(i * 0.05 + time * 0.1) * Math.abs(scrollVelocityRef.current) * 0.03;
+
            p.x += p.vx;
            p.y += p.vy;
            p.z += p.vz;
@@ -612,12 +647,12 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
            
            const dx = p.targetX - p.x;
            const dy = p.targetY - p.y;
-           const dist = Math.sqrt(dx*dx + dy*dy);
+           const dist = dx*dx + dy*dy;
            
            // High performance spring settle
            if (dist > 1.0) {
-             p.x += dx * 0.02 * attractionMultiplier;
-             p.y += dy * 0.02 * attractionMultiplier;
+             p.x += dx * 0.08 * attractionMultiplier;
+             p.y += dy * 0.08 * attractionMultiplier;
            } else {
              if (attractionMultiplier > 0.01) {
                p.x = p.targetX;
@@ -626,8 +661,8 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
            }
            
            // Breathtaking gentle 3D wave float motion (applies wider floating ranges when released)
-           const floatScaleX = 2.8 + (1 - attractionMultiplier) * 35.0; 
-           const floatScaleY = 2.8 + (1 - attractionMultiplier) * 35.0;
+           const floatScaleX = 1.0 + (1 - attractionMultiplier) * 3.0; 
+           const floatScaleY = 1.0 + (1 - attractionMultiplier) * 3.0;
            const floatSpeed = 0.012;
            const floatX = Math.sin(time * floatSpeed + p.targetY * 0.015 + i * 0.012) * floatScaleX;
            const floatY = Math.cos(time * floatSpeed * 0.9 + p.targetX * 0.015 + i * 0.012) * floatScaleY;
@@ -635,36 +670,123 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
            
            p.z += (floatZ - p.z) * 0.05;
  
-           const drawX = p.x + floatX;
-           const drawY = p.y + floatY;
+           const drawX = Math.round(p.x + floatX);
+           const drawY = Math.round(p.y + floatY);
            
            const scaleOffset = p.z * 0.01;
-           let drawSize = Math.max(0.6, p.size * (1 + scaleOffset));
+           let drawSize = Math.round(Math.max(1, p.size * (1 + scaleOffset) * 1.5)); // Increase size slightly to compensate for lower density
+           
+           // Mouse interaction (Spacetime Wormhole / Event Horizon)
+           const mdx = mouseRef.current.x - drawX;
+           const mdy = mouseRef.current.y - drawY;
+           const mDist = Math.sqrt(mdx * mdx + mdy * mdy);
+           
+           if (mDist < 200) {
+             const mForce = Math.pow((200 - mDist) / 200, 1.5); // non-linear gravity well
+             
+             // Event horizon gravity pull (pulls INTO the center) + immense orbital framing
+             const tx = -mdy / (mDist || 1);
+             const ty = mdx / (mDist || 1);
+             const orbitalSpeed = 4.5 * mForce;
+             const pullSpeed = mDist > 30 ? 1.5 * mForce : -2.0; // Pulls in, but pushes out if exactly at the singularity
+             
+             p.vx += (mdx / (mDist || 1)) * pullSpeed;
+             p.vy += (mdy / (mDist || 1)) * pullSpeed;
+             p.vx += tx * orbitalSpeed;
+             p.vy += ty * orbitalSpeed;
+             
+             // Trigger interactive mallet on near particles with cursor velocity / intensity
+             if (mForce > 0.6 && Math.random() > 0.993) {
+                audio.playInteractiveMallet(mForce, drawX / window.innerWidth);
+             }
+             
+             // Spacetime warping effect (Spaghettification / Relativistic Strings)
+             // Particles are drawn into long, beautiful curved strings spiraling into the singularity
+             const warpMlt = mForce * 4.0;
+             if (warpMlt > 0.5) {
+                ctx.beginPath();
+                ctx.moveTo(drawX, drawY);
+                
+                // Calculate control point for standard quadratic bezier curve toward the cursor
+                // Bend it using the orbital tangent to create a 3D spaghettification spiral
+                const cpX = drawX + tx * 80 * mForce + (mouseRef.current.x - drawX) * 0.5;
+                const cpY = drawY + ty * 80 * mForce + (mouseRef.current.y - drawY) * 0.5;
+                
+                // End point gets sucked deeply into the singularity based on attraction force
+                const stringPullX = drawX + (mouseRef.current.x - drawX) * (mForce * 0.88);
+                const stringPullY = drawY + (mouseRef.current.y - drawY) * (mForce * 0.88);
+                
+                ctx.quadraticCurveTo(cpX, cpY, stringPullX, stringPullY);
+                
+                // Color shift towards extreme energetic states near the event horizon (indigo, cyan, white)
+                const isNeon = i % 3 === 0;
+                ctx.strokeStyle = isNeon 
+                    ? `rgba(77, 238, 234, ${mForce * 0.85})` // Space cyan
+                    : `rgba(245, 242, 235, ${mForce * 0.65})`; // Ivory stardust
+                ctx.lineWidth = Math.max(0.5, mForce * 2.0);
+                ctx.stroke();
+             }
+           }
+           
+           // Click ripples (shockwaves)
+           ripplesRef.current.forEach(ripple => {
+             if (ripple.life > 0) {
+               const rdx = ripple.x - drawX;
+               const rdy = ripple.y - drawY;
+               const rDist = Math.sqrt(rdx * rdx + rdy * rdy);
+               const maxDist = (1 - ripple.life) * 400; // expand up to 400px
+               const bandWidth = 40; // width of the shockwave ring
+               
+               if (rDist > maxDist - bandWidth && rDist < maxDist + bandWidth) {
+                 const rForce = (1 - Math.abs(rDist - maxDist) / bandWidth) * ripple.life;
+                 drawSize += rForce * 8;
+                 p.vx -= (rdx / (rDist || 1)) * rForce * 4.0;
+                 p.vy -= (rdy / (rDist || 1)) * rForce * 4.0;
+                 p.vz -= rForce * 10;
+               }
+             }
+           });
            
            // Sparkle glitter flaring effect (grows wider and more intense when released)
-           let finalColor = p.color;
+           let drawSizeFinal = drawSize;
            if (i % 24 === 0) { // Twinkle stars
              const sparkleWeight = Math.sin(time * 0.075 + i * 0.12);
              if (sparkleWeight > 0.8) {
-               finalColor = '#ffffff'; 
-               drawSize += (sparkleWeight - 0.8) * 4.8;
+               drawSizeFinal += Math.round((sparkleWeight - 0.8) * 6.0);
              }
            } else if (i % 41 === 0) { // Warm luxury gold or Plasma flares
-             const isPlasma = stageRef.current >= 2;
              const goldWeight = Math.sin(time * 0.09 + i * 0.14);
              if (goldWeight > 0.82) {
-               finalColor = isPlasma ? '#00e5ff' : '#ffdb58'; 
-               drawSize += (goldWeight - 0.82) * 5.5;
+               drawSizeFinal += Math.round((goldWeight - 0.82) * 7.0);
              }
            }
            
-           if (lastColor !== finalColor) {
-               ctx.fillStyle = finalColor;
-               lastColor = finalColor;
+           if (lastColor !== p.color) {
+               ctx.fillStyle = p.color;
+               lastColor = p.color;
            }
            
-           ctx.fillRect(drawX, drawY, drawSize, drawSize);
+           if (chromaticShift > 0.5 && i % 3 !== 0) {
+              // Draw dynamic left terracotta-red shadow offset
+              ctx.fillStyle = '#c14b2a';
+              ctx.fillRect(Math.round(drawX - chromaticShift), drawY, drawSizeFinal, drawSizeFinal);
+              
+              // Draw dynamic right celestial-cyan shadow offset
+              ctx.fillStyle = '#4deeea';
+              ctx.fillRect(Math.round(drawX + chromaticShift), drawY, drawSizeFinal, drawSizeFinal);
+              
+              // Draw neutral core with the layout particle's assigned color
+              ctx.fillStyle = p.color;
+              ctx.fillRect(drawX, drawY, Math.max(1, drawSizeFinal - 1), Math.max(1, drawSizeFinal - 1));
+              lastColor = p.color;
+           } else {
+              ctx.fillRect(drawX, drawY, drawSizeFinal, drawSizeFinal);
+           }
          }
+         
+         // Update and clean up ripples array
+         ripplesRef.current.forEach(r => r.life -= 0.02);
+         ripplesRef.current = ripplesRef.current.filter(r => r.life > 0);
          
          animationId = requestAnimationFrame(render);
       };
@@ -672,26 +794,63 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
       render();
     });
     
+    let resizeTimeout: ReturnType<typeof setTimeout>;
+    let lastWidth = window.innerWidth;
+    let lastHeight = window.innerHeight;
+
     const handleResize = () => {
        const ww = window.innerWidth;
        const wh = window.innerHeight;
        
-       const dpr = window.devicePixelRatio || 1;
-       canvas.width = ww * dpr;
-       canvas.height = wh * dpr;
-       ctx.scale(dpr, dpr);
-       canvas.style.width = `${ww}px`;
-       canvas.style.height = `${wh}px`;
+       const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+       const canvas = canvasRef.current;
+       if (canvas && ctx) {
+         canvas.width = ww * dpr;
+         canvas.height = wh * dpr;
+         ctx.scale(dpr, dpr);
+         canvas.style.width = `${ww}px`;
+         canvas.style.height = `${wh}px`;
+       }
        
-       // Settle particles calmly inside their updated targets
-       mapParticlesToStage(stageRef.current, false);
+       clearTimeout(resizeTimeout);
+       resizeTimeout = setTimeout(() => {
+           // Only trigger expensive remap if width changes or height changes significantly (mobile URL bar avoidance)
+           if (ww !== lastWidth || Math.abs(wh - lastHeight) > 120) {
+               lastWidth = ww;
+               lastHeight = wh;
+               // Settle particles calmly inside their updated targets
+               mapParticlesToStage(stageRef.current, false);
+           }
+       }, 200);
+    };
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      mouseRef.current.x = e.clientX;
+      mouseRef.current.y = e.clientY;
+    };
+    
+    const handleClick = (e: MouseEvent) => {
+      ripplesRef.current.push({ x: e.clientX, y: e.clientY, life: 1.0 });
+    };
+
+    const handleScrollPhysics = () => {
+      const currentScrollY = window.scrollY || document.documentElement.scrollTop;
+      const delta = currentScrollY - lastScrollYRef.current;
+      scrollVelocityRef.current += delta * 0.08; // sensitivity control
+      lastScrollYRef.current = currentScrollY;
     };
     
     window.addEventListener('resize', handleResize);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('click', handleClick);
+    window.addEventListener('scroll', handleScrollPhysics, { passive: true });
     
     return () => {
       cancelAnimationFrame(animationId);
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('click', handleClick);
+      window.removeEventListener('scroll', handleScrollPhysics);
     };
   }, []); 
   
