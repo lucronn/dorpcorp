@@ -143,27 +143,6 @@ export default function App() {
                      </span>
                   ))}
                 </div>
-                
-                <div className="flex gap-4">
-                  <motion.button 
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -20 }}
-                      transition={{ duration: 0.6, delay: 0.6, ease: [0.16, 1, 0.3, 1] }}
-                      id="project-repo-btn" 
-                      className="flex items-center gap-2 px-8 py-4 bg-black/40 backdrop-blur-md hover:bg-[#f5f2eb]/20 rounded-full border-2 border-[#f5f2eb]/40 text-sm font-mono tracking-widest text-[#f5f2eb] transition-all cursor-pointer shadow-[0_4px_16px_rgba(0,0,0,0.5)]">
-                      <Github size={16} /> REPO
-                  </motion.button>
-                  <motion.button 
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -20 }}
-                      transition={{ duration: 0.6, delay: 0.75, ease: [0.16, 1, 0.3, 1] }}
-                      id="project-live-btn" 
-                      className="flex items-center gap-2 px-8 py-4 bg-[#c14b2a]/90 hover:bg-[#a64023] shadow-[0_0_40px_rgba(193,75,42,0.6)] text-[#f9f8f3] rounded-full border-2 border-[#f9f8f3]/60 text-sm font-bold tracking-widest font-mono transition-all cursor-pointer backdrop-blur-md">
-                      <ExternalLink size={16} /> LIVE
-                  </motion.button>
-                </div>
               </div>
             </motion.div>
           )}

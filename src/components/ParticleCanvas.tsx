@@ -4,31 +4,31 @@ import { audio } from '../utils/audio';
 
 export const projects = [
   {
-    title: 'Aura Compute',
-    category: 'System Architecture',
-    description: 'A deeply integrated distributed load balancer built with sub-millisecond routing thresholds. Utilizing spatial partitioning algorithms for optimal cluster distribution.',
-    tags: ['Rust', 'WebGL', 'WASM'],
-    icon: Layers,
-  },
-  {
-    title: 'Nexus Data Engine',
-    category: 'Backend Pipeline',
-    description: 'High-throughput event streaming engine parsing thousands of interconnected websockets. Designed with immutable data paradigms and aggressive memory management.',
-    tags: ['Go', 'Kafka', 'Redis'],
+    title: 'AI Engineering',
+    category: 'WHO I AM',
+    description: 'Ten years of engineering experience. Full-stack systems, agentic pipelines, and the evaluations that keep AI models honest.',
+    tags: ['AI Engineering', 'Production AI', 'LLM Optimization'],
     icon: Database,
   },
   {
-    title: 'Void Interface',
-    category: 'Interactive Application',
-    description: 'A completely headless canvas application prioritizing raw GPU performance over DOM manipulation. 120 FPS target output with zero garbage collection stutter.',
-    tags: ['TypeScript', 'Three.js', 'GLSL'],
+    title: 'Architecting Autonomy',
+    category: 'WHAT I BUILD',
+    description: 'Autonomous agentic systems and large-scale RAG pipelines. Built to reason, plan, and execute reliably.',
+    tags: ['Agentic Workflows', 'LangChain', 'VectorDBs'],
     icon: Zap,
   },
   {
-    title: 'Echo Identity',
-    category: 'Protocol Service',
-    description: 'Cryptographically secure zero-knowledge authentication layer providing seamless cross-platform identity verification without exposing PII payloads.',
-    tags: ['Cryptography', 'Node.js', 'gRPC'],
+    title: 'Frontier Model Alignment',
+    category: 'HOW I TEST',
+    description: 'RLHF evaluation, red-teaming, and hallucination analysis on frontier models, including Claude Code and Fable. Selected as a Worldsim evaluator, under 1% acceptance.',
+    tags: ['RLHF', 'Red-Teaming', 'Worldsim'],
+    icon: Layers,
+  },
+  {
+    title: 'Technical Depth & Synthesis',
+    category: 'MY EXPERTISE',
+    description: 'Not only code. Domain expertise in CAD, civil and structural engineering, and fluid dynamics. Messy real-world data, turned into high-fidelity training corpuses.',
+    tags: ['OpenFOAM', 'OpenSEES', 'SMEs'],
     icon: Globe,
   }
 ];
@@ -49,8 +49,6 @@ interface Particle {
   driftSpeed?: number;
 }
 
-// Remove static PARTICLE_COUNT
-
 const drawStageLayoutTemplate = (
   ctx: CanvasRenderingContext2D,
   index: number,
@@ -65,9 +63,9 @@ const drawStageLayoutTemplate = (
    if (isTracer) return; // Hide all faint background vectors/text so only particles are seen
    
    // Theme Palette Colors
-   const colorRust = isTracer ? `rgba(193, 75, 42, ${opacity * 0.20})` : '#c14b2a';   // terracotta accent
-   const colorLight = isTracer ? `rgba(245, 242, 235, ${opacity * 0.15})` : '#f5f2eb';  // luxurious ivory
-   const colorGold = isTracer ? `rgba(243, 203, 109, ${opacity * 0.18})` : '#f3cb6d';   // sparkling warm gold
+   const colorRust = isTracer ? `rgba(242, 95, 53, ${opacity * 0.20})` : '#f25f35';
+   const colorLight = isTracer ? `rgba(255, 255, 255, ${opacity * 0.15})` : '#ffffff';
+   const colorGold = isTracer ? `rgba(255, 215, 120, ${opacity * 0.18})` : '#ffd778';
 
    ctx.fillStyle = colorLight;
    ctx.strokeStyle = colorLight;
@@ -75,14 +73,12 @@ const drawStageLayoutTemplate = (
    if (index === 0) {
       let fontSize = Math.min(width * 0.12, 140);
       
-      // Draw subtitle label
       ctx.fillStyle = colorRust;
       ctx.font = `800 ${Math.max(16, width * 0.018)}px "JetBrains Mono", monospace`;
       ctx.textAlign = 'center';
       (ctx as any).letterSpacing = width < 768 ? "2px" : "6px";
       ctx.fillText("CURTIS CLICK  //  PORTFOLIO", width / 2, height / 2 - fontSize * 0.7);
 
-      // Draw main name
       ctx.fillStyle = colorLight;
       ctx.strokeStyle = colorRust;
       ctx.lineWidth = isTracer ? 1.0 : (width < 768 ? 2 : 4);
@@ -124,20 +120,20 @@ const drawStageLayoutTemplate = (
       const p = projects[pIndex];
       const isMobile = width < 640;
       
-      const containerPad = isMobile ? 24 : 64;
-      const hudMaxW = 500;
-      const hudX = containerPad;
-      const descMaxW = Math.min(hudMaxW, width - containerPad * 2);
+      const containerPad = isMobile ? 16 : 48;
+      const hudMaxW = Math.min(1100, width - containerPad * 2);
+      const hudX = width / 2;
+      const descMaxW = hudMaxW;
 
-      const numH = 16; // text-base
-      const catH = 16; // text-base
+      const numH = 16; 
+      const catH = 20; 
       const topPartH = numH + 24 + catH + 48;
       
-      const titleFontSize = isMobile ? 64 : width < 1024 ? 90 : 120;
-      // approximate 1.625 line height for description
-      const descLineH = isMobile ? 42 : 52; 
+      const titleFontSize = isMobile ? 64 : width < 1024 ? 90 : 130;
+      const descFontSize = isMobile ? 32 : 46;
+      const descLineH = isMobile ? 48 : 68; 
       
-      ctx.font = `300 ${isMobile ? 26 : 32}px "Inter", sans-serif`;
+      ctx.font = `300 ${descFontSize}px "Inter", sans-serif`;
       const words = p.description.split(' ');
       let line = '';
       let descLines = 0;
@@ -154,46 +150,49 @@ const drawStageLayoutTemplate = (
       const descH = descLines * descLineH;
       const midPartH = titleFontSize + 32 + descH + 48;
 
-      const tagH = 36;
-      const btnHTotal = 50;
-      const botPartH = tagH + 48 + btnHTotal;
+      const tagH = 40;
+      const botPartH = tagH + 48;
 
-      // Calculate total HUD height to perfectly vertical-align with tailwind flex rules
       const totalH = topPartH + midPartH + botPartH;
-      const hudY = isMobile ? (height - containerPad - totalH) : ((height - totalH) / 2);
+      const hudY = isMobile ? (height - containerPad - totalH + 40) : ((height - totalH) / 2);
 
       let currentY = hudY;
       ctx.lineWidth = 1.5;
 
-      // 1. Draw Project Number and Category
       ctx.fillStyle = colorLight;
-      ctx.font = `600 18px "JetBrains Mono", monospace`;
-      ctx.textAlign = 'left';
+      ctx.font = `bold 24px "JetBrains Mono", monospace`;
+      ctx.textAlign = 'center';
       (ctx as any).letterSpacing = "0.4em";
-      const pNumStr = `PROJECT ${String(pIndex + 1).padStart(2, '0')} // 04`;
+      const pNumStr = `CHAPTER ${String(pIndex + 1).padStart(2, '0')} // 04`;
       ctx.fillText(pNumStr, hudX, currentY + numH);
-      currentY += numH + 24;
+      currentY += numH + 32;
       
-      ctx.font = `bold 20px "JetBrains Mono", monospace`;
-      (ctx as any).letterSpacing = "0.1em";
-      ctx.fillStyle = '#4deeea';
+      ctx.font = `900 32px "JetBrains Mono", monospace`;
+      (ctx as any).letterSpacing = "0.15em";
+      ctx.fillStyle = '#88ffff';
       ctx.fillText(p.category.toUpperCase(), hudX, currentY + catH);
-      currentY += catH + 48;
+      currentY += catH + 56;
 
-      // 2. Title and Description
       ctx.fillStyle = colorLight;
       ctx.strokeStyle = colorRust;
-      ctx.lineWidth = 1.0; // Moderate stroke for headline
-      ctx.font = `bold ${titleFontSize}px "Playfair Display", Georgia, serif`;
+      ctx.lineWidth = 1.0; 
+      
+      let appliedTitleFontSize = titleFontSize;
+      ctx.font = `bold ${appliedTitleFontSize}px "Playfair Display", Georgia, serif`;
       (ctx as any).letterSpacing = "-0.02em";
-      ctx.strokeText(p.title, hudX, currentY + titleFontSize * 0.8);
-      ctx.fillText(p.title, hudX, currentY + titleFontSize * 0.8);
-      currentY += titleFontSize + 32;
+      while (ctx.measureText(p.title).width > descMaxW && appliedTitleFontSize > 30) {
+         appliedTitleFontSize -= 2;
+         ctx.font = `bold ${appliedTitleFontSize}px "Playfair Display", Georgia, serif`;
+      }
+      
+      ctx.strokeText(p.title, hudX, currentY + appliedTitleFontSize * 0.8);
+      ctx.fillText(p.title, hudX, currentY + appliedTitleFontSize * 0.8);
+      currentY += appliedTitleFontSize + 48;
 
-      ctx.font = `200 ${isMobile ? 26 : 32}px "Inter", sans-serif`;
+      ctx.font = `500 ${descFontSize}px "Inter", sans-serif`;
       (ctx as any).letterSpacing = "0px";
       line = '';
-      let lineY = currentY + (isMobile ? 26 : 32);
+      let lineY = currentY + descFontSize;
       for (let n = 0; n < words.length; n++) {
         const testLine = line + words[n] + ' ';
         if (ctx.measureText(testLine).width > descMaxW && n > 0) {
@@ -207,49 +206,15 @@ const drawStageLayoutTemplate = (
       if (line.trim().length > 0) {
         ctx.fillText(line.trim(), hudX, lineY);
       }
-      currentY = lineY + 48;
+      currentY = lineY + 64;
 
-      // 3. Tags
-      ctx.font = `400 16px "JetBrains Mono", monospace`;
-      (ctx as any).letterSpacing = "0.1em";
-      let tagX = hudX;
-      let tagY = currentY + 14;
-      
-      p.tags.forEach(tag => {
-        const tw = ctx.measureText(tag).width;
-        const twTotal = tw + 32; 
-        
-        if (tagX + twTotal > hudX + descMaxW) {
-            tagX = hudX;
-            tagY += tagH + 12;
-        }
-        ctx.strokeStyle = colorLight;
-        ctx.lineWidth = 1.0;
-        ctx.beginPath();
-        if (ctx.roundRect) ctx.roundRect(tagX, tagY - tagH / 2 - 2, twTotal, tagH, tagH / 2);
-        else ctx.rect(tagX, tagY - tagH / 2 - 2, twTotal, tagH);
-        ctx.stroke();
-        
-        ctx.fillStyle = colorLight;
-        ctx.textAlign = 'center';
-        ctx.fillText(tag, tagX + twTotal / 2, tagY + 4);
-        
-        tagX += twTotal + 12;
-      });
-      
-      currentY = tagY + 18 + 48;
-
-      // 4. Buttons (REPO/LIVE)
-      // REMOVED: Using HTML overlay buttons instead so they remain fully interactive
    } else {
-      // Plasma energized A.I. Engineering layout
       const fontSize = Math.min(width * 0.15, 160);
       
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       
-      // Draw energetic plasma text
-      ctx.fillStyle = isTracer ? `rgba(77, 238, 234, ${opacity * 0.20})` : '#4deeea'; // Plasma cyan-blue
+      ctx.fillStyle = isTracer ? `rgba(136, 255, 255, ${opacity * 0.20})` : '#88ffff';
       ctx.strokeStyle = colorRust;
       ctx.lineWidth = isTracer ? 0.8 : (width < 768 ? 2 : 4);
       ctx.font = `800 italic ${fontSize}px "Inter", sans-serif`;
@@ -257,7 +222,7 @@ const drawStageLayoutTemplate = (
       ctx.strokeText("A.I.", width / 2, height / 2 - fontSize * 0.4);
       ctx.fillText("A.I.", width / 2, height / 2 - fontSize * 0.4);
       
-      ctx.fillStyle = isTracer ? `rgba(224, 247, 250, ${opacity * 0.15})` : '#e0f7fa'; // Bright energizing white-cyan
+      ctx.fillStyle = isTracer ? `rgba(224, 247, 250, ${opacity * 0.15})` : '#e0f7fa'; 
       ctx.font = `800 ${Math.min(width * 0.1, 120)}px "Inter", sans-serif`;
       (ctx as any).letterSpacing = width < 768 ? "6px" : "12px";
       ctx.strokeText("ENGINEERING", width / 2, height / 2 + fontSize * 0.2);
@@ -278,11 +243,17 @@ const generateTargetsForStage = (index: number, width: number, height: number): 
    drawStageLayoutTemplate(ctx, index, width, height, 'full');
    
    const tData = ctx.getImageData(0, 0, width, height).data;
-   // Higher density mapping (lower float value means tighter, more dense particle placement)
-   const density = width < 768 ? 0.7 : 0.45; 
+   
+   // Optimized dynamic density checks to prevent memory/CPU bloat on 4K/high-res screens
+   const totalPixels = width * height;
+   const isMobileDevice = /iPad|iPhone|iPod|Android/i.test(navigator.userAgent) || (width < 768);
+   let density = isMobileDevice ? 3 : 2;
+   if (totalPixels > 2000000) density = 3;
+   if (totalPixels > 4000000) density = 4;
+   
    for (let y = 0; y < height; y += density) {
       for (let x = 0; x < width; x += density) {
-          const idx = (Math.floor(y) * width + Math.floor(x)) * 4;
+          const idx = (y * width + x) * 4;
           const alpha = tData[idx + 3];
           if (alpha > 80) {
               const r = tData[idx];
@@ -297,7 +268,7 @@ const generateTargetsForStage = (index: number, width: number, height: number): 
       }
    }
    
-   // Shuffle coordinates for beautiful transition distributions
+   // Shuffle coordinates
    for (let i = coords.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [coords[i], coords[j]] = [coords[j], coords[i]];
@@ -322,7 +293,6 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
   const scrollVelocityRef = useRef(0);
   const lastScrollYRef = useRef(window.scrollY || document.documentElement.scrollTop);
 
-  // Helper system to dynamically recalculate target mapping coordinates for particles
   const mapParticlesToStage = (targetStage: number, triggerBurst: boolean) => {
     const ww = window.innerWidth;
     const wh = window.innerHeight;
@@ -336,7 +306,6 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
        let targetIndex = 0;
        particlesRef.current.forEach((p) => {
            if (p.isCosmicAmbient) {
-              // Cosmic stars drift freely based on cosmic physics, they are not mapped to stage targets.
               return;
            }
            
@@ -349,17 +318,12 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
            const t = coords[safeIndex] || coords[0];
            targetIndex++;
            
-           // Removed random fuzzy jitter to keep particle edges crisp
-           const jitterX = 0;
-           const jitterY = 0;
-           
-           p.targetX = t.x + jitterX;
-           p.targetY = t.y + jitterY;
+           p.targetX = t.x;
+           p.targetY = t.y;
            p.baseColor = t.color;
            p.color = t.color;
            
            if (triggerBurst) {
-              // Scatter burst on transition swipes
               p.vx = (Math.random() - 0.5) * 65;
               p.vy = (Math.random() - 0.5) * 65;
               p.vz = (Math.random() - 0.5) * 110;
@@ -368,30 +332,25 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
      }
   };
 
-  // Listen for stage-transition changes and align dynamically
   useEffect(() => {
     const prevStage = stageRef.current;
     stageRef.current = stage;
     lastStageChangeRef.current = Date.now();
     
-    // Clear any pending mapping timers from previous transitions
     mappingTimersRef.current.forEach(clearTimeout);
     mappingTimersRef.current = [];
 
     const isProjectToProject = (stage >= 2 && stage <= 5) && (prevStage >= 2 && prevStage <= 5);
     
-    // Trigger the layout change instantly once with a spectacular explosion burst!
     mapParticlesToStage(stage, !isProjectToProject);
 
-    return () => {
-      // no-op
-    };
+    return () => {};
   }, [stage]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const ctx = canvas.getContext('2d', { alpha: false }); // Minor perf optimization
     if (!ctx) return;
     
     let animationId: number;
@@ -401,7 +360,10 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
       const ww = window.innerWidth;
       const wh = window.innerHeight;
       
-      const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+      const isMobileDevice = /iPad|iPhone|iPod|Android/i.test(navigator.userAgent) || (ww < 768);
+      // Perf Optimization: Fallback to DPR=1.0 on gigantic ultra-wide or 4K layouts to save massive canvas fill-rate.
+      const dpr = isMobileDevice ? 1.0 : Math.min(ww > 2000 ? 1.0 : 1.5, window.devicePixelRatio || 1);
+      
       canvas.width = ww * dpr;
       canvas.height = wh * dpr;
       ctx.scale(dpr, dpr);
@@ -409,12 +371,11 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
       canvas.style.height = `${wh}px`;
       
       const tempParticles: Particle[] = [];
-      const fallbackColor = '#f5f2eb';
+      const fallbackColor = '#ffffff';
 
-      // Design choice: 180 beautiful background cosmic stars that drift and swirl with parallax
-      const numStars = 180;
+      const numStars = isMobileDevice ? 60 : 180;
       for (let s = 0; s < numStars; s++) {
-        const starColor = Math.random() > 0.65 ? '#ebaa75' : '#f5f2eb'; // Amber copper/gold or soft white
+        const starColor = Math.random() > 0.65 ? '#ffcc99' : '#ffffff'; 
         tempParticles.push({
           x: Math.random() * ww,
           y: Math.random() * wh,
@@ -432,9 +393,12 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
         });
       }
       
-      // Compute initial coordinates based on stage 0
       const initialCoords = generateTargetsForStage(0, ww, wh);
-      const particleCount = Math.min(120000, Math.max(20000, initialCoords.length));
+      
+      // Perf Optimization: Dramatically reduced processing caps for highly stable 60 FPS
+      const maxCap = isMobileDevice ? 8000 : 20000;
+      const minCap = isMobileDevice ? 4000 : 10000;
+      const particleCount = Math.min(maxCap, Math.max(minCap, initialCoords.length));
       
       for (let i = 0; i < particleCount; i++) {
         const t = initialCoords[i % initialCoords.length] || { x: ww/2, y: wh/2, color: fallbackColor };
@@ -450,15 +414,13 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
           vz: 0,
           color: col,
           baseColor: col,
-          size: Math.max(0.6, 0.2 + Math.random() * 0.9), // Fine but visible structure
+          size: Math.max(0.8, 0.5 + Math.random() * 1.0),
         });
       }
       
-      // Sorting reduces fillStyle bindings
       tempParticles.sort((a, b) => a.color.localeCompare(b.color));
       particlesRef.current = tempParticles;
       
-      // Map correctly to the starting stage
       mapParticlesToStage(stageRef.current, false);
     };
     
@@ -468,20 +430,20 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
       const render = () => {
          const currentW = window.innerWidth;
          const currentH = window.innerHeight;
-         ctx.clearRect(0, 0, currentW, currentH);
+         const isMobileDevice = /iPad|iPhone|iPod|Android/i.test(navigator.userAgent) || (currentW < 768);
+         
+         ctx.fillStyle = '#0a0a0a';
+         ctx.fillRect(0, 0, currentW, currentH);
          time++;
          
          const elapsed = Date.now() - lastStageChangeRef.current;
 
-         // High performance chromatic aberration shift tracker peaking during rapid stage swipes
          let chromaticShift = 0;
          if (elapsed < 900) {
            const pTransit = elapsed / 900;
-           chromaticShift = Math.sin(pTransit * Math.PI) * 15.0; // Peak 15px shift
+           chromaticShift = Math.sin(pTransit * Math.PI) * 15.0; 
          }
 
-         // Draw subtle tracer layout lines to anchor the edges of text beautifully
-         // Fades in to reach perfect clarity as particles stabilize
          let tracerOpacity = 0.85;
          if (elapsed < 1200) {
            const pTransit = elapsed / 1200;
@@ -491,46 +453,61 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
          drawStageLayoutTemplate(ctx, stageRef.current, currentW, currentH, 'tracer', tracerOpacity);
          ctx.restore();
 
-         // Damp scroll velocity physics wind force
          scrollVelocityRef.current *= 0.92;
          
          const particles = particlesRef.current;
          let lastColor = '';
          
-         // Smooth attraction decay to disintegrate particles once settled
          let attractionMultiplier = 1.0;
          if (elapsed > 1200) {
            attractionMultiplier = Math.max(0.65, 1 - (elapsed - 1200) / 800);
          }
          
-         // Smoothly fade canvas overall alpha to preserve clear text readability
-         let globalAlpha = 0.95;
+         let globalAlpha = 1.0;
          if (elapsed > 1200) {
            const alphaFade = Math.min(1.0, (elapsed - 1200) / 1000);
-           globalAlpha = 0.95 - alphaFade * 0.55; 
+           globalAlpha = 1.0 - alphaFade * 0.35; 
          }
          ctx.globalAlpha = globalAlpha;
+
+         // Perf Optimization: Lift computations outside of the tight particle loop
+         const isTypographyMode = stageRef.current >= 2 && stageRef.current <= 5;
+         const floatScaleX = isTypographyMode ? 0 : (1 - attractionMultiplier) * 0.5; 
+         const floatScaleY = isTypographyMode ? 0 : (1 - attractionMultiplier) * 0.5;
+         const floatSpeed = 0.012;
+
+         const activeRipples = ripplesRef.current.map(ripple => {
+             const maxDist = (1 - ripple.life) * 400; 
+             const bandWidth = 40; 
+             const minDist = Math.max(0, maxDist - bandWidth);
+             const maxDistBound = maxDist + bandWidth;
+             return {
+                 ...ripple,
+                 maxDist,
+                 bandWidth,
+                 minDistSq: minDist * minDist,
+                 maxDistBoundSq: maxDistBound * maxDistBound
+             };
+         });
          
          for (let i = 0; i < particles.length; i++) {
             const p = particles[i];
+            
             if (p.isCosmicAmbient) {
-              // Particle is an ambient cosmic star — let it float across the sky with scrolls!
               p.y -= scrollVelocityRef.current * (p.driftSpeed || 0.2);
-              p.x += Math.sin(time * 0.005 + i) * 0.15; // Slow wavy float
+              p.x += Math.sin(time * 0.005 + i) * 0.15; 
               
-              // Standard loop encapsulation coordinates to keep them on screen infinitely
               if (p.y < 0) p.y = currentH;
               if (p.y > currentH) p.y = 0;
               if (p.x < 0) p.x = currentW;
               if (p.x > currentW) p.x = 0;
               
-              // Apply hover magnetic gravity to cosmic stars as well
               const mdx = mouseRef.current.x - p.x;
               const mdy = mouseRef.current.y - p.y;
-              const mDist = Math.sqrt(mdx * mdx + mdy * mdy);
-              if (mDist < 140) {
+              const mDistSq = mdx * mdx + mdy * mdy;
+              if (mDistSq < 19600) {
+                 const mDist = Math.sqrt(mDistSq);
                  const mForce = (140 - mDist) / 140;
-                 // Swirl them around mouse
                  const tx = -mdy / (mDist || 1);
                  const ty = mdx / (mDist || 1);
                  p.vx += tx * mForce * 1.6;
@@ -555,12 +532,10 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
                  lastColor = p.color;
               }
               ctx.fillRect(Math.round(p.x), Math.round(p.y), Math.round(Math.max(1, drawSize)), Math.round(Math.max(1, drawSize)));
-              continue; // Skip layout spring updates
+              continue; 
             }
            
-           // Blow particles in vertical axis matching scroll speed, creating elegant trail cascades!
            p.vy -= scrollVelocityRef.current * 0.16;
-           // Also add a minor lateral dispersion (turbulence) proportional to scroll velocity
            p.vx += Math.sin(i * 0.05 + time * 0.1) * Math.abs(scrollVelocityRef.current) * 0.03;
 
            p.x += p.vx;
@@ -573,19 +548,13 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
            
            const dx = p.targetX - p.x;
            const dy = p.targetY - p.y;
-           const dist = dx*dx + dy*dy;
+           const distSq = dx*dx + dy*dy;
            
-           const isTypographyMode = stageRef.current >= 2 && stageRef.current <= 5;
-           
-           // Distance-Field style boundary enforcement
-           // Particles closer to their target have exponentially higher restorative spring tension,
-           // securing the edges of character boundaries like a solid crystal lattice to ensure legibility.
            const springTension = isTypographyMode 
-               ? Math.max(0.08, Math.min(0.75, 40.0 / Math.max(1, dist)))
+               ? Math.max(0.08, Math.min(0.75, 40.0 / Math.max(1, distSq)))
                : 0.08;
            
-           // High performance spring settle
-           if (dist > 1.0) {
+           if (distSq > 1.0) {
              p.x += dx * springTension * attractionMultiplier;
              p.y += dy * springTension * attractionMultiplier;
            } else {
@@ -595,108 +564,94 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
              }
            }
            
-           // Breathtaking gentle 3D wave float motion (applies wider floating ranges when released)
-           const floatScaleX = isTypographyMode ? 0 : (1 - attractionMultiplier) * 0.5; 
-           const floatScaleY = isTypographyMode ? 0 : (1 - attractionMultiplier) * 0.5;
-           const floatSpeed = 0.012;
-           const floatX = Math.sin(time * floatSpeed + p.targetY * 0.015 + i * 0.012) * floatScaleX;
-           const floatY = Math.cos(time * floatSpeed * 0.9 + p.targetX * 0.015 + i * 0.012) * floatScaleY;
+           // Perf Optimization: Skips 20,000 idle math operations dynamically based on layout
+           let floatX = 0;
+           let floatY = 0;
+           if (floatScaleX > 0) {
+               floatX = Math.sin(time * floatSpeed + p.targetY * 0.015 + i * 0.012) * floatScaleX;
+               floatY = Math.cos(time * floatSpeed * 0.9 + p.targetX * 0.015 + i * 0.012) * floatScaleY;
+           }
            const floatZ = Math.sin(time * floatSpeed * 0.7 + i * 0.04) * 45;
            
            p.z += (floatZ - p.z) * 0.05;
  
-           // Un-rounded coordinates allow sub-pixel precision and very smooth rendering limits jagged noise
            const drawX = p.x + floatX;
            const drawY = p.y + floatY;
            
            const scaleOffset = p.z * 0.01;
-           let drawSize = Math.max(0.5, p.size * (1 + scaleOffset)); // Sub-pixel accurate precise sizing
+           let drawSize = Math.max(0.5, p.size * (1 + scaleOffset)); 
            
-           // Mouse interaction (Spacetime Wormhole / Event Horizon)
            const mdx = mouseRef.current.x - drawX;
            const mdy = mouseRef.current.y - drawY;
-           const mDist = Math.sqrt(mdx * mdx + mdy * mdy);
+           const mDistSq = mdx * mdx + mdy * mdy;
            
-           if (mDist < 200) {
-             let mForce = Math.pow((200 - mDist) / 200, 1.5); // non-linear gravity well
+           if (mDistSq < 40000) {
+              const mDist = Math.sqrt(mDistSq);
+             let mForce = Math.pow((200 - mDist) / 200, 1.5); 
              
-             // Structural core protection (Distance-field boundary logic)
-             // Greatly reduce the disruption on particles that define the crystal logic of typography boundaries
-             if (isTypographyMode && dist < 15) {
-                mForce *= (dist / 15) * 0.4; // Massively reduced disruption at core to preserve legibility
+             if (isTypographyMode && distSq < 15) {
+                mForce *= (distSq / 15) * 0.4; 
              }
              
-             // Event horizon gravity pull (pulls INTO the center) + immense orbital framing
              const tx = -mdy / (mDist || 1);
              const ty = mdx / (mDist || 1);
              const orbitalSpeed = 4.5 * mForce;
-             const pullSpeed = mDist > 30 ? 1.5 * mForce : -2.0; // Pulls in, but pushes out if exactly at the singularity
+             const pullSpeed = mDist > 30 ? 1.5 * mForce : -2.0; 
              
              p.vx += (mdx / (mDist || 1)) * pullSpeed;
              p.vy += (mdy / (mDist || 1)) * pullSpeed;
              p.vx += tx * orbitalSpeed;
              p.vy += ty * orbitalSpeed;
              
-             // Trigger interactive mallet on near particles with cursor velocity / intensity
              if (mForce > 0.6 && Math.random() > 0.993) {
-                audio.playInteractiveMallet(mForce, drawX / window.innerWidth);
+                audio.playInteractiveMallet(mForce, drawX / currentW);
              }
              
-             // Spacetime warping effect (Spaghettification / Relativistic Strings)
-             // Particles are drawn into long, beautiful curved strings spiraling into the singularity
              const warpMlt = mForce * 4.0;
-             if (warpMlt > 0.5) {
+             const warpStep = isMobileDevice ? 32 : 16;
+             if (warpMlt > 0.5 && i % warpStep === 0) {
                 ctx.beginPath();
                 ctx.moveTo(drawX, drawY);
                 
-                // Calculate control point for standard quadratic bezier curve toward the cursor
-                // Bend it using the orbital tangent to create a 3D spaghettification spiral
                 const cpX = drawX + tx * 80 * mForce + (mouseRef.current.x - drawX) * 0.5;
                 const cpY = drawY + ty * 80 * mForce + (mouseRef.current.y - drawY) * 0.5;
                 
-                // End point gets sucked deeply into the singularity based on attraction force
                 const stringPullX = drawX + (mouseRef.current.x - drawX) * (mForce * 0.88);
                 const stringPullY = drawY + (mouseRef.current.y - drawY) * (mForce * 0.88);
                 
                 ctx.quadraticCurveTo(cpX, cpY, stringPullX, stringPullY);
                 
-                // Color shift towards extreme energetic states near the event horizon (indigo, cyan, white)
                 const isNeon = i % 3 === 0;
                 ctx.strokeStyle = isNeon 
-                    ? `rgba(77, 238, 234, ${mForce * 0.85})` // Space cyan
-                    : `rgba(245, 242, 235, ${mForce * 0.65})`; // Ivory stardust
+                    ? `rgba(77, 238, 234, ${mForce * 0.85})` 
+                    : `rgba(245, 242, 235, ${mForce * 0.65})`; 
                 ctx.lineWidth = Math.max(0.5, mForce * 2.0);
                 ctx.stroke();
              }
            }
            
-           // Click ripples (shockwaves)
-           ripplesRef.current.forEach(ripple => {
-             if (ripple.life > 0) {
+           activeRipples.forEach(ripple => {
                const rdx = ripple.x - drawX;
                const rdy = ripple.y - drawY;
-               const rDist = Math.sqrt(rdx * rdx + rdy * rdy);
-               const maxDist = (1 - ripple.life) * 400; // expand up to 400px
-               const bandWidth = 40; // width of the shockwave ring
+               const rDistSq = rdx * rdx + rdy * rdy;
                
-               if (rDist > maxDist - bandWidth && rDist < maxDist + bandWidth) {
-                 const rForce = (1 - Math.abs(rDist - maxDist) / bandWidth) * ripple.life;
+               if (rDistSq > ripple.minDistSq && rDistSq < ripple.maxDistBoundSq) {
+                 const rDist = Math.sqrt(rDistSq);
+                 const rForce = (1 - Math.abs(rDist - ripple.maxDist) / ripple.bandWidth) * ripple.life;
                  drawSize += rForce * 8;
                  p.vx -= (rdx / (rDist || 1)) * rForce * 4.0;
                  p.vy -= (rdy / (rDist || 1)) * rForce * 4.0;
                  p.vz -= rForce * 10;
                }
-             }
            });
            
-           // Sparkle glitter flaring effect (grows wider and more intense when released)
            let drawSizeFinal = drawSize;
-           if (i % 24 === 0) { // Twinkle stars
+           if (i % 24 === 0) { 
              const sparkleWeight = Math.sin(time * 0.075 + i * 0.12);
              if (sparkleWeight > 0.8) {
                drawSizeFinal += (sparkleWeight - 0.8) * 4.0;
              }
-           } else if (i % 41 === 0) { // Warm luxury gold or Plasma flares
+           } else if (i % 41 === 0) { 
              const goldWeight = Math.sin(time * 0.09 + i * 0.14);
              if (goldWeight > 0.82) {
                drawSizeFinal += (goldWeight - 0.82) * 5.0;
@@ -708,25 +663,23 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
                lastColor = p.color;
            }
            
-           if (chromaticShift > 0.5 && i % 3 !== 0) {
-              // Draw dynamic left terracotta-red shadow offset
-              ctx.fillStyle = '#c14b2a';
-              ctx.fillRect(Math.round(drawX - chromaticShift), drawY, drawSizeFinal, drawSizeFinal);
+           // Perf Optimization: Limits fillStyle swapping thrash
+           if (chromaticShift > 0.5 && i % 4 === 0) {
+              ctx.fillStyle = '#f25f35';
+              ctx.fillRect(drawX - chromaticShift, drawY, drawSizeFinal, drawSizeFinal);
               
-              // Draw dynamic right celestial-cyan shadow offset
-              ctx.fillStyle = '#4deeea';
-              ctx.fillRect(Math.round(drawX + chromaticShift), drawY, drawSizeFinal, drawSizeFinal);
+              ctx.fillStyle = '#88ffff';
+              ctx.fillRect(drawX + chromaticShift, drawY, drawSizeFinal, drawSizeFinal);
               
-              // Draw neutral core with the layout particle's assigned color
               ctx.fillStyle = p.color;
               ctx.fillRect(drawX, drawY, Math.max(1, drawSizeFinal - 1), Math.max(1, drawSizeFinal - 1));
-              lastColor = p.color;
+              
+              lastColor = ''; // Reset sort caching for the next iteration step
            } else {
               ctx.fillRect(drawX, drawY, drawSizeFinal, drawSizeFinal);
            }
          }
          
-         // Update and clean up ripples array
          ripplesRef.current.forEach(r => r.life -= 0.02);
          ripplesRef.current = ripplesRef.current.filter(r => r.life > 0);
          
@@ -744,7 +697,9 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
        const ww = window.innerWidth;
        const wh = window.innerHeight;
        
-       const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+       const isMobileDevice = /iPad|iPhone|iPod|Android/i.test(navigator.userAgent) || (window.innerWidth < 768);
+       const dpr = isMobileDevice ? 1.0 : Math.min(ww > 2000 ? 1.0 : 1.5, window.devicePixelRatio || 1);
+       
        const canvas = canvasRef.current;
        if (canvas && ctx) {
          canvas.width = ww * dpr;
@@ -756,11 +711,9 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
        
        clearTimeout(resizeTimeout);
        resizeTimeout = setTimeout(() => {
-           // Only trigger expensive remap if width changes or height changes significantly (mobile URL bar avoidance)
            if (ww !== lastWidth || Math.abs(wh - lastHeight) > 120) {
                lastWidth = ww;
                lastHeight = wh;
-               // Settle particles calmly inside their updated targets
                mapParticlesToStage(stageRef.current, false);
            }
        }, 200);
@@ -778,7 +731,7 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
     const handleScrollPhysics = () => {
       const currentScrollY = window.scrollY || document.documentElement.scrollTop;
       const delta = currentScrollY - lastScrollYRef.current;
-      scrollVelocityRef.current += delta * 0.08; // sensitivity control
+      scrollVelocityRef.current += delta * 0.08; 
       lastScrollYRef.current = currentScrollY;
     };
     
