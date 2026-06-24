@@ -73,11 +73,7 @@ const drawStageLayoutTemplate = (
    if (index === 0) {
       let fontSize = Math.min(width * 0.12, 140);
       
-      ctx.fillStyle = colorRust;
-      ctx.font = `800 ${Math.max(16, width * 0.018)}px "JetBrains Mono", monospace`;
       ctx.textAlign = 'center';
-      (ctx as any).letterSpacing = width < 768 ? "2px" : "6px";
-      ctx.fillText("CURTIS CLICK  //  PORTFOLIO", width / 2, height / 2 - fontSize * 0.7);
 
       ctx.fillStyle = colorLight;
       ctx.strokeStyle = colorRust;
@@ -120,18 +116,18 @@ const drawStageLayoutTemplate = (
       const p = projects[pIndex];
       const isMobile = width < 640;
       
-      const containerPad = isMobile ? 16 : 48;
+      const containerPad = isMobile ? 24 : 48;
       const hudMaxW = Math.min(1100, width - containerPad * 2);
       const hudX = width / 2;
       const descMaxW = hudMaxW;
 
-      const numH = 16; 
-      const catH = 20; 
-      const topPartH = numH + 24 + catH + 48;
+      const numH = 24; 
+      const catH = 36; 
+      const topPartH = numH + 32 + catH + 48;
       
-      const titleFontSize = isMobile ? 64 : width < 1024 ? 90 : 130;
-      const descFontSize = isMobile ? 32 : 46;
-      const descLineH = isMobile ? 48 : 68; 
+      const titleFontSize = isMobile ? 54 : width < 1024 ? 90 : 130;
+      const descFontSize = isMobile ? 28 : 46;
+      const descLineH = isMobile ? 42 : 68; 
       
       ctx.font = `300 ${descFontSize}px "Inter", sans-serif`;
       const words = p.description.split(' ');
@@ -154,20 +150,23 @@ const drawStageLayoutTemplate = (
       const botPartH = tagH + 48;
 
       const totalH = topPartH + midPartH + botPartH;
-      const hudY = isMobile ? (height - containerPad - totalH + 40) : ((height - totalH) / 2);
+      let hudY = isMobile ? (height - containerPad - totalH + 40) : ((height - totalH) / 2);
+      hudY = Math.max(isMobile ? 120 : containerPad, hudY); // Prevent cut-off on top
 
       let currentY = hudY;
       ctx.lineWidth = 1.5;
 
+      const numFontSize = isMobile ? 20 : 28;
       ctx.fillStyle = colorLight;
-      ctx.font = `bold 24px "JetBrains Mono", monospace`;
+      ctx.font = `bold ${numFontSize}px "JetBrains Mono", monospace`;
       ctx.textAlign = 'center';
       (ctx as any).letterSpacing = "0.4em";
       const pNumStr = `CHAPTER ${String(pIndex + 1).padStart(2, '0')} // 04`;
       ctx.fillText(pNumStr, hudX, currentY + numH);
       currentY += numH + 32;
       
-      ctx.font = `900 32px "JetBrains Mono", monospace`;
+      const catFontSize = isMobile ? 28 : 40;
+      ctx.font = `900 ${catFontSize}px "JetBrains Mono", monospace`;
       (ctx as any).letterSpacing = "0.15em";
       ctx.fillStyle = '#88ffff';
       ctx.fillText(p.category.toUpperCase(), hudX, currentY + catH);
@@ -247,9 +246,9 @@ const generateTargetsForStage = (index: number, width: number, height: number): 
    // Optimized dynamic density checks to prevent memory/CPU bloat on 4K/high-res screens
    const totalPixels = width * height;
    const isMobileDevice = /iPad|iPhone|iPod|Android/i.test(navigator.userAgent) || (width < 768);
-   let density = isMobileDevice ? 3 : 2;
-   if (totalPixels > 2000000) density = 3;
-   if (totalPixels > 4000000) density = 4;
+   let density = isMobileDevice ? 2 : 1;
+   if (totalPixels > 2000000) density = 2;
+   if (totalPixels > 4000000) density = 3;
    
    for (let y = 0; y < height; y += density) {
       for (let x = 0; x < width; x += density) {
@@ -287,7 +286,7 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
   const particlesRef = useRef<Particle[]>([]);
   const stageRef = useRef(stage);
   const lastStageChangeRef = useRef<number>(Date.now());
-  const mouseRef = useRef({ x: -1000, y: -1000 });
+  const mouseRef = useRef({ x: -1000, y: -1000, lastMoved: Date.now() });
   const ripplesRef = useRef<{x: number, y: number, life: number}[]>([]);
   const mappingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const scrollVelocityRef = useRef(0);
@@ -395,9 +394,9 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
       
       const initialCoords = generateTargetsForStage(0, ww, wh);
       
-      // Perf Optimization: Dramatically reduced processing caps for highly stable 60 FPS
-      const maxCap = isMobileDevice ? 8000 : 20000;
-      const minCap = isMobileDevice ? 4000 : 10000;
+      // Higher caps for denser visibility
+      const maxCap = isMobileDevice ? 15000 : 35000;
+      const minCap = isMobileDevice ? 8000 : 20000;
       const particleCount = Math.min(maxCap, Math.max(minCap, initialCoords.length));
       
       for (let i = 0; i < particleCount; i++) {
@@ -476,6 +475,12 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
          const floatScaleY = isTypographyMode ? 0 : (1 - attractionMultiplier) * 0.5;
          const floatSpeed = 0.012;
 
+         const mIdleTime = Date.now() - mouseRef.current.lastMoved;
+         let vortexMultiplier = 1.0;
+         if (mIdleTime > 2000) {
+            vortexMultiplier = Math.max(0, 1.0 - (mIdleTime - 2000) / 1000);
+         }
+
          const activeRipples = ripplesRef.current.map(ripple => {
              const maxDist = (1 - ripple.life) * 400; 
              const bandWidth = 40; 
@@ -507,7 +512,7 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
               const mDistSq = mdx * mdx + mdy * mdy;
               if (mDistSq < 19600) {
                  const mDist = Math.sqrt(mDistSq);
-                 const mForce = (140 - mDist) / 140;
+                 const mForce = ((140 - mDist) / 140) * vortexMultiplier;
                  const tx = -mdy / (mDist || 1);
                  const ty = mdx / (mDist || 1);
                  p.vx += tx * mForce * 1.6;
@@ -587,7 +592,7 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
            
            if (mDistSq < 40000) {
               const mDist = Math.sqrt(mDistSq);
-             let mForce = Math.pow((200 - mDist) / 200, 1.5); 
+             let mForce = Math.pow((200 - mDist) / 200, 1.5) * vortexMultiplier; 
              
              if (isTypographyMode && distSq < 15) {
                 mForce *= (distSq / 15) * 0.4; 
@@ -722,6 +727,7 @@ export const ParticleCanvas: React.FC<Props> = ({ stage }) => {
     const handleMouseMove = (e: MouseEvent) => {
       mouseRef.current.x = e.clientX;
       mouseRef.current.y = e.clientY;
+      mouseRef.current.lastMoved = Date.now();
     };
     
     const handleClick = (e: MouseEvent) => {
