@@ -7,6 +7,12 @@ import { audio } from './utils/audio';
 
 export default function App() {
   const [stage, setStage] = useState(0);
+  const [isInterstellar, setIsInterstellar] = useState(false);
+  const [sequenceInfo, setSequenceInfo] = useState({
+    name: 'Interstellar Void',
+    description: 'A pocket universe birthed from the supernova dust. Move your cursor to bend spacetime with gravity, or click anywhere to collapse reality and seed a new cosmic sequence.',
+    tags: ['★ NEBULAS', '🪐 PLANETS & RINGS', '☄ ACCRETION DISK', '🕳 BLACK HOLE']
+  });
   const [mousePos, setMousePos] = useState({ x: -1000, y: -1000 });
   const [muted, setMuted] = useState(true);
 
@@ -19,9 +25,20 @@ export default function App() {
     };
 
     const handleScroll = () => {
+      audio.pingInteraction(); // Introduce darker secondary track on scroll
       if (!ticking) {
         window.requestAnimationFrame(() => {
-          const scrollY = window.scrollY || document.documentElement.scrollTop;
+          let scrollY = window.scrollY || document.documentElement.scrollTop;
+          
+          // Endless scrolling loop
+          if (scrollY >= maxScroll - 2) {
+             window.scrollTo({ top: 10, behavior: 'instant' });
+             scrollY = 10;
+          } else if (scrollY <= 0) {
+             window.scrollTo({ top: maxScroll - 10, behavior: 'instant' });
+             scrollY = maxScroll - 10;
+          }
+
           const scrollFraction = Math.max(0, Math.min(1, scrollY / maxScroll));
           
           // 6 even stages: 0 to 5
@@ -31,6 +48,7 @@ export default function App() {
           setStage(prev => {
             if (prev !== newStage) {
               audio.playStageSwell(newStage); // Play dramatic luxury synth chord swell
+              setIsInterstellar(false); // Reset interstellar mode when user scrolls
               return newStage;
             }
             return prev;
@@ -42,6 +60,7 @@ export default function App() {
     };
 
     const handleMouseMove = (e: MouseEvent) => {
+      audio.pingInteraction(); // Slowly build darker tones on mouse movement
       setMousePos({ x: e.clientX, y: e.clientY });
     };
 
@@ -104,54 +123,100 @@ export default function App() {
          className="fixed inset-0 z-30 pointer-events-none flex items-end sm:items-center justify-start p-6 sm:p-16"
       >
         <AnimatePresence mode="wait">
-          {stage >= 2 && project && (
+          {isInterstellar ? (
             <motion.div
-              key={`hud-${stage}`}
+              key={`hud-interstellar-${sequenceInfo.name}`}
               initial={{ y: 50, opacity: 0, filter: 'blur(10px)' }}
               animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
               exit={{ y: -50, opacity: 0, filter: 'blur(10px)' }}
               transition={{ duration: 1.0, ease: [0.16, 1, 0.3, 1] }}
-              id="project-hud"
+              id="interstellar-hud"
               className="w-full max-w-[500px] pointer-events-auto"
             >
               {/* Top Section */}
-              <div className="flex flex-col items-start z-10 w-full relative mb-8 opacity-0 pointer-events-none">
-                <div id="project-number" className="font-mono text-xs text-[#f5f2eb]/40 tracking-[0.4em] leading-none mb-4 font-semibold uppercase">
-                  Project {String(activeProjectIndex + 1).padStart(2, '0')} // 04
+              <div className="flex flex-col items-start z-10 w-full relative mb-8">
+                <div className="font-mono text-xs text-[#f5f2eb]/40 tracking-[0.4em] leading-none mb-4 font-semibold uppercase">
+                  SEQUENCE 06 // COSMIC SANDBOX
                 </div>
-                <div id="project-category" className="font-mono text-xs tracking-widest text-[#4deeea] font-bold uppercase opacity-90 drop-shadow-[0_0_12px_rgba(77,238,234,0.3)]">
-                  {project.category}
+                <div className="font-mono text-xs tracking-widest text-[#4deeea] font-bold uppercase opacity-90 drop-shadow-[0_0_12px_rgba(77,238,234,0.3)]">
+                  ASTROPHYSICS ENGINE
                 </div>
               </div>
 
               {/* Middle textual content */}
-              <div className="z-10 text-left mb-10 opacity-0 pointer-events-none">
-                <h3 id="project-title" className="text-4xl sm:text-5xl lg:text-6xl font-semibold text-[#f5f2eb] mb-6 tracking-tight font-serif drop-shadow-[0_4px_32px_rgba(0,0,0,0.9)]">
-                  {project.title}
+              <div className="z-10 text-left mb-10">
+                <h3 className="text-4xl sm:text-5xl lg:text-6xl font-semibold text-[#f5f2eb] mb-6 tracking-tight font-serif drop-shadow-[0_4px_32px_rgba(0,0,0,0.9)]">
+                  {sequenceInfo.name}
                 </h3>
-                <p id="project-description" className="text-[#f5f2eb]/70 text-base sm:text-lg leading-relaxed font-sans font-light drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)]">
-                  {project.description}
+                <p className="text-[#f5f2eb]/70 text-base sm:text-lg leading-relaxed font-sans font-light drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)]">
+                  {sequenceInfo.description}
                 </p>
               </div>
 
-              {/* Tags & Actions */}
-              <div className="z-10 flex flex-col gap-8">
-                <div className="flex flex-wrap gap-2 opacity-0 pointer-events-none">
-                  {project.tags.map(tag => (
-                     <span key={tag} className="project-tag px-3 py-1.5 bg-[#f5f2eb]/5 backdrop-blur-sm border border-[#e1d6c0]/20 rounded-full text-[10px] font-mono text-[#f5f2eb]/80 tracking-widest shadow-sm">
-                       {tag}
-                     </span>
-                  ))}
-                </div>
+              {/* Action hints */}
+              <div className="z-10 flex flex-wrap gap-2">
+                {sequenceInfo.tags.map(tag => (
+                   <span key={tag} className="px-3 py-1.5 bg-[#f5f2eb]/5 backdrop-blur-sm border border-[#e1d6c0]/20 rounded-full text-[10px] font-mono text-[#f5f2eb]/80 tracking-widest shadow-sm uppercase">
+                     {tag}
+                   </span>
+                ))}
               </div>
             </motion.div>
+          ) : (
+            stage >= 2 && project && (
+              <motion.div
+                key={`hud-${stage}`}
+                initial={{ y: 50, opacity: 0, filter: 'blur(10px)' }}
+                animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
+                exit={{ y: -50, opacity: 0, filter: 'blur(10px)' }}
+                transition={{ duration: 1.0, ease: [0.16, 1, 0.3, 1] }}
+                id="project-hud"
+                className="w-full max-w-[500px] pointer-events-auto"
+              >
+                {/* Top Section */}
+                <div className="flex flex-col items-start z-10 w-full relative mb-8 opacity-0 pointer-events-none">
+                  <div id="project-number" className="font-mono text-xs text-[#f5f2eb]/40 tracking-[0.4em] leading-none mb-4 font-semibold uppercase">
+                    Project {String(activeProjectIndex + 1).padStart(2, '0')} // 04
+                  </div>
+                  <div id="project-category" className="font-mono text-xs tracking-widest text-[#4deeea] font-bold uppercase opacity-90 drop-shadow-[0_0_12px_rgba(77,238,234,0.3)]">
+                    {project.category}
+                  </div>
+                </div>
+
+                {/* Middle textual content */}
+                <div className="z-10 text-left mb-10 opacity-0 pointer-events-none">
+                  <h3 id="project-title" className="text-4xl sm:text-5xl lg:text-6xl font-semibold text-[#f5f2eb] mb-6 tracking-tight font-serif drop-shadow-[0_4px_32px_rgba(0,0,0,0.9)]">
+                    {project.title}
+                  </h3>
+                  <p id="project-description" className="text-[#f5f2eb]/70 text-base sm:text-lg leading-relaxed font-sans font-light drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)]">
+                    {project.description}
+                  </p>
+                </div>
+
+                {/* Tags & Actions */}
+                <div className="z-10 flex flex-col gap-8">
+                  <div className="flex flex-wrap gap-2 opacity-0 pointer-events-none">
+                    {project.tags.map(tag => (
+                       <span key={tag} className="project-tag px-3 py-1.5 bg-[#f5f2eb]/5 backdrop-blur-sm border border-[#e1d6c0]/20 rounded-full text-[10px] font-mono text-[#f5f2eb]/80 tracking-widest shadow-sm">
+                         {tag}
+                       </span>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            )
           )}
         </AnimatePresence>
       </div>
 
       {/* Particle System Canvas - Positioned slightly above the HTML so it looks like it's drawing the frame around the readable text */}
       <div className="fixed inset-0 z-10 pointer-events-none opacity-90">
-        <ParticleCanvas stage={stage} />
+        <ParticleCanvas 
+          stage={stage} 
+          isInterstellar={isInterstellar} 
+          onTransitionToInterstellar={() => setIsInterstellar(true)} 
+          onSequenceGenerated={setSequenceInfo}
+        />
       </div>
 
       {/* The invisible scrolling track providing native scroll height */}
@@ -160,7 +225,7 @@ export default function App() {
       {/* Unobtrusive scroll direction hint */}
       <div 
          className="fixed bottom-12 left-1/2 -translate-x-1/2 z-30 font-mono text-xs tracking-widest text-slate-500 uppercase flex flex-col items-center gap-2 pointer-events-none transition-opacity duration-1000" 
-         style={{ opacity: stage > 0 ? 0.0 : 1 }}
+         style={{ opacity: isInterstellar || stage > 0 ? 0.0 : 1 }}
       >
          <span>Scroll Sequence</span>
          <div className="w-px h-8 bg-gradient-to-b from-slate-500 to-transparent"></div>
