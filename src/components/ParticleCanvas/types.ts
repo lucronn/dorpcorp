@@ -1,7 +1,7 @@
 import * as BABYLON from "@babylonjs/core";
 
 export interface CelestialEntity {
-  type: "blackhole" | "planet" | "nebula" | "star";
+  type: "blackhole" | "planet" | "nebula" | "star" | "galaxy";
   x: number;
   y: number;
   radius: number;

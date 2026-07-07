@@ -297,3 +297,148 @@ export const createCircularGlowTexture = (colorStr: string, scene: BABYLON.Scene
   texture.update();
   return texture;
 };
+
+export const generateGalaxyTexture = (baseColor: string, secondaryColor: string, scene: BABYLON.Scene) => {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return new BABYLON.DynamicTexture("galaxy_empty", canvas, scene, true);
+
+  ctx.clearRect(0, 0, 512, 512);
+
+  const cx = 256;
+  const cy = 256;
+  const c1 = parseColorToRgb(baseColor);
+  const c2 = parseColorToRgb(secondaryColor || baseColor);
+
+  // 1. Core glow (supermassive star cluster/blackhole core)
+  const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 80);
+  coreGrad.addColorStop(0, "rgba(255, 255, 255, 1.0)");
+  coreGrad.addColorStop(0.2, `rgba(${c1.r}, ${Math.min(255, c1.g + 40)}, ${Math.min(255, c1.b + 60)}, 0.85)`);
+  coreGrad.addColorStop(0.55, `rgba(${c2.r}, ${c2.g}, ${c2.b}, 0.38)`);
+  coreGrad.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = coreGrad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 80, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 2. Swirling spiral arms (using logarithmic spiral: r = a * e^(b * theta))
+  const numArms = 2 + Math.floor(Math.random() * 2); // 2 to 3 arms
+  const maxR = 248;
+
+  for (let arm = 0; arm < numArms; arm++) {
+    const armOffset = (arm / numArms) * Math.PI * 2;
+
+    for (let step = 0; step < 400; step++) {
+      const theta = (step / 400) * Math.PI * 4.5; // spiral rotation length
+      const r = 24 + Math.pow(theta, 1.25) * 11; // outward expansion
+      if (r > maxR) break;
+
+      const angle = theta + armOffset;
+      const x = cx + Math.cos(angle) * r;
+      const y = cy + Math.sin(angle) * r;
+
+      // Draw wispy gas cloud particle
+      const size = 5.0 + Math.random() * 9.0;
+      const progress = r / maxR;
+      const alpha = (1.0 - progress) * 0.28 * (0.35 + Math.random() * 0.65);
+      
+      const col = Math.random() > 0.45 ? c1 : c2;
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, size);
+      grad.addColorStop(0, `rgba(${col.r}, ${col.g}, ${col.b}, ${alpha})`);
+      grad.addColorStop(1, "rgba(0,0,0,0)");
+      
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(x, y, size, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Sprinkle actual bright star clusters on arms
+      if (step % 4 === 0) {
+        const starX = x + (Math.random() - 0.5) * 16 * (1.0 + progress * 2.0);
+        const starY = y + (Math.random() - 0.5) * 16 * (1.0 + progress * 2.0);
+        const starR = 0.5 + Math.random() * 1.5;
+        ctx.fillStyle = Math.random() > 0.4 ? "rgba(255, 255, 255, 0.95)" : "rgba(160, 235, 255, 0.9)";
+        ctx.beginPath();
+        ctx.arc(starX, starY, starR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // 3. Sprinkle background random field stars
+  for (let i = 0; i < 150; i++) {
+    const rx = Math.random() * 512;
+    const ry = Math.random() * 512;
+    const dist = Math.sqrt((rx - cx)*(rx - cx) + (ry - cy)*(ry - cy));
+    if (dist > maxR) continue;
+
+    const starR = 0.4 + Math.random() * 1.4;
+    const alpha = (1.0 - dist / maxR) * 0.85;
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(rx, ry, starR, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const texture = new BABYLON.DynamicTexture("galaxy_tex", canvas, scene, true);
+  texture.hasAlpha = true;
+  texture.update();
+  return texture;
+};
+
+export const generateNebulaTexture = (baseColor: string, secondaryColor: string, scene: BABYLON.Scene) => {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return new BABYLON.DynamicTexture("nebula_empty", canvas, scene, true);
+
+  ctx.clearRect(0, 0, 512, 512);
+
+  const cx = 256;
+  const cy = 256;
+  const c1 = parseColorToRgb(baseColor);
+  const c2 = parseColorToRgb(secondaryColor || baseColor);
+
+  // Draw multiple overlapping soft gaseous puff blobs
+  for (let i = 0; i < 20; i++) {
+    const px = cx + (Math.random() - 0.5) * 200;
+    const py = cy + (Math.random() - 0.5) * 200;
+    const size = 100 + Math.random() * 130;
+    const col = Math.random() > 0.4 ? c1 : c2;
+    const alpha = 0.06 + Math.random() * 0.12;
+
+    const grad = ctx.createRadialGradient(px, py, 0, px, py, size);
+    grad.addColorStop(0, `rgba(${col.r}, ${col.g}, ${col.b}, ${alpha})`);
+    grad.addColorStop(0.5, `rgba(${col.r}, ${col.g}, ${col.b}, ${alpha * 0.35})`);
+    grad.addColorStop(1, "rgba(0,0,0,0)");
+
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(px, py, size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Draw bright, filamentary high-contrast cosmic strands
+  ctx.lineWidth = 2.0;
+  for (let i = 0; i < 5; i++) {
+    const col = Math.random() > 0.5 ? c1 : c2;
+    ctx.strokeStyle = `rgba(${col.r}, ${col.g}, ${col.b}, 0.12)`;
+    ctx.beginPath();
+    ctx.moveTo(cx + (Math.random() - 0.5) * 240, cy + (Math.random() - 0.5) * 240);
+    ctx.bezierCurveTo(
+      cx + (Math.random() - 0.5) * 220, cy + (Math.random() - 0.5) * 220,
+      cx + (Math.random() - 0.5) * 220, cy + (Math.random() - 0.5) * 220,
+      cx + (Math.random() - 0.5) * 240, cy + (Math.random() - 0.5) * 240
+    );
+    ctx.stroke();
+  }
+
+  const texture = new BABYLON.DynamicTexture("nebula_tex", canvas, scene, true);
+  texture.hasAlpha = true;
+  texture.update();
+  return texture;
+};
+

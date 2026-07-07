@@ -3,7 +3,7 @@ import { ParticleCanvas } from './components/ParticleCanvas';
 import { projects } from './types';
 import { WavelengthBackground } from './components/WavelengthBackground';
 import { AnimatePresence, motion } from 'motion/react';
-import { ExternalLink, Github, Volume2, VolumeX } from 'lucide-react';
+import { ExternalLink, Github, Volume2, VolumeX, Eye, EyeOff } from 'lucide-react';
 import { audio } from './utils/audio';
 
 export default function App() {
@@ -16,10 +16,27 @@ export default function App() {
   });
   const [mousePos, setMousePos] = useState({ x: -1000, y: -1000 });
   const [muted, setMuted] = useState(true);
+  const [showSequenceCard, setShowSequenceCard] = useState(true);
+  const [isIdle, setIsIdle] = useState(false);
+  const [isSoundHovered, setIsSoundHovered] = useState(false);
+  const [isInfoHovered, setIsInfoHovered] = useState(false);
+
+  const isSoundCompacted = isIdle && !isSoundHovered;
+  const isInfoCompacted = isIdle && !isInfoHovered;
 
   useEffect(() => {
     let ticking = false;
     let maxScroll = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+
+    let idleTimer: ReturnType<typeof setTimeout>;
+    const resetIdleTimer = () => {
+      setIsIdle(false);
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        setIsIdle(true);
+      }, 5000); // 5 seconds idle threshold
+    };
+    resetIdleTimer();
 
     const handleResize = () => {
       maxScroll = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
@@ -27,6 +44,7 @@ export default function App() {
 
     const handleScroll = () => {
       audio.pingInteraction(); // Introduce darker secondary track on scroll
+      resetIdleTimer();
       if (!ticking) {
         window.requestAnimationFrame(() => {
           let scrollY = window.scrollY || document.documentElement.scrollTop;
@@ -63,17 +81,24 @@ export default function App() {
     const handleMouseMove = (e: MouseEvent) => {
       audio.pingInteraction(); // Slowly build darker tones on mouse movement
       setMousePos({ x: e.clientX, y: e.clientY });
+      resetIdleTimer();
     };
 
     const handleClick = (e: MouseEvent) => {
       // Play high fidelity physical audio click pop matching the ripple shockwave
       audio.playRippleShockwave();
+      resetIdleTimer();
+    };
+
+    const handleKeyPress = () => {
+      resetIdleTimer();
     };
 
     window.addEventListener('resize', handleResize, { passive: true });
     window.addEventListener('scroll', handleScroll, { passive: true });
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
     window.addEventListener('click', handleClick);
+    window.addEventListener('keypress', handleKeyPress, { passive: true });
     handleScroll();
     
     return () => {
@@ -81,6 +106,8 @@ export default function App() {
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('click', handleClick);
+      window.removeEventListener('keypress', handleKeyPress);
+      clearTimeout(idleTimer);
     };
   }, []);
 
@@ -92,123 +119,182 @@ export default function App() {
       {/* Background visual engine */}
       <WavelengthBackground />
       
-      {/* Interactive Sound Orchestration HUD Toggle */}
-      <button 
-        onClick={(e) => {
-          e.stopPropagation();
-          const nextMute = !muted;
-          setMuted(nextMute);
-          audio.setMute(nextMute);
-        }}
-        className="fixed top-6 right-6 lg:top-8 lg:right-8 z-50 flex items-center gap-3 px-4.5 py-2 bg-[#f9f8f3]/5 border border-[#e8e2d7]/15 hover:bg-[#e8e2d7]/10 hover:border-[#e8e2d7]/30 text-[#f5f2eb] rounded-full text-[10px] font-mono tracking-widest font-semibold transition-all shadow-[0_15px_30px_rgba(0,0,0,0.3)] backdrop-blur-md cursor-pointer group"
-        title={muted ? "Enable celestial audio ambiance" : "Mute audio"}
-      >
-        <span className="relative flex h-2 w-2 items-center justify-center">
-          {!muted && (
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#c14b2a] opacity-75"></span>
+      {/* Control Pod in Top Right Corner */}
+      <div className="fixed top-6 right-6 lg:top-8 lg:right-8 z-50 flex items-center gap-3">
+        {/* Info Toggle Button (only when interstellar/screensaver) */}
+        <AnimatePresence>
+          {isInterstellar && (
+            <motion.button
+              initial={{ opacity: 0, x: 20, scale: 0.8 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 20, scale: 0.8 }}
+              transition={{ duration: 0.4 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowSequenceCard(!showSequenceCard);
+              }}
+              onMouseEnter={() => setIsInfoHovered(true)}
+              onMouseLeave={() => setIsInfoHovered(false)}
+              className={`flex items-center justify-center gap-2 border bg-[#f9f8f3]/5 border-[#e8e2d7]/15 hover:bg-[#e8e2d7]/10 hover:border-[#e8e2d7]/30 text-[#f5f2eb] rounded-full font-mono tracking-widest font-semibold transition-all duration-300 shadow-[0_15px_30px_rgba(0,0,0,0.3)] backdrop-blur-md cursor-pointer group ${
+                isInfoCompacted 
+                  ? 'w-10 h-10 p-0 opacity-25' 
+                  : 'px-4 py-2 w-auto opacity-100 text-[10px]'
+              }`}
+              title={showSequenceCard ? "Hide cosmic sequence telemetry" : "Show cosmic sequence telemetry"}
+            >
+              <span className="relative flex h-2 w-2 items-center justify-center shrink-0">
+                {showSequenceCard && (
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#4deeea] opacity-75"></span>
+                )}
+                <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${!showSequenceCard ? 'bg-[#e8e2d7]/40' : 'bg-[#4deeea]'}`}></span>
+              </span>
+
+              {!isInfoCompacted && (
+                <span className="overflow-hidden whitespace-nowrap">
+                  {showSequenceCard ? 'TELEMETRY ON' : 'TELEMETRY OFF'}
+                </span>
+              )}
+
+              {showSequenceCard ? (
+                <Eye className="w-3.5 h-3.5 shrink-0 text-[#4deeea]" />
+              ) : (
+                <EyeOff className="w-3.5 h-3.5 shrink-0 text-[#e8e2d7]/60" />
+              )}
+            </motion.button>
           )}
-          <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${muted ? 'bg-[#e8e2d7]/40' : 'bg-[#c14b2a]'}`}></span>
-        </span>
-        
-        <span>{muted ? 'SOUND ON' : 'SOUND OFF'}</span>
-        
-        <div className="flex gap-[2px] items-end h-3">
-          <div className={`w-[2px] bg-[#c14b2a] rounded-sm transition-all duration-300 ${muted ? 'h-1 opacity-30' : 'h-3'}`} />
-          <div className={`w-[2px] bg-[#c14b2a] rounded-sm transition-all duration-300 [animation-delay:0.15s] ${muted ? 'h-1.5 opacity-30' : 'h-2.5'}`} />
-          <div className={`w-[2px] bg-[#c14b2a] rounded-sm transition-all duration-300 [animation-delay:0.3s] ${muted ? 'h-1 opacity-30' : 'h-3.5'}`} />
-        </div>
-      </button>
+        </AnimatePresence>
+
+        {/* Interactive Sound Orchestration HUD Toggle */}
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            const nextMute = !muted;
+            setMuted(nextMute);
+            audio.setMute(nextMute);
+          }}
+          onMouseEnter={() => setIsSoundHovered(true)}
+          onMouseLeave={() => setIsSoundHovered(false)}
+          className={`flex items-center justify-center gap-2 border bg-[#f9f8f3]/5 border-[#e8e2d7]/15 hover:bg-[#e8e2d7]/10 hover:border-[#e8e2d7]/30 text-[#f5f2eb] rounded-full font-mono tracking-widest font-semibold transition-all duration-300 shadow-[0_15px_30px_rgba(0,0,0,0.3)] backdrop-blur-md cursor-pointer group ${
+            isSoundCompacted 
+              ? 'w-10 h-10 p-0 opacity-25' 
+              : 'px-4 py-2 w-auto opacity-100 text-[10px]'
+          }`}
+          title={muted ? "Enable celestial audio ambiance" : "Mute audio"}
+        >
+          <span className="relative flex h-2 w-2 items-center justify-center shrink-0">
+            {!muted && (
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#c14b2a] opacity-75"></span>
+            )}
+            <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${muted ? 'bg-[#e8e2d7]/40' : 'bg-[#c14b2a]'}`}></span>
+          </span>
+          
+          {!isSoundCompacted && (
+            <span className="overflow-hidden whitespace-nowrap">
+              {muted ? 'SOUND ON' : 'SOUND OFF'}
+            </span>
+          )}
+          
+          <div className="flex gap-[2px] items-end h-3 shrink-0">
+            <div className={`w-[2px] bg-[#c14b2a] rounded-sm transition-all duration-300 ${muted ? 'h-1 opacity-30' : 'h-3'}`} />
+            <div className={`w-[2px] bg-[#c14b2a] rounded-sm transition-all duration-300 [animation-delay:0.15s] ${muted ? 'h-1.5 opacity-30' : 'h-2.5'}`} />
+            <div className={`w-[2px] bg-[#c14b2a] rounded-sm transition-all duration-300 [animation-delay:0.3s] ${muted ? 'h-1 opacity-30' : 'h-3.5'}`} />
+          </div>
+        </button>
+      </div>
 
       {/* HUD Layout for Project Details (Immersive, no box overlays) */}
       <div 
          className="fixed inset-0 z-30 pointer-events-none flex items-end sm:items-center justify-start p-6 sm:p-16"
       >
         <AnimatePresence mode="wait">
-          {isInterstellar ? (
+          {!isInterstellar && stage >= 2 && project && (
             <motion.div
-              key={`hud-interstellar-${sequenceInfo.name}`}
+              key={`hud-${stage}`}
               initial={{ y: 50, opacity: 0, filter: 'blur(10px)' }}
               animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
               exit={{ y: -50, opacity: 0, filter: 'blur(10px)' }}
               transition={{ duration: 1.0, ease: [0.16, 1, 0.3, 1] }}
-              id="interstellar-hud"
+              id="project-hud"
               className="w-full max-w-[500px] pointer-events-auto"
             >
               {/* Top Section */}
-              <div className="flex flex-col items-start z-10 w-full relative mb-8">
-                <div className="font-mono text-xs text-[#f5f2eb]/40 tracking-[0.4em] leading-none mb-4 font-semibold uppercase">
-                  SEQUENCE 06 // COSMIC SANDBOX
+              <div className="flex flex-col items-start z-10 w-full relative mb-8 opacity-0 pointer-events-none">
+                <div id="project-number" className="font-mono text-xs text-[#f5f2eb]/40 tracking-[0.4em] leading-none mb-4 font-semibold uppercase">
+                  Project {String(activeProjectIndex + 1).padStart(2, '0')} // 04
                 </div>
-                <div className="font-mono text-xs tracking-widest text-[#4deeea] font-bold uppercase opacity-90 drop-shadow-[0_0_12px_rgba(77,238,234,0.3)]">
-                  ASTROPHYSICS ENGINE
+                <div id="project-category" className="font-mono text-xs tracking-widest text-[#4deeea] font-bold uppercase opacity-90 drop-shadow-[0_0_12px_rgba(77,238,234,0.3)]">
+                  {project.category}
                 </div>
               </div>
 
               {/* Middle textual content */}
-              <div className="z-10 text-left mb-10">
-                <h3 className="text-4xl sm:text-5xl lg:text-6xl font-semibold text-[#f5f2eb] mb-6 tracking-tight font-serif drop-shadow-[0_4px_32px_rgba(0,0,0,0.9)]">
-                  {sequenceInfo.name}
+              <div className="z-10 text-left mb-10 opacity-0 pointer-events-none">
+                <h3 id="project-title" className="text-4xl sm:text-5xl lg:text-6xl font-semibold text-[#f5f2eb] mb-6 tracking-tight font-serif drop-shadow-[0_4px_32px_rgba(0,0,0,0.9)]">
+                  {project.title}
                 </h3>
-                <p className="text-[#f5f2eb]/70 text-base sm:text-lg leading-relaxed font-sans font-light drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)]">
-                  {sequenceInfo.description}
+                <p id="project-description" className="text-[#f5f2eb]/70 text-base sm:text-lg leading-relaxed font-sans font-light drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)]">
+                  {project.description}
                 </p>
               </div>
 
-              {/* Action hints */}
-              <div className="z-10 flex flex-wrap gap-2">
-                {sequenceInfo.tags.map(tag => (
-                   <span key={tag} className="px-3 py-1.5 bg-[#f5f2eb]/5 backdrop-blur-sm border border-[#e1d6c0]/20 rounded-full text-[10px] font-mono text-[#f5f2eb]/80 tracking-widest shadow-sm uppercase">
-                     {tag}
-                   </span>
-                ))}
+              {/* Tags & Actions */}
+              <div className="z-10 flex flex-col gap-8">
+                <div className="flex flex-wrap gap-2 opacity-0 pointer-events-none">
+                  {project.tags.map(tag => (
+                     <span key={tag} className="project-tag px-3 py-1.5 bg-[#f5f2eb]/5 backdrop-blur-sm border border-[#e1d6c0]/20 rounded-full text-[10px] font-mono text-[#f5f2eb]/80 tracking-widest shadow-sm">
+                       {tag}
+                     </span>
+                  ))}
+                </div>
               </div>
             </motion.div>
-          ) : (
-            stage >= 2 && project && (
-              <motion.div
-                key={`hud-${stage}`}
-                initial={{ y: 50, opacity: 0, filter: 'blur(10px)' }}
-                animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
-                exit={{ y: -50, opacity: 0, filter: 'blur(10px)' }}
-                transition={{ duration: 1.0, ease: [0.16, 1, 0.3, 1] }}
-                id="project-hud"
-                className="w-full max-w-[500px] pointer-events-auto"
-              >
-                {/* Top Section */}
-                <div className="flex flex-col items-start z-10 w-full relative mb-8 opacity-0 pointer-events-none">
-                  <div id="project-number" className="font-mono text-xs text-[#f5f2eb]/40 tracking-[0.4em] leading-none mb-4 font-semibold uppercase">
-                    Project {String(activeProjectIndex + 1).padStart(2, '0')} // 04
-                  </div>
-                  <div id="project-category" className="font-mono text-xs tracking-widest text-[#4deeea] font-bold uppercase opacity-90 drop-shadow-[0_0_12px_rgba(77,238,234,0.3)]">
-                    {project.category}
-                  </div>
-                </div>
-
-                {/* Middle textual content */}
-                <div className="z-10 text-left mb-10 opacity-0 pointer-events-none">
-                  <h3 id="project-title" className="text-4xl sm:text-5xl lg:text-6xl font-semibold text-[#f5f2eb] mb-6 tracking-tight font-serif drop-shadow-[0_4px_32px_rgba(0,0,0,0.9)]">
-                    {project.title}
-                  </h3>
-                  <p id="project-description" className="text-[#f5f2eb]/70 text-base sm:text-lg leading-relaxed font-sans font-light drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)]">
-                    {project.description}
-                  </p>
-                </div>
-
-                {/* Tags & Actions */}
-                <div className="z-10 flex flex-col gap-8">
-                  <div className="flex flex-wrap gap-2 opacity-0 pointer-events-none">
-                    {project.tags.map(tag => (
-                       <span key={tag} className="project-tag px-3 py-1.5 bg-[#f5f2eb]/5 backdrop-blur-sm border border-[#e1d6c0]/20 rounded-full text-[10px] font-mono text-[#f5f2eb]/80 tracking-widest shadow-sm">
-                         {tag}
-                       </span>
-                    ))}
-                  </div>
-                </div>
-              </motion.div>
-            )
           )}
         </AnimatePresence>
       </div>
+
+      {/* Sequence Card (25% size, bottom left corner, toggle-able) */}
+      <AnimatePresence>
+        {isInterstellar && showSequenceCard && (
+          <motion.div
+            key={`hud-interstellar-compact-${sequenceInfo.name}`}
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            id="interstellar-hud"
+            className="fixed bottom-6 left-6 z-40 w-full max-w-[210px] bg-black/35 backdrop-blur-md border border-[#e8e2d7]/15 rounded-xl p-3.5 shadow-[0_12px_24px_rgba(0,0,0,0.5)] pointer-events-auto flex flex-col gap-2.5 text-left"
+          >
+            {/* Top Section */}
+            <div className="flex flex-col gap-0.5">
+              <div className="font-mono text-[8px] text-[#f5f2eb]/40 tracking-widest font-semibold uppercase">
+                COSMIC SEQUENCE
+              </div>
+              <div className="font-mono text-[9px] tracking-widest text-[#4deeea] font-bold uppercase drop-shadow-[0_0_8px_rgba(77,238,234,0.3)]">
+                ASTROPHYSICS ENGINE
+              </div>
+            </div>
+
+            {/* Middle textual content */}
+            <div className="flex flex-col gap-1">
+              <h3 className="text-sm font-semibold text-[#f5f2eb] tracking-tight font-serif">
+                {sequenceInfo.name}
+              </h3>
+              <p className="text-[#f5f2eb]/70 text-[10px] leading-relaxed font-sans font-light">
+                {sequenceInfo.description}
+              </p>
+            </div>
+
+            {/* Action hints / tags */}
+            <div className="flex flex-wrap gap-1 mt-1">
+              {sequenceInfo.tags.slice(0, 3).map(tag => (
+                 <span key={tag} className="px-1.5 py-0.5 bg-[#f5f2eb]/5 border border-[#e1d6c0]/15 rounded text-[8px] font-mono text-[#f5f2eb]/80 tracking-widest uppercase">
+                   {tag}
+                 </span>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Particle System Canvas - Positioned slightly above the HTML so it looks like it's drawing the frame around the readable text */}
       <div className="fixed inset-0 z-10 pointer-events-none opacity-90">
