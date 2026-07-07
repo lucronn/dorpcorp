@@ -32,6 +32,154 @@ async function startServer() {
     return ai;
   }
 
+  // Procedural Fallback Cosmic System Generator
+  function getProceduralFallbackSystem() {
+    const archetypes = ["BLACKHOLE_CENTRIC", "BINARY_PLANETS", "NEBULA_CRADLE", "EXOPLANET_CLUSTER", "SPIRAL_GALAXY"];
+    const chosenArchetype = archetypes[Math.floor(Math.random() * archetypes.length)] || "BLACKHOLE_CENTRIC";
+
+    const prefixes = ["Aethel", "Vespera", "Helios", "Kalypsos", "Zephyrus", "Hyperion", "Thalassa", "Kronos", "Astraea", "Celestia", "Elysium", "Nebulon", "Xenon"];
+    const suffixes = ["Prime", "Resonance", "Anomalous", "Cradle", "Filament", "Spire", "Vortex", "Horizon", "Singularity", "Nursery", "Barycenter", "Clusters", "Borealis"];
+    const systemName = `${prefixes[Math.floor(Math.random() * prefixes.length)]} ${suffixes[Math.floor(Math.random() * suffixes.length)]}-${Math.floor(Math.random() * 90 + 10)}`;
+
+    let systemDesc = "";
+    let systemTags: string[] = [];
+    const entities: any[] = [];
+
+    const hexColors = ["#00ffd2", "#ff6600", "#ffdf00", "#00e5ff", "#ff007f", "#aa00ff", "#00ff99", "#ffe600", "#e100ff"];
+    const randomColor = () => hexColors[Math.floor(Math.random() * hexColors.length)];
+
+    if (chosenArchetype === "BLACKHOLE_CENTRIC") {
+      systemDesc = `A highly unstable gravitational pocket dominated by a spinning Kerr black hole. Relativistic lensing bends the luminescent light from twin surrounding diamond exoplanets into warped Einstein rings.`;
+      systemTags = ["🕳 KERR SINGULARITY", "☄ RELATIVISTIC LENS", "★ ACCRETION PULSE"];
+      
+      entities.push({
+        type: "blackhole",
+        radius: Math.floor(Math.random() * 20 + 55),
+        color: "#ff5100",
+        secondaryColor: "#ffa600"
+      });
+      const count = Math.floor(Math.random() * 2 + 1);
+      for (let i = 0; i < count; i++) {
+        entities.push({
+          type: "planet",
+          radius: Math.floor(Math.random() * 15 + 15),
+          color: randomColor(),
+          secondaryColor: randomColor(),
+          hasRings: Math.random() > 0.4,
+          ringColor: "rgba(0, 255, 210, 0.4)"
+        });
+      }
+      entities.push({
+        type: "star",
+        radius: Math.floor(Math.random() * 10 + 20),
+        color: "#ffffff",
+        secondaryColor: "#00e5ff"
+      });
+    } else if (chosenArchetype === "BINARY_PLANETS") {
+      systemDesc = `Two massive, twin planets tidally locked to one another, orbiting a common barycenter. Ionized particle winds bridge their upper atmospheres, generating a permanent bridge of glowing auroral light.`;
+      systemTags = ["☄ TIDAL LOCK", "⚡ IONIC WIND", "★ BARYCENTER"];
+
+      entities.push({
+        type: "star",
+        radius: Math.floor(Math.random() * 15 + 40),
+        color: randomColor(),
+        secondaryColor: randomColor()
+      });
+      entities.push({
+        type: "planet",
+        radius: 30,
+        color: "#00ffd2",
+        secondaryColor: "#0055ff",
+        hasRings: true,
+        ringColor: "rgba(0, 255, 210, 0.35)"
+      });
+      entities.push({
+        type: "planet",
+        radius: 26,
+        color: "#ff007f",
+        secondaryColor: "#aa00ff",
+        hasRings: false
+      });
+    } else if (chosenArchetype === "NEBULA_CRADLE") {
+      systemDesc = `An ethereal, multicolored stellar nursery of ionized hydrogen gas and cosmic dust. Intense stellar winds from newly formed hypergiants sculpt majestic glowing hollows and dense protostellar cores.`;
+      systemTags = ["☁ COSMIC NURSERY", "★ STELLAR WIND", "⚛ HYDROGEN CLOUD"];
+
+      entities.push({
+        type: "nebula",
+        radius: Math.floor(Math.random() * 100 + 250),
+        color: "#aa00ff",
+        secondaryColor: "#00ffd2"
+      });
+      entities.push({
+        type: "star",
+        radius: 35,
+        color: "#00e5ff",
+        secondaryColor: "#ffffff"
+      });
+      entities.push({
+        type: "planet",
+        radius: 22,
+        color: "#ffdf00",
+        secondaryColor: "#ff5100",
+        hasRings: true,
+        ringColor: "rgba(255, 223, 0, 0.45)"
+      });
+    } else if (chosenArchetype === "EXOPLANET_CLUSTER") {
+      systemDesc = `A rare, perfectly resonant chain of crystalline planets sharing a stable orbit. Silicate rich sands on their surfaces reflect the brilliant golden radiation of their host hypergiant star.`;
+      systemTags = ["💎 SILICATE DUNE", "☀ RESONANT CHAINS", "★ GOLDEN STAR"];
+
+      entities.push({
+        type: "star",
+        radius: 50,
+        color: "#ffa600",
+        secondaryColor: "#ffe600"
+      });
+      const count = Math.floor(Math.random() * 2 + 2);
+      for (let i = 0; i < count; i++) {
+        entities.push({
+          type: "planet",
+          radius: Math.floor(Math.random() * 10 + 15),
+          color: randomColor(),
+          secondaryColor: randomColor(),
+          hasRings: Math.random() > 0.5,
+          ringColor: "rgba(255, 255, 255, 0.4)"
+        });
+      }
+    } else {
+      systemDesc = `A spectacular galactic arm composed of countless blue giant stars, swirling dust filaments, and intense interstellar radiation fields centered around an ultra-dense stellar core.`;
+      systemTags = ["🌀 GALACTIC FILAMENT", "★ SWIRLING SHADOW", "☄ COLD DUST"];
+
+      entities.push({
+        type: "star",
+        radius: 38,
+        color: "#00e5ff",
+        secondaryColor: "#ffffff"
+      });
+      entities.push({
+        type: "nebula",
+        radius: 300,
+        color: "#0033ff",
+        secondaryColor: "#ff00aa"
+      });
+      entities.push({
+        type: "planet",
+        radius: 20,
+        color: "#00ff99",
+        secondaryColor: "#008855",
+        hasRings: true,
+        ringColor: "rgba(0, 255, 153, 0.3)"
+      });
+    }
+
+    return {
+      systemName,
+      systemDesc,
+      systemTags,
+      archetype: chosenArchetype,
+      entities
+    };
+  }
+
   // API endpoint to generate cosmic scene
   app.post("/api/generate-cosmic-scene", async (req, res) => {
     try {
@@ -59,7 +207,7 @@ async function startServer() {
               },
               archetype: {
                 type: Type.STRING,
-                description: "Select most fitting category: 'BLACKHOLE_CENTRIC', 'BINARY_PLANETS', 'NEBULA_CRADLE', 'EXOPLANET_CLUSTER'"
+                description: "Select most fitting category: 'BLACKHOLE_CENTRIC', 'BINARY_PLANETS', 'NEBULA_CRADLE', 'EXOPLANET_CLUSTER', 'SPIRAL_GALAXY'"
               },
               entities: {
                 type: Type.ARRAY,
@@ -68,7 +216,7 @@ async function startServer() {
                   properties: {
                     type: {
                       type: Type.STRING,
-                      description: "Type of entity: 'blackhole', 'planet', 'nebula'"
+                      description: "Type of entity: 'blackhole', 'planet', 'nebula', 'star'"
                     },
                     radius: {
                       type: Type.NUMBER,
@@ -107,8 +255,10 @@ async function startServer() {
       const data = JSON.parse(text.trim());
       res.json(data);
     } catch (err: any) {
-      console.error("Gemini scene generation error:", err);
-      res.status(500).json({ error: err.message || "Failed to generate cosmic scene" });
+      // If we hit a rate limit or other error, fallback quietly without a scary stack trace
+      console.log(`[Cosmic Engine] Using procedural fallback system (${err?.status === 429 ? 'Rate Limited' : 'API Unavailable'})`);
+      const fallbackData = getProceduralFallbackSystem();
+      res.json(fallbackData);
     }
   });
 

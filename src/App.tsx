@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ParticleCanvas, projects } from './components/ParticleCanvas';
+import { ParticleCanvas } from './components/ParticleCanvas';
+import { projects } from './types';
 import { WavelengthBackground } from './components/WavelengthBackground';
 import { AnimatePresence, motion } from 'motion/react';
 import { ExternalLink, Github, Volume2, VolumeX } from 'lucide-react';
@@ -87,7 +88,7 @@ export default function App() {
   const project = activeProjectIndex >= 0 && activeProjectIndex < projects.length ? projects[activeProjectIndex] : null;
 
   return (
-    <div className="relative bg-[#322d29] text-slate-200 overflow-x-hidden font-sans selection:bg-[#c14b2a]/30 selection:text-white">
+    <div className="relative bg-black text-slate-200 overflow-x-hidden font-sans selection:bg-[#c14b2a]/30 selection:text-white">
       {/* Background visual engine */}
       <WavelengthBackground />
       

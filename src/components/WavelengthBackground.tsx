@@ -53,7 +53,7 @@ export const WavelengthBackground: React.FC = () => {
     const render = () => {
       // Smooth continuous waves that warp based on scroll depth rather than freezing
       const scrollFactor = Math.min(1.0, scrollRef.current / (height * 4));
-      ctx.fillStyle = '#322d29';
+      ctx.fillStyle = '#000000';
       ctx.fillRect(0, 0, width, height);
       
       currentX += (mouseRef.current.x - currentX) * 0.05;
