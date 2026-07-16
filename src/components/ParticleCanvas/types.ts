@@ -1,6 +1,7 @@
 import * as BABYLON from "@babylonjs/core";
 
 export interface CelestialEntity {
+  id?: string;
   type: "blackhole" | "planet" | "nebula" | "star" | "galaxy";
   x: number;
   y: number;
@@ -33,13 +34,24 @@ export interface CelestialEntity {
   currentRadius?: number;
   targetRadius?: number;
   initialMass?: number;
+
+  // Smooth Morphing Transitions
+  startX?: number;
+  startY?: number;
+  startZ?: number;
+  startRadius?: number;
+  startScale?: number;
+  targetX?: number;
+  targetY?: number;
+  targetZ?: number;
 }
 
 export interface ParticleCanvasProps {
   stage: number;
   isInterstellar?: boolean;
-  onTransitionToInterstellar?: () => void;
+  animationComplete?: () => void;
   onSequenceGenerated?: (info: {
+    id?: string;
     name: string;
     description: string;
     tags: string[];

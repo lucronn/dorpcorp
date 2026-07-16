@@ -47,6 +47,45 @@ export const createCircleTexture = (scene: BABYLON.Scene) => {
   return texture;
 };
 
+// Procedural 2D Value Noise function for fast texture generation
+export const valueNoise2D = (x: number, y: number): number => {
+  const X = Math.floor(x);
+  const Y = Math.floor(y);
+  const fx = x - X;
+  const fy = y - Y;
+
+  const u = fx * fx * (3.0 - 2.0 * fx);
+  const v = fy * fy * (3.0 - 2.0 * fy);
+
+  const hash = (i: number, j: number) => {
+    const s = Math.sin(i * 12.9898 + j * 78.233) * 43758.5453123;
+    return s - Math.floor(s);
+  };
+
+  const n00 = hash(X, Y);
+  const n10 = hash(X + 1, Y);
+  const n01 = hash(X, Y + 1);
+  const n11 = hash(X + 1, Y + 1);
+
+  return n00 * (1.0 - u) * (1.0 - v) +
+         n10 * u * (1.0 - v) +
+         n01 * (1.0 - u) * v +
+         n11 * u * v;
+};
+
+// Fractional Brownian Motion (fBm) with multiple noise octaves
+export const fBmNoise2D = (x: number, y: number, octaves: number = 4): number => {
+  let value = 0.0;
+  let amplitude = 0.5;
+  let frequency = 1.0;
+  for (let i = 0; i < octaves; i++) {
+    value += amplitude * valueNoise2D(x * frequency, y * frequency);
+    frequency *= 2.0;
+    amplitude *= 0.5;
+  }
+  return value;
+};
+
 export const generateAdvancedPlanetTexture = (baseColor: string, secondaryColor: string, scene: BABYLON.Scene) => {
   const canvas = document.createElement("canvas");
   canvas.width = 512;
@@ -57,22 +96,27 @@ export const generateAdvancedPlanetTexture = (baseColor: string, secondaryColor:
   const c1 = parseColorToRgb(baseColor);
   const c2 = parseColorToRgb(secondaryColor || baseColor);
 
-  // 1. Base map using layered sine-based multi-frequency bands
+  // 1. Base map using fractional Brownian Motion (fBm) bands for gas giants and rich planet surfaces
+  const imgData = ctx.createImageData(512, 256);
+  const data = imgData.data;
+
   for (let y = 0; y < 256; y++) {
-    const freq1 = Math.sin(y * 0.12) * 0.35;
-    const freq2 = Math.sin(y * 0.035) * 0.45;
-    const freq3 = Math.cos(y * 0.28) * 0.12;
-    const freq4 = Math.sin(y * 0.01) * 0.08;
-    
-    const t = Math.max(0, Math.min(1, (freq1 + freq2 + freq3 + freq4 + 1.0) / 2));
+    for (let x = 0; x < 512; x++) {
+      const idx = (y * 512 + x) * 4;
 
-    const r = Math.round(c1.r * (1 - t) + c2.r * t);
-    const g = Math.round(c1.g * (1 - t) + c2.g * t);
-    const b = Math.round(c1.b * (1 - t) + c2.b * t);
+      // Create rich fluid-like atmospheric banding patterns
+      const noiseVal = fBmNoise2D(x * 0.015, y * 0.05, 4);
+      const band = Math.sin(y * 0.08 + noiseVal * 3.5);
+      const t = Math.max(0, Math.min(1, (band + 1.0) / 2));
 
-    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-    ctx.fillRect(0, y, 512, 1);
+      // Blend albedo channels
+      data[idx] = Math.round(c1.r * (1 - t) + c2.r * t);
+      data[idx+1] = Math.round(c1.g * (1 - t) + c2.g * t);
+      data[idx+2] = Math.round(c1.b * (1 - t) + c2.b * t);
+      data[idx+3] = 255;
+    }
   }
+  ctx.putImageData(imgData, 0, 0);
 
   // 2. Add dynamic, detailed, wavy cloud micro-bands
   for (let i = 0; i < 28; i++) {
@@ -154,17 +198,20 @@ export const generateAdvancedPlanetTexture = (baseColor: string, secondaryColor:
     }
   }
 
-  // 4. Fine-grain texture overlay
-  const imgData = ctx.getImageData(0, 0, 512, 256);
-  const data = imgData.data;
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i+3] === 0) continue;
-    const noise = (Math.random() - 0.5) * 16;
-    data[i] = Math.max(0, Math.min(255, data[i] + noise));
-    data[i+1] = Math.max(0, Math.min(255, data[i+1] + noise));
-    data[i+2] = Math.max(0, Math.min(255, data[i+2] + noise));
+  // 4. Smooth fine-grain fractal detail overlay for organic planetary albedo detailing
+  const imgData2 = ctx.getImageData(0, 0, 512, 256);
+  const data2 = imgData2.data;
+  for (let y = 0; y < 256; y++) {
+    for (let x = 0; x < 512; x++) {
+      const idx = (y * 512 + x) * 4;
+      const detailNoise = fBmNoise2D(x * 0.18, y * 0.18, 2);
+      const noise = (detailNoise - 0.5) * 6.5; // gentle, smooth organic detail
+      data2[idx] = Math.max(0, Math.min(255, data2[idx] + noise));
+      data2[idx+1] = Math.max(0, Math.min(255, data2[idx+1] + noise));
+      data2[idx+2] = Math.max(0, Math.min(255, data2[idx+2] + noise));
+    }
   }
-  ctx.putImageData(imgData, 0, 0);
+  ctx.putImageData(imgData2, 0, 0);
 
   const texture = new BABYLON.DynamicTexture("planet_tex", canvas, scene, true);
   texture.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
@@ -382,6 +429,32 @@ export const generateGalaxyTexture = (baseColor: string, secondaryColor: string,
     ctx.fill();
   }
 
+  // 4. Modulate with absorption fBm dust lanes
+  const imgData = ctx.getImageData(0, 0, 512, 512);
+  const data = imgData.data;
+  for (let y = 0; y < 512; y++) {
+    for (let x = 0; x < 512; x++) {
+      const idx = (y * 512 + x) * 4;
+      if (data[idx+3] === 0) continue;
+      
+      const dx = x - cx;
+      const dy = y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx);
+      
+      // Logarithmic spiral dust lane mapping
+      const spiralVal = Math.sin(Math.log(dist || 1) * 3.5 - angle * 2.0);
+      if (spiralVal > 0.4) {
+        const noise = fBmNoise2D(x * 0.03, y * 0.03, 3);
+        const absorption = 0.45 * noise * (dist / 256);
+        data[idx] = Math.round(data[idx] * (1.0 - absorption));
+        data[idx+1] = Math.round(data[idx+1] * (1.0 - absorption * 1.2));
+        data[idx+2] = Math.round(data[idx+2] * (1.0 - absorption * 1.5));
+      }
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+
   const texture = new BABYLON.DynamicTexture("galaxy_tex", canvas, scene, true);
   texture.hasAlpha = true;
   texture.update();
@@ -402,30 +475,51 @@ export const generateNebulaTexture = (baseColor: string, secondaryColor: string,
   const c1 = parseColorToRgb(baseColor);
   const c2 = parseColorToRgb(secondaryColor || baseColor);
 
-  // Draw multiple overlapping soft gaseous puff blobs
-  for (let i = 0; i < 20; i++) {
-    const px = cx + (Math.random() - 0.5) * 200;
-    const py = cy + (Math.random() - 0.5) * 200;
-    const size = 100 + Math.random() * 130;
-    const col = Math.random() > 0.4 ? c1 : c2;
-    const alpha = 0.06 + Math.random() * 0.12;
+  // Volumetric procedural gas mapping using fractional Brownian Motion (fBm)
+  const imgData = ctx.createImageData(512, 512);
+  const data = imgData.data;
 
-    const grad = ctx.createRadialGradient(px, py, 0, px, py, size);
-    grad.addColorStop(0, `rgba(${col.r}, ${col.g}, ${col.b}, ${alpha})`);
-    grad.addColorStop(0.5, `rgba(${col.r}, ${col.g}, ${col.b}, ${alpha * 0.35})`);
-    grad.addColorStop(1, "rgba(0,0,0,0)");
+  for (let y = 0; y < 512; y++) {
+    for (let x = 0; x < 512; x++) {
+      const idx = (y * 512 + x) * 4;
+      const dx = x - cx;
+      const dy = y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
 
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(px, py, size, 0, Math.PI * 2);
-    ctx.fill();
+      if (dist > 256) {
+        data[idx+3] = 0;
+        continue;
+      }
+
+      // Generate multi-octave turbulent noise density map
+      const nVal = fBmNoise2D(x * 0.007, y * 0.007, 5);
+      const normDist = dist / 256;
+      
+      // Gaseous envelope profile (smoother falloff at outer margins)
+      const envelope = Math.pow(1.0 - normDist, 1.8);
+      const density = Math.max(0.0, nVal * envelope);
+
+      // Color interpolation of gas filaments
+      const t = Math.sin(nVal * Math.PI);
+      const r = Math.round(c1.r * (1 - t) + c2.r * t);
+      const g = Math.round(c1.g * (1 - t) + c2.g * t);
+      const b = Math.round(c1.b * (1 - t) + c2.b * t);
+
+      data[idx] = r;
+      data[idx+1] = g;
+      data[idx+2] = b;
+      data[idx+3] = Math.round(density * 255 * 0.9);
+    }
   }
+  ctx.putImageData(imgData, 0, 0);
 
-  // Draw bright, filamentary high-contrast cosmic strands
-  ctx.lineWidth = 2.0;
-  for (let i = 0; i < 5; i++) {
+  // Filamentary strands layer (dynamic Bézier filaments for high contrast depth)
+  ctx.shadowColor = `rgba(${c1.r}, ${c1.g}, ${c1.b}, 0.2)`;
+  ctx.shadowBlur = 15;
+  for (let i = 0; i < 6; i++) {
     const col = Math.random() > 0.5 ? c1 : c2;
-    ctx.strokeStyle = `rgba(${col.r}, ${col.g}, ${col.b}, 0.12)`;
+    ctx.strokeStyle = `rgba(${col.r}, ${col.g}, ${col.b}, 0.14)`;
+    ctx.lineWidth = 1.5 + Math.random() * 2.0;
     ctx.beginPath();
     ctx.moveTo(cx + (Math.random() - 0.5) * 240, cy + (Math.random() - 0.5) * 240);
     ctx.bezierCurveTo(

@@ -10,6 +10,9 @@ import {
   createShatterDebris as _createShatterDebris,
   createSpaghettificationDebris as _createSpaghettificationDebris,
   swallowEntity as _swallowEntity,
+  resolveCelestialCollision,
+  computeCurlNoise,
+  fBmNoise2D,
 } from "./ParticleCanvas/PhysicsUtils";
 import { ParticleSystemManager } from "./ParticleCanvas/ParticleSystemManager";
 
@@ -28,7 +31,7 @@ import {
 export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   stage,
   isInterstellar = false,
-  onTransitionToInterstellar,
+  animationComplete,
   onSequenceGenerated,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -48,6 +51,37 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   const celestialMeshInstancesRef = useRef<
     { id: string; mesh: BABYLON.TransformNode | BABYLON.Mesh; entityRef: CelestialEntity }[]
   >([]);
+  const lensingPostProcessRef = useRef<BABYLON.PostProcess | null>(null);
+
+  // Unified Input Controller for continuous mathematical interpolation
+  const inputControllerRef = useRef({
+    targetScrollTimeline: 0,
+    targetCameraZDepthOffset: 0,
+    targetCameraParallaxX: 0,
+    targetCameraParallaxY: 0,
+    targetCameraPitch: 0,
+    targetCameraYaw: 0,
+    targetLock: { x: 0, y: 0, z: 0, active: false, entityId: null as string | null },
+
+    currentScrollTimeline: 0,
+    currentCameraZDepthOffset: 0,
+    currentCameraParallaxX: 0,
+    currentCameraParallaxY: 0,
+    currentCameraPitch: 0,
+    currentCameraYaw: 0,
+    currentLock: { x: 0, y: 0, z: 0, intensity: 0.0 },
+    
+    gyroActive: false,
+  });
+
+  // Cinematic Camera Transition Refs
+  const transitionStartTimeRef = useRef<number>(0);
+  const transitionActiveRef = useRef<boolean>(false);
+  const transitionStartPosRef = useRef<BABYLON.Vector3 | null>(null);
+
+  // Smooth Morphing Transitions for Celestial Entities
+  const entityTransitionActiveRef = useRef<boolean>(false);
+  const entityTransitionStartTimeRef = useRef<number>(0);
 
   // Simulation State Refs
   const nextGeminiSceneRef = useRef<any>(null);
@@ -58,6 +92,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   const particlesRef = useRef<Particle[]>([]);
   const stageRef = useRef(stage);
   const isInterstellarRef = useRef(isInterstellar);
+  const isTransitActiveRef = useRef<boolean>(false);
   const lastStageChangeRef = useRef<number>(Date.now());
   const mouseRef = useRef({ x: -1000, y: -1000, lastMoved: Date.now() });
   const lastAutonomousEventTimeRef = useRef<number>(Date.now());
@@ -145,11 +180,128 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     }
   };
 
-  const generateInterstellarScene = (width: number, height: number) => {
+  const transitionToNewEntities = (newEntities: CelestialEntity[]) => {
+    const currentEntities = celestialEntitiesRef.current;
+    console.log(`[DEBUG] transitionToNewEntities: Incoming new entities count = ${newEntities.length}. Current entities count before transition = ${currentEntities.length}`);
+    
+    currentEntities.forEach(cur => {
+      cur.startX = cur.x;
+      cur.startY = cur.y;
+      cur.startZ = cur.z ?? 0;
+      cur.startRadius = cur.radius;
+      cur.startScale = cur.scale ?? 1.0;
+      
+      cur.targetX = cur.x;
+      cur.targetY = cur.y;
+      cur.targetZ = cur.z ?? 0;
+      cur.targetRadius = 0;
+      cur.targetScale = 0.0;
+      cur.isDestroyed = true;
+    });
+
+    const spawnX = supernovaRef.current ? supernovaRef.current.x : window.innerWidth / 2;
+    const spawnY = supernovaRef.current ? supernovaRef.current.y : window.innerHeight / 2;
+    console.log(`[DEBUG] transitionToNewEntities: Spawn center determined as (${spawnX}, ${spawnY})`);
+
+    newEntities.forEach((target, i) => {
+      const curNew: CelestialEntity = {
+        ...target,
+        x: spawnX,
+        startX: spawnX,
+        y: spawnY,
+        startY: spawnY,
+        z: -200,
+        startZ: -200,
+        targetZ: 0,
+        scale: 0.0,
+        startScale: 0.0,
+        targetScale: 1.0,
+        isDestroyed: false,
+        id: target.id || `${target.type}-${i}-${Math.random().toString(36).substring(2, 9)}`,
+        
+        startX: spawnX,
+        startY: spawnY,
+        startZ: -200,
+        startRadius: 1,
+        startScale: 0.0,
+        
+        targetX: target.x,
+        targetY: target.y,
+        targetZ: target.z ?? 0,
+        targetRadius: target.radius,
+      };
+      currentEntities.push(curNew);
+      console.log(`[DEBUG] Added entity ${curNew.id} (${curNew.type}) at spawn center. Target coordinate: (${curNew.targetX}, ${curNew.targetY})`);
+    });
+    
+    entityTransitionActiveRef.current = true;
+    entityTransitionStartTimeRef.current = Date.now();
+  };
+
+  const registerAndSaveSequence = (
+    systemName: string,
+    systemDesc: string,
+    systemTags: string[],
+    entitiesList: CelestialEntity[]
+  ) => {
+    const seqId = "seq-" + systemName.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+    try {
+      const saved = localStorage.getItem("cosmic_debug_sequences");
+      const list = saved ? JSON.parse(saved) : {};
+      list[seqId] = {
+        id: seqId,
+        systemName,
+        systemDesc,
+        systemTags,
+        archetype: archetypeRef.current,
+        entities: entitiesList.map(e => ({
+          type: e.type,
+          radius: e.radius,
+          color: e.color,
+          secondaryColor: e.secondaryColor || e.color,
+          hasRings: e.hasRings || false,
+          ringColor: e.ringColor || "",
+          x: e.x,
+          y: e.y,
+          z: e.z || 0,
+          vx: e.vx || 0,
+          vy: e.vy || 0,
+          vz: e.vz || 0,
+          mass: e.mass,
+          scale: e.scale,
+          currentRadius: e.currentRadius,
+          originalRadius: e.originalRadius,
+          targetRadius: e.targetRadius,
+          isPhysicsEnabled: e.isPhysicsEnabled || false,
+          isDestroyed: e.isDestroyed || false,
+          isSwallowing: e.isSwallowing || false,
+          destroyedBy: e.destroyedBy || "",
+        }))
+      };
+      localStorage.setItem("cosmic_debug_sequences", JSON.stringify(list));
+      localStorage.setItem("cosmic_last_sequence_id", seqId);
+      
+      console.log(`%c[COSMIC DEBUG] Active Sequence ID: ${seqId}`, "color: #4deeea; font-weight: bold; font-size: 11px;");
+      console.log(`%cTo recall this sequence, run: %cactivateSequence("${seqId}")`, "color: #9ca3af;", "color: #ffd778; font-family: monospace; font-weight: bold;");
+    } catch (e) {
+      // Ignore gracefully
+    }
+    if (onSequenceGenerated) {
+      onSequenceGenerated({
+        id: seqId,
+        name: systemName,
+        description: systemDesc,
+        tags: systemTags,
+      });
+    }
+  };
+
+  const generateInterstellarScene = (width: number, height: number, forceInterstellar = false) => {
+    console.log(`[DEBUG] generateInterstellarScene: width = ${width}, height = ${height}, forceInterstellar = ${forceInterstellar}, stage = ${stageRef.current}, isInterstellar = ${isInterstellarRef.current}`);
     const entities: CelestialEntity[] = [];
     const isMobile = width < 768;
 
-    if (stageRef.current === 0) {
+    if (stageRef.current === 0 && !isInterstellarRef.current && !forceInterstellar) {
       // Seed a stunning, high-fidelity field of galaxies and nebulae specifically designed for the "CURTIS CLICK" screensaver scene!
       archetypeRef.current = "GALAXY_FIELD";
       const systemName = "Andromeda Gateway";
@@ -259,22 +411,17 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         isDestroyed: false,
       });
 
-      celestialEntitiesRef.current = entities;
+      transitionToNewEntities(entities);
       interstellarSceneGeneratedTimeRef.current = Date.now();
 
-      if (onSequenceGenerated) {
-        onSequenceGenerated({
-          name: systemName,
-          description: systemDesc,
-          tags: systemTags,
-        });
-      }
+      registerAndSaveSequence(systemName, systemDesc, systemTags, entities);
       return;
     }
 
     // Try to consume pre-fetched Gemini scene first
     const geminiData = nextGeminiSceneRef.current;
-    if (geminiData) {
+    if (geminiData && Array.isArray(geminiData.entities) && geminiData.entities.length > 0) {
+      console.log(`[DEBUG] generateInterstellarScene: Found buffered Gemini scene "${geminiData.systemName}" (Archetype: ${geminiData.archetype}) with ${geminiData.entities.length} entities.`);
       // Clear it from buffer so we don't repeat
       nextGeminiSceneRef.current = null;
       // Pre-fetch the *next* one immediately for the subsequent collapse
@@ -288,75 +435,106 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       const cx = width / 2;
       const cy = height / 2;
 
-      // Position entities Procedurally & Gracefully
-      // If there is a blackhole, find and place it first at (cx, cy)
-      const bhEntity = geminiData.entities.find((e: any) => e.type === "blackhole");
-      if (bhEntity) {
-        entities.push({
-          type: "blackhole",
-          x: cx,
-          y: cy,
-          radius: bhEntity.radius,
-          color: bhEntity.color,
-          secondaryColor: bhEntity.secondaryColor || bhEntity.color,
-          vx: 0,
-          vy: 0,
-          mass: bhEntity.radius * bhEntity.radius * 15,
-          initialMass: bhEntity.radius * bhEntity.radius * 15,
-          scale: 0,
-          currentRadius: bhEntity.radius,
-          originalRadius: bhEntity.radius,
-          targetRadius: bhEntity.radius,
-          isPhysicsEnabled: false,
-          isDestroyed: false,
+      // If the saved scene contains exact coordinates, restore them directly!
+      const hasStoredCoordinates = Array.isArray(geminiData.entities) && geminiData.entities.some((e: any) => e.x !== undefined && e.y !== undefined);
+
+      if (hasStoredCoordinates) {
+        geminiData.entities.forEach((entity: any) => {
+          entities.push({
+            type: entity.type,
+            x: entity.x,
+            y: entity.y,
+            z: entity.z !== undefined ? entity.z : 0,
+            radius: Math.min(entity.radius || 20, 120),
+            color: entity.color,
+            secondaryColor: entity.secondaryColor || entity.color,
+            hasRings: entity.hasRings || false,
+            ringColor: entity.ringColor || "",
+            orbitRadius: entity.orbitRadius || 0,
+            orbitAngle: entity.orbitAngle || 0,
+            orbitSpeed: entity.orbitSpeed || 0,
+            centerX: entity.centerX !== undefined ? entity.centerX : cx,
+            centerY: entity.centerY !== undefined ? entity.centerY : cy,
+            vx: entity.vx !== undefined ? entity.vx : 0,
+            vy: entity.vy !== undefined ? entity.vy : 0,
+            vz: entity.vz !== undefined ? entity.vz : 0,
+            mass: entity.mass !== undefined ? entity.mass : (entity.radius * entity.radius),
+            initialMass: entity.initialMass !== undefined ? entity.initialMass : (entity.radius * entity.radius),
+            scale: entity.scale !== undefined ? entity.scale : 0.05,
+            currentRadius: Math.min(entity.currentRadius !== undefined ? entity.currentRadius : (entity.radius || 20), 120),
+            originalRadius: Math.min(entity.originalRadius !== undefined ? entity.originalRadius : (entity.radius || 20), 120),
+            targetRadius: Math.min(entity.targetRadius !== undefined ? entity.targetRadius : (entity.radius || 20), 120),
+            isPhysicsEnabled: entity.isPhysicsEnabled !== undefined ? entity.isPhysicsEnabled : false,
+            isDestroyed: entity.isDestroyed !== undefined ? entity.isDestroyed : false,
+            isSwallowing: entity.isSwallowing !== undefined ? entity.isSwallowing : false,
+            destroyedBy: entity.destroyedBy || "",
+          });
+        });
+      } else if (Array.isArray(geminiData.entities) && geminiData.entities.length > 0) {
+        // Position entities Procedurally & Gracefully
+        // If there is a blackhole, find and place it first at (cx, cy)
+        const bhEntity = geminiData.entities.find((e: any) => e.type === "blackhole");
+        if (bhEntity) {
+          entities.push({
+            type: "blackhole",
+            x: cx,
+            y: cy,
+            radius: Math.min(bhEntity.radius || 30, 120),
+            color: bhEntity.color,
+            secondaryColor: bhEntity.secondaryColor || bhEntity.color,
+            vx: 0,
+            vy: 0,
+            mass: Math.min(bhEntity.radius || 30, 120) * Math.min(bhEntity.radius || 30, 120) * 15,
+            initialMass: Math.min(bhEntity.radius || 30, 120) * Math.min(bhEntity.radius || 30, 120) * 15,
+            scale: 0,
+            currentRadius: Math.min(bhEntity.radius || 30, 120),
+            originalRadius: Math.min(bhEntity.radius || 30, 120),
+            targetRadius: Math.min(bhEntity.radius || 30, 120),
+            isPhysicsEnabled: false,
+            isDestroyed: false,
+          });
+        }
+
+        // Filter and place non-blackhole entities
+        const otherEntities = geminiData.entities.filter((e: any) => e.type !== "blackhole");
+        otherEntities.forEach((entity: any, idx: number) => {
+          const orbitRad = (isMobile ? 140 : 220) + idx * (isMobile ? 70 : 110);
+          const angle = Math.random() * Math.PI * 2;
+          // Slow down orbit speed by half to meet "slow it down" request
+          const orbitSpeed = (0.0012 + Math.random() * 0.0012);
+
+          entities.push({
+            type: entity.type,
+            x: cx + Math.cos(angle) * orbitRad,
+            y: cy + Math.sin(angle) * orbitRad,
+            radius: Math.min(entity.radius || 20, 120),
+            color: entity.color,
+            secondaryColor: entity.secondaryColor || entity.color,
+            hasRings: entity.hasRings,
+            ringColor: entity.ringColor,
+            orbitRadius: orbitRad,
+            orbitAngle: angle,
+            orbitSpeed: orbitSpeed,
+            centerX: cx,
+            centerY: cy,
+            vx: -Math.sin(angle) * orbitRad * orbitSpeed * 1.5,
+            vy: Math.cos(angle) * orbitRad * orbitSpeed * 1.5,
+            mass: Math.min(entity.radius || 20, 120) * Math.min(entity.radius || 20, 120),
+            initialMass: Math.min(entity.radius || 20, 120) * Math.min(entity.radius || 20, 120),
+            scale: 0,
+            currentRadius: Math.min(entity.radius || 20, 120),
+            originalRadius: Math.min(entity.radius || 20, 120),
+            targetRadius: Math.min(entity.radius || 20, 120),
+            isPhysicsEnabled: false,
+            isDestroyed: false,
+          });
         });
       }
 
-      // Filter and place non-blackhole entities
-      const otherEntities = geminiData.entities.filter((e: any) => e.type !== "blackhole");
-      otherEntities.forEach((entity: any, idx: number) => {
-        const orbitRad = (isMobile ? 140 : 220) + idx * (isMobile ? 70 : 110);
-        const angle = Math.random() * Math.PI * 2;
-        // Slow down orbit speed by half to meet "slow it down" request
-        const orbitSpeed = (0.0012 + Math.random() * 0.0012);
-
-        entities.push({
-          type: entity.type,
-          x: cx + Math.cos(angle) * orbitRad,
-          y: cy + Math.sin(angle) * orbitRad,
-          radius: entity.radius,
-          color: entity.color,
-          secondaryColor: entity.secondaryColor || entity.color,
-          hasRings: entity.hasRings,
-          ringColor: entity.ringColor,
-          orbitRadius: orbitRad,
-          orbitAngle: angle,
-          orbitSpeed: orbitSpeed,
-          centerX: cx,
-          centerY: cy,
-          vx: -Math.sin(angle) * orbitRad * orbitSpeed * 1.5,
-          vy: Math.cos(angle) * orbitRad * orbitSpeed * 1.5,
-          mass: entity.radius * entity.radius,
-          initialMass: entity.radius * entity.radius,
-          scale: 0,
-          currentRadius: entity.radius,
-          originalRadius: entity.radius,
-          targetRadius: entity.radius,
-          isPhysicsEnabled: false,
-          isDestroyed: false,
-        });
-      });
-
-      celestialEntitiesRef.current = entities;
+      transitionToNewEntities(entities);
       interstellarSceneGeneratedTimeRef.current = Date.now();
 
-      if (onSequenceGenerated) {
-        onSequenceGenerated({
-          name: systemName,
-          description: systemDesc,
-          tags: systemTags,
-        });
-      }
+      registerAndSaveSequence(systemName, systemDesc, systemTags, entities);
       return;
     }
 
@@ -371,6 +549,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       archetypes[Math.floor(Math.random() * archetypes.length)] ||
       "BLACKHOLE_CENTRIC";
     archetypeRef.current = chosenArchetype;
+    console.log(`[DEBUG] generateInterstellarScene: No buffered Gemini scene. Selected procedural fallback archetype: "${chosenArchetype}".`);
 
     let systemName = "The Void";
     let systemDesc =
@@ -700,16 +879,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       });
     }
 
-    celestialEntitiesRef.current = entities;
+    console.log(`[DEBUG] generateInterstellarScene: Procedural fallback entities generated: ${entities.length}. Transitioning...`);
+    transitionToNewEntities(entities);
     interstellarSceneGeneratedTimeRef.current = Date.now();
 
-    if (onSequenceGenerated) {
-      onSequenceGenerated({
-        name: systemName,
-        description: systemDesc,
-        tags: systemTags,
-      });
-    }
+    registerAndSaveSequence(systemName, systemDesc, systemTags, entities);
   };
 
   const syncParticleColors = (particles: Particle[]) => {
@@ -742,7 +916,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   };
 
   const mapParticlesToInterstellar = (width: number, height: number) => {
-    const entities = celestialEntitiesRef.current;
+    const entities = celestialEntitiesRef.current.filter(e => !e.isDestroyed);
     if (entities.length === 0) return;
     const bh = entities.find((e) => e.type === "blackhole");
     const planets = entities.filter((e) => e.type === "planet");
@@ -753,18 +927,106 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       (p) => !p.isCosmicAmbient,
     );
 
+    // Pre-generate 120 background galaxy centers distributed at deep depths
+    const numBackgroundGalaxies = 120;
+    const galaxyCenters: {
+      x: number;
+      y: number;
+      z: number;
+      pitch: number;
+      yaw: number;
+      type: "spiral" | "elliptical";
+      color: string;
+    }[] = [];
+    
+    const galaxyColors = [
+      "#4deeea", // Electric Cyan
+      "#ff007f", // Neon Pink
+      "#aa00ff", // Cosmic Purple
+      "#ffd778", // Glowing Gold
+      "#00e5ff", // Bright Blue
+      "#ff5e62", // Soft Coral
+      "#ffffff", // Core White
+      "#da70d6"  // Orchid
+    ];
+
+    for (let g = 0; g < numBackgroundGalaxies; g++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 700 + Math.random() * 2000;
+      const gx = Math.cos(angle) * dist;
+      const gy = Math.sin(angle) * dist;
+      const gz = 1400 + Math.random() * 3200; // Far off in the distance
+      
+      galaxyCenters.push({
+        x: gx,
+        y: gy,
+        z: gz,
+        pitch: Math.random() * Math.PI,
+        yaw: Math.random() * Math.PI * 2,
+        type: Math.random() > 0.4 ? "spiral" : "elliptical",
+        color: galaxyColors[g % galaxyColors.length]
+      });
+    }
+
     nonAmbientParticles.forEach((p, idx) => {
       const rand = Math.random();
 
-      if (arch === "BLACKHOLE_CENTRIC" && bh) {
+      // Map 40% of the active particles to the background galaxies
+      if (idx % 10 < 4) {
+        const gal = galaxyCenters[idx % numBackgroundGalaxies];
+        p.interstellarType = "background_galaxy";
+        p.galaxyX = gal.x + width / 2;
+        p.galaxyY = gal.y + height / 2;
+        p.galaxyZ = gal.z;
+        p.galaxyPitch = gal.pitch;
+        p.galaxyYaw = gal.yaw;
+        p.galaxyType = gal.type;
+        
+        const radFactor = Math.pow(Math.random(), 1.8);
+        const maxGalRadius = 35 + Math.random() * 55;
+        p.orbitRadius = 2 + radFactor * maxGalRadius;
+        p.orbitAngle = Math.random() * Math.PI * 2;
+        p.orbitSpeed = (0.015 + Math.random() * 0.012) * (25 / (p.orbitRadius + 8));
+        
+        p.baseColor = gal.color;
+        if (radFactor < 0.14) {
+          p.baseColor = "#ffffff";
+        }
+        p.color = p.baseColor;
+        p.isPlanetRing = false;
+        
+        const rx = p.orbitRadius;
+        const ry = p.galaxyType === "spiral" ? rx * 0.35 : rx * 0.8;
+        const ox = Math.cos(p.orbitAngle) * rx;
+        const oy = Math.sin(p.orbitAngle) * ry;
+        
+        const cosP = Math.cos(p.galaxyPitch);
+        const sinP = Math.sin(p.galaxyPitch);
+        const cosY = Math.cos(p.galaxyYaw);
+        const sinY = Math.sin(p.galaxyYaw);
+        
+        const lx = ox * cosY - oy * sinY * cosP;
+        const ly = ox * sinY + oy * cosY * cosP;
+        const lz = oy * sinP;
+        
+        p.targetX = p.galaxyX + lx;
+        p.targetY = p.galaxyY + ly;
+        p.z = p.galaxyZ + lz;
+      } else {
+        if (arch === "BLACKHOLE_CENTRIC" && bh) {
         if (rand < 0.72) {
           p.interstellarType = "blackhole";
           p.interstellarEntityIndex = entities.indexOf(bh);
+          p.interstellarEntity = bh;
           const minR = bh.radius * 1.3;
           const maxR = bh.radius * 5.0;
           p.orbitRadius = minR + Math.random() * (maxR - minR);
           p.orbitAngle = Math.random() * Math.PI * 2;
-          p.orbitSpeed = 0.015 + Math.random() * 0.015;
+          
+          const r = p.orbitRadius || 50;
+          const baseSpeed = 0.012 + Math.random() * 0.008;
+          // Kepler's Third Law (orbital angular speed omega decreases as r^-1.5)
+          p.orbitSpeed = baseSpeed * Math.pow((bh.radius * 2.5) / r, 1.5);
 
           const rx = p.orbitRadius;
           const ry = rx * 0.25;
@@ -789,9 +1051,14 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           p.interstellarType = "planet";
           const planet = planets[idx % planets.length];
           p.interstellarEntityIndex = entities.indexOf(planet);
+          p.interstellarEntity = planet;
           p.orbitRadius = planet.radius * (1.1 + Math.random() * 0.6);
           p.orbitAngle = Math.random() * Math.PI * 2;
-          p.orbitSpeed = 0.015 + Math.random() * 0.015;
+          
+          const r = p.orbitRadius || 30;
+          const baseSpeed = 0.012 + Math.random() * 0.008;
+          p.orbitSpeed = baseSpeed * Math.pow((planet.radius * 1.5) / r, 1.5);
+
           p.isPlanetRing = false;
 
           const rx = p.orbitRadius;
@@ -820,6 +1087,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           const planetIdx = idx % 2;
           const planet = planets[planetIdx];
           p.interstellarEntityIndex = entities.indexOf(planet || planets[0]);
+          p.interstellarEntity = planet || planets[0];
 
           const ringRand = Math.random();
           if (ringRand > 0.3) {
@@ -827,8 +1095,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
             const maxR = planet.radius * 2.8;
             p.orbitRadius = minR + Math.random() * (maxR - minR);
             p.orbitAngle = Math.random() * Math.PI * 2;
-            p.orbitSpeed =
-              (0.018 + Math.random() * 0.018) * (planet.radius / p.orbitRadius);
+            
+            const r = p.orbitRadius || 30;
+            const baseSpeed = 0.015 + Math.random() * 0.015;
+            p.orbitSpeed = baseSpeed * Math.pow((planet.radius * 1.8) / r, 1.5);
+
             p.isPlanetRing = true;
 
             const rx = p.orbitRadius;
@@ -845,7 +1116,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           } else {
             p.orbitRadius = planet.radius * (1.1 + Math.random() * 0.5);
             p.orbitAngle = Math.random() * Math.PI * 2;
-            p.orbitSpeed = 0.014 + Math.random() * 0.014;
+            
+            const r = p.orbitRadius || 30;
+            const baseSpeed = 0.012 + Math.random() * 0.012;
+            p.orbitSpeed = baseSpeed * Math.pow((planet.radius * 1.4) / r, 1.5);
+
             p.isPlanetRing = false;
 
             const rx = p.orbitRadius;
@@ -865,6 +1140,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           p.interstellarType = "nebula";
           const nebula = nebulas[idx % nebulas.length];
           p.interstellarEntityIndex = entities.indexOf(nebula || nebulas[0]);
+          p.interstellarEntity = nebula || nebulas[0];
 
           const angle = Math.random() * Math.PI * 2;
           const rad = Math.pow(Math.random(), 1.5) * nebula.radius;
@@ -891,6 +1167,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           p.interstellarType = "nebula";
           const nebula = nebulas[idx % nebulas.length];
           p.interstellarEntityIndex = entities.indexOf(nebula || nebulas[0]);
+          p.interstellarEntity = nebula || nebulas[0];
 
           const angle = Math.random() * Math.PI * 2;
           const rad = Math.pow(Math.random(), 1.2) * nebula.radius;
@@ -916,9 +1193,14 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           p.interstellarType = "planet";
           const planet = planets[idx % planets.length];
           p.interstellarEntityIndex = entities.indexOf(planet || planets[0]);
+          p.interstellarEntity = planet || planets[0];
           p.orbitRadius = planet.radius * (1.1 + Math.random() * 0.6);
           p.orbitAngle = Math.random() * Math.PI * 2;
-          p.orbitSpeed = 0.015 + Math.random() * 0.01;
+          
+          const r = p.orbitRadius || 30;
+          const baseSpeed = 0.012 + Math.random() * 0.008;
+          p.orbitSpeed = baseSpeed * Math.pow((planet.radius * 1.4) / r, 1.5);
+
           p.isPlanetRing = false;
 
           const rx = p.orbitRadius;
@@ -949,9 +1231,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           p.bridgeStartEntityIndex = entities.indexOf(
             planets[startIdx] || planets[0],
           );
+          p.bridgeStartEntity = planets[startIdx] || planets[0];
           p.bridgeEndEntityIndex = entities.indexOf(
             planets[endIdx] || planets[1],
           );
+          p.bridgeEndEntity = planets[endIdx] || planets[1];
           p.bridgeProgress = Math.random();
           p.bridgeSpeed = 0.012 + Math.random() * 0.012;
 
@@ -983,6 +1267,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           p.interstellarType = "planet";
           const planet = planets[idx % planets.length];
           p.interstellarEntityIndex = entities.indexOf(planet || planets[0]);
+          p.interstellarEntity = planet || planets[0];
 
           const ringRand = Math.random();
           if (planet.hasRings && ringRand > 0.4) {
@@ -990,8 +1275,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
             const maxR = planet.radius * 2.5;
             p.orbitRadius = minR + Math.random() * (maxR - minR);
             p.orbitAngle = Math.random() * Math.PI * 2;
-            p.orbitSpeed =
-              (0.015 + Math.random() * 0.015) * (planet.radius / p.orbitRadius);
+            
+            const r = p.orbitRadius || 30;
+            const baseSpeed = 0.014 + Math.random() * 0.012;
+            p.orbitSpeed = baseSpeed * Math.pow((planet.radius * 1.6) / r, 1.5);
+
             p.isPlanetRing = true;
 
             const rx = p.orbitRadius;
@@ -1008,7 +1296,10 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           } else {
             p.orbitRadius = planet.radius * (1.1 + Math.random() * 0.5);
             p.orbitAngle = Math.random() * Math.PI * 2;
-            p.orbitSpeed = 0.015 + Math.random() * 0.015;
+            
+            const r = p.orbitRadius || 30;
+            const baseSpeed = 0.012 + Math.random() * 0.008;
+            p.orbitSpeed = baseSpeed * Math.pow((planet.radius * 1.3) / r, 1.5);
             p.isPlanetRing = false;
 
             const rx = p.orbitRadius;
@@ -1092,7 +1383,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         p.color = p.baseColor;
         p.isPlanetRing = false;
       }
-    });
+    }
+  });
 
     particlesRef.current.sort((a, b) => {
       if (a.isCosmicAmbient && !b.isCosmicAmbient) return -1;
@@ -1142,9 +1434,28 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         p.interstellarType = undefined; // reset interstellar mode orbit locks
 
         if (triggerBurst) {
-          p.vx = (Math.random() - 0.5) * 65;
-          p.vy = (Math.random() - 0.5) * 65;
-          p.vz = (Math.random() - 0.5) * 110;
+          // Instead of pure random noise, we create a coherent gravitational vortex stream.
+          // Particles will swirl outwards or inwards in a spiral trajectory based on their distance from the center,
+          // mimicking gravitational accretion streams.
+          const cx = ww / 2;
+          const cy = wh / 2;
+          const dx = p.x - cx;
+          const dy = p.y - cy;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          
+          // Tangential swirling vector
+          const swirlMagnitude = 32.0;
+          const tx = -dy / dist * swirlMagnitude;
+          const ty = dx / dist * swirlMagnitude;
+          
+          // Radial push/pull vector
+          const radialMagnitude = (Math.random() - 0.25) * 40.0;
+          const rx = (dx / dist) * radialMagnitude;
+          const ry = (dy / dist) * radialMagnitude;
+          
+          p.vx = tx + rx + (Math.random() - 0.5) * 12;
+          p.vy = ty + ry + (Math.random() - 0.5) * 12;
+          p.vz = (Math.random() - 0.5) * 55;
         }
       });
 
@@ -1161,12 +1472,19 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     if (!hudPlaneRef.current || !hudTextureRef.current) return;
     const ww = window.innerWidth;
     const wh = window.innerHeight;
+    const hudDpr = window.devicePixelRatio || 1;
 
     const texture = hudTextureRef.current;
     const context = texture.getContext() as CanvasRenderingContext2D | null;
     if (!context) return;
-    context.clearRect(0, 0, ww, wh);
+    context.clearRect(0, 0, ww * hudDpr, wh * hudDpr);
+    // context.scale is already applied once, wait, if we clear we don't need to re-scale, but let's make sure
+    context.save();
+    context.resetTransform();
+    context.clearRect(0, 0, ww * hudDpr, wh * hudDpr);
+    context.scale(hudDpr, hudDpr);
     drawStageLayoutTemplate(context, targetStage, ww, wh, "full");
+    context.restore();
     texture.update();
   };
 
@@ -1191,6 +1509,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
   // Synchronize dynamic 3D celestial meshes in Babylon.js
   const updateCelestial3DMeshes = () => {
+    try {
     const scene = sceneRef.current;
     const group = celestialGroupRef.current;
     if (!scene || !group) return;
@@ -1199,8 +1518,56 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     const wh = window.innerHeight;
 
     const entities = celestialEntitiesRef.current;
+
+    // Smooth entity morphing / transition interpolation in the render loop!
+    let meshTransitionT = 0;
+    let isMeshTransitioning = false;
+    if (entityTransitionActiveRef.current) {
+      const duration = 2400; // 2.4 seconds duration matching camera
+      const elapsed = Date.now() - entityTransitionStartTimeRef.current;
+      if (elapsed >= duration) {
+        entityTransitionActiveRef.current = false;
+        console.log(`[DEBUG] updateCelestial3DMeshes: Entity transition duration reached. Transition is now complete. Processing current states...`);
+        entities.forEach((cur) => {
+          if (cur.targetX !== undefined) cur.x = cur.targetX;
+          if (cur.targetY !== undefined) cur.y = cur.targetY;
+          if (cur.targetZ !== undefined) cur.z = cur.targetZ;
+          if (cur.targetRadius !== undefined) cur.radius = cur.targetRadius;
+          if (cur.targetScale !== undefined) cur.scale = cur.targetScale;
+        });
+        const beforeFilter = entities.length;
+        celestialEntitiesRef.current = entities.filter(e => (e.scale ?? 0) > 0.01);
+        console.log(`[DEBUG] updateCelestial3DMeshes: Filtered out old entities. Before: ${beforeFilter}, After: ${celestialEntitiesRef.current.length} alive entities remaining.`);
+      } else {
+        isMeshTransitioning = true;
+        const rawT = elapsed / duration;
+        meshTransitionT = rawT < 0.5 ? 4 * rawT * rawT * rawT : 1 - Math.pow(-2 * rawT + 2, 3) / 2;
+      }
+    }
+
+    if (isMeshTransitioning) {
+      entities.forEach((cur) => {
+        if (cur.startX !== undefined && cur.targetX !== undefined) {
+          cur.x = (1 - meshTransitionT) * cur.startX + meshTransitionT * cur.targetX;
+        }
+        if (cur.startY !== undefined && cur.targetY !== undefined) {
+          cur.y = (1 - meshTransitionT) * cur.startY + meshTransitionT * cur.targetY;
+        }
+        if (cur.startZ !== undefined && cur.targetZ !== undefined) {
+          cur.z = (1 - meshTransitionT) * cur.startZ + meshTransitionT * cur.targetZ;
+        }
+        if (cur.startRadius !== undefined && cur.targetRadius !== undefined) {
+          cur.radius = (1 - meshTransitionT) * cur.startRadius + meshTransitionT * cur.targetRadius;
+        }
+        if (cur.startScale !== undefined && cur.targetScale !== undefined) {
+          cur.scale = (1 - meshTransitionT) * cur.startScale + meshTransitionT * cur.targetScale;
+        }
+      });
+    }
+
     const sceneAge = (Date.now() - interstellarSceneGeneratedTimeRef.current) / 1000;
     const musicAmp = (audio as any).getMusicAmplitude();
+    const musicBands = (audio as any).getFrequencyBands ? (audio as any).getFrequencyBands() : { bass: 0, mid: 0, treble: 0 };
 
     // Automatic Calming Cosmic Shift transition after 240 seconds for a slower, serene screensaver experience
     if (isInterstellarRef.current && sceneAge > 240.0 && !supernovaRef.current) {
@@ -1244,13 +1611,12 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       createDustSplash(newPlanet.x, newPlanet.y, newPlanet.color, 120);
       audio.playStageSwell(1); // Play deep swelling tone
 
-      if (onSequenceGenerated) {
-        onSequenceGenerated({
-          name: "Stellar Nucleus Birth",
-          description: "Stardust accretion has crossed a critical mass point. A young planet is birthed into decaying orbit, pulled by the master gravitational field.",
-          tags: ["★ STAR NURSERY", "☄ CORE CONCRETION", "★ INWARD SPIRAL"]
-        });
-      }
+      registerAndSaveSequence(
+        "Stellar Nucleus Birth",
+        "Stardust accretion has crossed a critical mass point. A young planet is birthed into decaying orbit, pulled by the master gravitational field.",
+        ["★ STAR NURSERY", "☄ CORE CONCRETION", "★ INWARD SPIRAL"],
+        entities
+      );
     }
 
     // 2. Continuous Gravity Drift: Apply gentle inward spiral drag
@@ -1309,7 +1675,9 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
             if (!p.isTail && !p.isCosmicAmbient && bridgeCount < 200) {
               p.interstellarType = "bridge";
               p.bridgeStartEntityIndex = idx1;
+              p.bridgeStartEntity = entities[idx1];
               p.bridgeEndEntityIndex = idx2;
+              p.bridgeEndEntity = entities[idx2];
               p.bridgeProgress = Math.random();
               p.bridgeSpeed = 0.007 + Math.random() * 0.015;
               bridgeCount++;
@@ -1318,13 +1686,12 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
           audio.playStageSwell(1); // deep zimmer-like chord shift
 
-          if (onSequenceGenerated) {
-            onSequenceGenerated({
-              name: "Wormhole Bridge Activated",
-              description: "A localized quantum bridge has bent spacetime between two orbits. Hot stellar plasma particles funnel instantly through the dimensional throat.",
-              tags: ["🕳 ER BRIDGE", "☄ SPATIAL WARP", "★ BENT METRIC"]
-            });
-          }
+          registerAndSaveSequence(
+            "Wormhole Bridge Activated",
+            "A localized quantum bridge has bent spacetime between two orbits. Hot stellar plasma particles funnel instantly through the dimensional throat.",
+            ["🕳 ER BRIDGE", "☄ SPATIAL WARP", "★ BENT METRIC"],
+            entities
+          );
         }
       } else if (eventChoice === 1 && nonBhEntities.length >= 1) {
         // Event B: LOCALIZED COMPACT COLLAPSE (Stellar core collapse, remains inside the same scene)
@@ -1356,15 +1723,14 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         createDustSplash(star.x, star.y, "#ffffff", 120);
         audio.playSupernova(); // Deep vibrational sub-bass explosion!
 
-        if (onSequenceGenerated) {
-          onSequenceGenerated({
-            name: isNeutronStar ? "Neutron Star Synthesis" : "Micro Singularity Formation",
-            description: isNeutronStar 
-              ? "A massive star has collapsed under gravity, fusing its protons and electrons into a super-dense, spinning neutron core."
-              : "A dying star core collapsed past its Schwarzschild radius, punching a miniature hole in the fabric of space.",
-            tags: [isNeutronStar ? "★ COMPACT STAR" : "🕳 SINGULARITY", "☄ CORE COLLAPSE", "★ LOCAL NEBULA"]
-          });
-        }
+        registerAndSaveSequence(
+          isNeutronStar ? "Neutron Star Synthesis" : "Micro Singularity Formation",
+          isNeutronStar 
+            ? "A massive star has collapsed under gravity, fusing its protons and electrons into a super-dense, spinning neutron core."
+            : "A dying star core collapsed past its Schwarzschild radius, punching a miniature hole in the fabric of space.",
+          [isNeutronStar ? "★ COMPACT STAR" : "🕳 SINGULARITY", "☄ CORE COLLAPSE", "★ LOCAL NEBULA"],
+          entities
+        );
       } else if (eventChoice === 2) {
         // Event C: EXOPLANETARY SEED NURSERY (Spawns twin planets that will peacefully merge later)
         const angle = Math.random() * Math.PI * 2;
@@ -1406,13 +1772,12 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         createDustSplash(child2.x, child2.y, child2.color, 90);
         audio.playStageSwell(2);
 
-        if (onSequenceGenerated) {
-          onSequenceGenerated({
-            name: "Gravitational Coalescence",
-            description: "Twin protoplanetary bodies are pulled onto a head-on collision course. High electromagnetic resistance compresses spacetime before contact.",
-            tags: ["☄ TWIN CORES", "☄ VECTOR COLLISION", "★ REPULSION"]
-          });
-        }
+        registerAndSaveSequence(
+          "Gravitational Coalescence",
+          "Twin protoplanetary bodies are pulled onto a head-on collision course. High electromagnetic resistance compresses spacetime before contact.",
+          ["☄ TWIN CORES", "☄ VECTOR COLLISION", "★ REPULSION"],
+          entities
+        );
       } else if (eventChoice === 3) {
         // Event D: STELLIFEROUS NURSERY CONDENSATION
         const angle = Math.random() * Math.PI * 2;
@@ -1438,13 +1803,12 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         createDustSplash(newNebula.x, newNebula.y, newNebula.color, 150);
         audio.playStageSwell(2);
 
-        if (onSequenceGenerated) {
-          onSequenceGenerated({
-            name: "Stelliferous Condensation",
-            description: "An interstellar gas cloud is cooling and condensing, creating a vibrant nebula of ionized cosmic plasma.",
-            tags: ["★ IONIZED GAS", "☄ NEBULA DRIVEN", "★ STAR NURSERY"]
-          });
-        }
+        registerAndSaveSequence(
+          "Stelliferous Condensation",
+          "An interstellar gas cloud is cooling and condensing, creating a vibrant nebula of ionized cosmic plasma.",
+          ["★ IONIZED GAS", "☄ NEBULA DRIVEN", "★ STAR NURSERY"],
+          entities
+        );
       }
     }
 
@@ -1490,15 +1854,30 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       victim.isDestroyed = true;
       victim.destroyedBy = "collision";
 
-      const newMass = (survivor.mass || 10) + (victim.mass || 10);
+      const m1 = survivor.mass || 10;
+      const m2 = victim.mass || 10;
+      const newMass = m1 + m2;
       survivor.mass = newMass;
       
       // Grow survivor's radius based on new mass
       const targetRadius = Math.min(survivor.radius * 1.5, Math.sqrt(newMass));
       survivor.targetRadius = targetRadius;
 
-      const midX = (survivor.x + victim.x) / 2;
-      const midY = (survivor.y + victim.y) / 2;
+      // Physically accurate center-of-mass positioning & momentum conservation
+      const midX = (survivor.x * m1 + victim.x * m2) / newMass;
+      const midY = (survivor.y * m1 + victim.y * m2) / newMass;
+      const midZ = (((survivor.z || 0) * m1) + ((victim.z || 0) * m2)) / newMass;
+
+      survivor.x = midX;
+      survivor.y = midY;
+      survivor.z = midZ;
+
+      if (survivor.isPhysicsEnabled || victim.isPhysicsEnabled) {
+        survivor.vx = ((survivor.vx || 0) * m1 + (victim.vx || 0) * m2) / newMass;
+        survivor.vy = ((survivor.vy || 0) * m1 + (victim.vy || 0) * m2) / newMass;
+        survivor.vz = ((survivor.vz || 0) * m1 + (victim.vz || 0) * m2) / newMass;
+        survivor.isPhysicsEnabled = true;
+      }
 
       // Play collision sound
       audio.playRippleShockwave();
@@ -1514,13 +1893,12 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       createShatterDebris(midX, midY, victim.color || "#ffffff", 80);
       createDustSplash(midX, midY, survivor.color || "#ffffff", 40);
 
-      if (onSequenceGenerated) {
-        onSequenceGenerated({
-          name: "Planetary Coalescence",
-          description: "Two cosmic bodies collide, merging into a larger planet and seeding a fresh stardust ring in their orbital plane.",
-          tags: ["🪐 COALESCENCE", "☄ KINETIC MERGER", "★ MASS ACCRETION"]
-        });
-      }
+      registerAndSaveSequence(
+        "Planetary Coalescence",
+        "Two cosmic bodies collide, merging into a larger planet and seeding a fresh stardust ring in their orbital plane.",
+        ["🪐 COALESCENCE", "☄ KINETIC MERGER", "★ MASS ACCRETION"],
+        entities
+      );
     };
 
     // --- Interactive Mouse Gravitational Warp & Supernova Trigger ---
@@ -1751,7 +2129,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
           const dx = e2.x - e1.x;
           const dy = e2.y - e1.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
+          const dz = (e2.z || 0) - (e1.z || 0);
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
           const colDist = e1.radius + e2.radius;
 
           if (dist < colDist) {
@@ -1760,10 +2139,48 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
             } else if (e2.type === "blackhole") {
               swallowEntity(e2, e1);
             } else {
-              if (e1.radius >= e2.radius) {
-                mergeEntities(e1, e2);
+              // Calculate relative velocity
+              const rvx = (e2.vx || 0) - (e1.vx || 0);
+              const rvy = (e2.vy || 0) - (e1.vy || 0);
+              const rvz = (e2.vz || 0) - (e1.vz || 0);
+              const relVel = Math.sqrt(rvx * rvx + rvy * rvy + rvz * rvz);
+
+              // Merging occurs at extremely high velocities or massive radius disparity
+              const radiusRatio = Math.max(e1.radius, e2.radius) / Math.min(e1.radius, e2.radius);
+              if (relVel > 12.0 || radiusRatio > 2.5) {
+                if (e1.radius >= e2.radius) {
+                  mergeEntities(e1, e2);
+                } else {
+                  mergeEntities(e2, e1);
+                }
               } else {
-                mergeEntities(e2, e1);
+                // Inelastic bounce with momentum conservation and heat dissipation
+                const colResult = resolveCelestialCollision(e1, e2, 0.45);
+                if (colResult) {
+                  audio.playRippleShockwave();
+
+                  const dissipatedEnergy = colResult.kineticEnergyDissipated;
+                  const count = Math.min(150, Math.max(20, Math.floor(dissipatedEnergy * 0.15)));
+
+                  createShatterDebris(
+                    colResult.contactPointX,
+                    colResult.contactPointY,
+                    e1.color || "#ffffff",
+                    Math.floor(count * 0.5)
+                  );
+                  createDustSplash(
+                    colResult.contactPointX,
+                    colResult.contactPointY,
+                    e2.color || "#ffffff",
+                    Math.floor(count * 0.5)
+                  );
+
+                  ripplesRef.current.push({
+                    x: colResult.contactPointX,
+                    y: colResult.contactPointY,
+                    life: 0.65,
+                  });
+                }
               }
             }
           }
@@ -1771,17 +2188,23 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       }
     }
 
-    // Detect if we need to rebuild meshes
-    const activeIds = entities.map((e, idx) => `${e.type}-${idx}-${e.rebuildKey || 0}`);
-    const existingIds = celestialMeshInstancesRef.current.map(
-      (inst) => inst.id,
-    );
-    const needsRebuild = activeIds.join(",") !== existingIds.join(",");
+    // Ensure all active entities have stable unique IDs
+    entities.forEach((entity, idx) => {
+      if (!entity.id) {
+        entity.id = `${entity.type}-${idx}-${Math.random().toString(36).substring(2, 9)}`;
+      }
+    });
+    const activeEntityIds = new Set(entities.map(e => e.id));
 
-    if (needsRebuild) {
-      // Rebuild all meshes in Babylon.js and safely dispose of their resources (materials/textures)
-      if (celestialGroupRef.current) {
-        celestialGroupRef.current.getChildMeshes(false).forEach((m) => {
+    // Safely dispose of removed meshes or fully faded-out destroyed/swallowed entities
+    const nextMeshInstances: typeof celestialMeshInstancesRef.current = [];
+    celestialMeshInstancesRef.current.forEach((inst) => {
+      const entity = inst.entityRef;
+      const isStillPresent = activeEntityIds.has(entity.id);
+      const shouldDispose = !isStillPresent || (entity.isDestroyed && (entity.scale ?? 0) <= 0.02);
+
+      if (shouldDispose) {
+        inst.mesh.getChildMeshes(false).forEach((m) => {
           if (m.material) {
             const mats = (m.material as any).subMaterials || [m.material];
             mats.forEach((mat: any) => {
@@ -1800,21 +2223,27 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           }
           m.dispose();
         });
-        celestialGroupRef.current.getChildren().forEach((c) => {
-          c.dispose();
-        });
+        inst.mesh.dispose();
+      } else {
+        nextMeshInstances.push(inst);
       }
-      celestialMeshInstancesRef.current = [];
+    });
+    celestialMeshInstancesRef.current = nextMeshInstances;
 
-      entities.forEach((entity, idx) => {
-        const entityId = `${entity.type}-${idx}-${entity.rebuildKey || 0}`;
-        const wx = entity.x - ww / 2;
-        const wy = -(entity.y - wh / 2);
+    // Create meshes incrementally for new entities that do not have a mesh yet
+    entities.forEach((entity, idx) => {
+      const hasMesh = celestialMeshInstancesRef.current.some(inst => inst.entityRef.id === entity.id);
+      if (hasMesh) return;
+      if (entity.isDestroyed) return;
 
-        entity.scale = entity.scale ?? 0;
-        entity.currentRadius = entity.currentRadius ?? entity.radius;
-        entity.originalRadius = entity.originalRadius ?? entity.radius;
-        const initScale = entity.scale * (entity.currentRadius / entity.originalRadius);
+      const entityId = entity.id!;
+      const wx = entity.x - ww / 2;
+      const wy = -(entity.y - wh / 2);
+
+      entity.scale = entity.scale ?? 0;
+      entity.currentRadius = entity.currentRadius ?? entity.radius;
+      entity.originalRadius = entity.originalRadius ?? entity.radius;
+      const initScale = entity.scale * (entity.currentRadius / entity.originalRadius);
 
         if (entity.type === "blackhole") {
           const bhContainer = new BABYLON.TransformNode("bh_group", scene);
@@ -1823,14 +2252,14 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           // 1. Accretion disk - Layer 1: Core fiery orange-yellow distorted waves
           const diskRadius = entity.radius * 3.6;
           const diskTex1 = generateDistortedLightwaveTexture("#ffa600", scene);
-          const diskMat1 = new BABYLON.StandardMaterial("diskMat1", scene);
-          diskMat1.diffuseTexture = diskTex1;
+          const diskMat1 = new BABYLON.PBRMaterial("diskMat1", scene);
+          diskMat1.albedoTexture = diskTex1;
           diskMat1.emissiveTexture = diskTex1;
+          diskMat1.emissiveColor = new BABYLON.Color3(1, 1, 1);
           diskMat1.disableLighting = true;
           diskMat1.backFaceCulling = false;
           diskMat1.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
-          diskMat1.useAlphaFromDiffuseTexture = true;
-          diskMat1.disableDepthWrite = true;
+
           diskMat1.alpha = 0.95;
 
           const diskMesh1 = BABYLON.MeshBuilder.CreateTorus("accretion_layer_1", {
@@ -1844,14 +2273,14 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
           // Accretion disk - Layer 2: Opposing-spin golden wave warp (slightly tilted)
           const diskTex2 = generateDistortedLightwaveTexture("#ffdf00", scene);
-          const diskMat2 = new BABYLON.StandardMaterial("diskMat2", scene);
-          diskMat2.diffuseTexture = diskTex2;
+          const diskMat2 = new BABYLON.PBRMaterial("diskMat2", scene);
+          diskMat2.albedoTexture = diskTex2;
           diskMat2.emissiveTexture = diskTex2;
+          diskMat2.emissiveColor = new BABYLON.Color3(1, 1, 1);
           diskMat2.disableLighting = true;
           diskMat2.backFaceCulling = false;
           diskMat2.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
-          diskMat2.useAlphaFromDiffuseTexture = true;
-          diskMat2.disableDepthWrite = true;
+
           diskMat2.alpha = 0.75;
 
           const diskMesh2 = BABYLON.MeshBuilder.CreateTorus("accretion_layer_2", {
@@ -1867,14 +2296,14 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           // Accretion disk - Layer 3: Gravitational lensing ring (outer halo, near perpendicular view)
           const lensRadius = entity.radius * 4.6;
           const diskTex3 = generateDistortedLightwaveTexture("#ffffff", scene);
-          const diskMat3 = new BABYLON.StandardMaterial("diskMat3", scene);
-          diskMat3.diffuseTexture = diskTex3;
+          const diskMat3 = new BABYLON.PBRMaterial("diskMat3", scene);
+          diskMat3.albedoTexture = diskTex3;
           diskMat3.emissiveTexture = diskTex3;
+          diskMat3.emissiveColor = new BABYLON.Color3(1, 1, 1);
           diskMat3.disableLighting = true;
           diskMat3.backFaceCulling = false;
           diskMat3.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
-          diskMat3.useAlphaFromDiffuseTexture = true;
-          diskMat3.disableDepthWrite = true;
+
           diskMat3.alpha = 0.45;
 
           const diskMesh3 = BABYLON.MeshBuilder.CreateTorus("gravitational_lensing", {
@@ -1888,8 +2317,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           diskMesh3.parent = bhContainer;
 
           // 2. Event Horizon Shadow
-          const ehMat = new BABYLON.StandardMaterial("ehMat", scene);
-          ehMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
+          const ehMat = new BABYLON.PBRMaterial("ehMat", scene);
+          ehMat.albedoColor = new BABYLON.Color3(0, 0, 0);
           ehMat.emissiveColor = new BABYLON.Color3(0, 0, 0);
           ehMat.disableLighting = true;
 
@@ -1902,14 +2331,14 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
           // 2b. Event Horizon Glowing Corona (Einstein Ring / Photon Sphere lens aura)
           const coronaTex = createCircularGlowTexture(hexToRgba(entity.color, 0.95), scene);
-          const coronaMat = new BABYLON.StandardMaterial("coronaMat", scene);
-          coronaMat.diffuseTexture = coronaTex;
+          const coronaMat = new BABYLON.PBRMaterial("coronaMat", scene);
+          coronaMat.albedoTexture = coronaTex;
           coronaMat.emissiveTexture = coronaTex;
+          coronaMat.emissiveColor = new BABYLON.Color3(1, 1, 1);
           coronaMat.disableLighting = true;
           coronaMat.backFaceCulling = false;
           coronaMat.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
-          coronaMat.useAlphaFromDiffuseTexture = true;
-          coronaMat.disableDepthWrite = true;
+
           coronaMat.alpha = 0.9;
 
           const coronaMesh = BABYLON.MeshBuilder.CreateSphere("event_horizon_corona", {
@@ -1932,21 +2361,26 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           const planetContainer = new BABYLON.TransformNode("planet_group", scene);
           planetContainer.position.set(wx, wy, 0);
 
-          // 1. Planet sphere
+          // 1. Planet core sphere with PBR shadow-side bioluminescence
           const planetTexture = generateAdvancedPlanetTexture(
             entity.color,
             entity.secondaryColor || entity.color,
             scene
           );
 
-          const sphereMat = new BABYLON.StandardMaterial("sphereMat", scene);
-          sphereMat.diffuseTexture = planetTexture;
+          const sphereMat = new BABYLON.PBRMaterial("sphereMat", scene);
+          sphereMat.albedoTexture = planetTexture;
           sphereMat.bumpTexture = planetTexture;
-          // Beautiful specular reflection for 3D depth and sheen!
-          sphereMat.specularColor = new BABYLON.Color3(0.48, 0.48, 0.48);
-          sphereMat.specularPower = 12.0; // wider, softer satin highlight
+          sphereMat.emissiveTexture = planetTexture;
+          // Subtly light up the dark side of the planet with a soft bioluminescent gas glow
+          sphereMat.emissiveColor = new BABYLON.Color3(0.08, 0.08, 0.12);
+          
+          sphereMat.roughness = 0.55;
+          sphereMat.metallic = 0.12;
+          sphereMat.directIntensity = 1.35;
+          sphereMat.specularIntensity = 1.0;
           if (sphereMat.bumpTexture) {
-            sphereMat.bumpTexture.level = 0.65; // slightly deeper bump map relief
+            sphereMat.bumpTexture.level = 0.52; // physically based bump scale
           }
 
           const sphereMesh = BABYLON.MeshBuilder.CreateSphere("planet_sphere", {
@@ -1956,14 +2390,34 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           sphereMesh.material = sphereMat;
           sphereMesh.parent = planetContainer;
 
-          // 2. Real 3D Torus for Striated rings
+          // 1.5. Dynamic semi-transparent cloud layer sphere spinning independently
+          const cloudTexture = generateAdvancedPlanetTexture(
+            entity.secondaryColor || entity.color,
+            "#ffffff",
+            scene
+          );
+          const cloudMat = new BABYLON.PBRMaterial("cloudMat", scene);
+          cloudMat.albedoTexture = cloudTexture;
+          cloudMat.alpha = 0.42; // semi-transparent
+          cloudMat.alphaMode = BABYLON.Engine.ALPHA_ADD; // glowing additive vapor
+          cloudMat.roughness = 0.45;
+          cloudMat.metallic = 0.02;
+
+          const cloudMesh = BABYLON.MeshBuilder.CreateSphere("planet_clouds", {
+            diameter: entity.radius * 2.03, // floating slightly above the core
+            segments: 32
+          }, scene);
+          cloudMesh.material = cloudMat;
+          cloudMesh.parent = planetContainer;
+
+          // 2. Paper-thin concentric flat striated rings (Double-Sided Disc instead of Torus!)
           if (entity.hasRings) {
             const ringTexture = generateConcentricRingTexture(entity.ringColor || entity.color, scene);
             
-            const ringMesh = BABYLON.MeshBuilder.CreateTorus("ring_mesh", {
-              diameter: entity.radius * 3.6,
-              thickness: entity.radius * 0.22,
-              tessellation: 64
+            const ringMesh = BABYLON.MeshBuilder.CreateDisc("ring_mesh", {
+              radius: entity.radius * 2.1, // radius fits concentric texture nicely
+              tessellation: 64,
+              sideOrientation: BABYLON.Mesh.DOUBLESIDE
             }, scene);
 
             const ringMat = new BABYLON.StandardMaterial("ringMat", scene);
@@ -2030,39 +2484,33 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
           const nebTex = generateNebulaTexture(entity.color, entity.secondaryColor || entity.color, scene);
           
-          const nebMat = new BABYLON.StandardMaterial("nebMat", scene);
-          nebMat.diffuseTexture = nebTex;
-          nebMat.emissiveTexture = nebTex;
-          nebMat.disableLighting = true;
-          nebMat.backFaceCulling = false;
-          nebMat.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
-          nebMat.useAlphaFromDiffuseTexture = true;
-          nebMat.disableDepthWrite = true;
-          nebMat.alpha = 0.55;
+          const numShells = 4;
+          for (let s = 0; s < numShells; s++) {
+            const scaleFactor = 2.4 - s * 0.4;
+            const shellMesh = BABYLON.MeshBuilder.CreateSphere(`neb_shell_${s}`, {
+              diameter: entity.radius * scaleFactor,
+              segments: 16
+            }, scene);
 
-          const nebMesh1 = BABYLON.MeshBuilder.CreateSphere("nebula_sphere_1", {
-            diameter: entity.radius * 2.4,
-            segments: 16
-          }, scene);
-          nebMesh1.material = nebMat;
-          nebMesh1.parent = nebContainer;
+            const shellMat = new BABYLON.PBRMaterial(`neb_shell_mat_${s}`, scene);
+            shellMat.albedoTexture = nebTex;
+            shellMat.emissiveTexture = nebTex;
+            shellMat.emissiveColor = new BABYLON.Color3(0.12, 0.12, 0.12);
+            shellMat.disableLighting = true; // gas emits/absorbs its own light
+            shellMat.backFaceCulling = false;
+            shellMat.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
 
-          const nebMat2 = new BABYLON.StandardMaterial("nebMat2", scene);
-          nebMat2.diffuseTexture = nebTex;
-          nebMat2.emissiveTexture = nebTex;
-          nebMat2.disableLighting = true;
-          nebMat2.backFaceCulling = false;
-          nebMat2.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
-          nebMat2.useAlphaFromDiffuseTexture = true;
-          nebMat2.disableDepthWrite = true;
-          nebMat2.alpha = 0.35;
+            shellMat.alpha = 0.45 - s * 0.08;
 
-          const nebMesh2 = BABYLON.MeshBuilder.CreateSphere("nebula_sphere_2", {
-            diameter: entity.radius * 1.8,
-            segments: 16
-          }, scene);
-          nebMesh2.material = nebMat2;
-          nebMesh2.parent = nebContainer;
+
+            shellMesh.material = shellMat;
+            shellMesh.parent = nebContainer;
+            
+            // Apply unique offset angles for rotational volumetric parallax
+            shellMesh.rotation.x = (s * 1.15) + 0.5;
+            shellMesh.rotation.y = (s * 2.3) - 0.2;
+            shellMesh.rotation.z = s * -0.75;
+          }
 
           nebContainer.scaling.set(initScale, initScale, initScale);
           if (celestialGroupRef.current) {
@@ -2090,8 +2538,9 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           galMat.disableLighting = true;
           galMat.backFaceCulling = false;
           galMat.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
+
           galMat.useAlphaFromDiffuseTexture = true;
-          galMat.disableDepthWrite = true;
+
           galMat.alpha = 0.92;
 
           const galMesh = BABYLON.MeshBuilder.CreateSphere("galaxy_ellipsoid", {
@@ -2117,8 +2566,9 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           galMat2.disableLighting = true;
           galMat2.backFaceCulling = false;
           galMat2.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
+
           galMat2.useAlphaFromDiffuseTexture = true;
-          galMat2.disableDepthWrite = true;
+
           galMat2.alpha = 0.52;
 
           const galMesh2 = BABYLON.MeshBuilder.CreateSphere("galaxy_ellipsoid_bg", {
@@ -2183,8 +2633,9 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           auraMat.disableLighting = true;
           auraMat.backFaceCulling = false;
           auraMat.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
+
           auraMat.useAlphaFromDiffuseTexture = true;
-          auraMat.disableDepthWrite = true;
+
           auraMat.alpha = 0.9;
 
           const starFresnel = new BABYLON.FresnelParameters();
@@ -2215,7 +2666,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           });
         }
       });
-    } else {
+
       // Just update existing instances coordinates & scale & gentle rotation animation
       celestialMeshInstancesRef.current.forEach((inst) => {
         const entity = inst.entityRef;
@@ -2240,7 +2691,17 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         entity.originalRadius = entity.originalRadius ?? entity.radius;
         const radiusScale = entity.currentRadius / entity.originalRadius;
 
-        const finalScale = entity.scale * radiusScale;
+        // Dynamic pulse scaling based on audio frequency bands
+        let dynamicPulse = 1.0;
+        if (entity.type === "star" || entity.type === "blackhole") {
+          dynamicPulse = 1.0 + musicBands.bass * 0.18 + musicBands.mid * 0.08;
+        } else if (entity.type === "planet") {
+          dynamicPulse = 1.0 + musicBands.mid * 0.14 + musicBands.treble * 0.05;
+        } else if (entity.type === "nebula" || entity.type === "galaxy") {
+          dynamicPulse = 1.0 + musicBands.bass * 0.08 + musicBands.mid * 0.06;
+        }
+
+        const finalScale = entity.scale * radiusScale * dynamicPulse;
 
         // Apply Relativistic Tidal Stretching (Spaghettification) as it nears the black hole!
         let finalScaleX = finalScale;
@@ -2315,67 +2776,83 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         // Spin spheres/disks using Babylon getChildMeshes for ALL celestial bodies
         const isPulse = isShockwaveActiveRef.current;
         inst.mesh.getChildMeshes().forEach((child) => {
-          if (child.name === "planet_sphere" || child.name === "star_core" || child.name === "galaxy_core") {
-            child.rotation.y += 0.005;
+          if (child.name === "planet_sphere" || child.name === "star_core" || child.name === "galaxy_core" || child.name === "planet_clouds") {
+            const spinBase = child.name === "star_core" ? 0.008 : (child.name === "planet_clouds" ? 0.0065 : 0.0042);
+            child.rotation.y += spinBase + musicBands.mid * 0.02 + musicBands.treble * 0.01;
+            if (child.name === "planet_clouds") {
+              child.rotation.x += 0.0003; // elegant independent cloud tilt drift
+            }
           } else if (child.name.indexOf("galaxy_ellipsoid_bg") !== -1) {
-            child.rotation.z -= 0.0016 + (isPulse ? 0.012 : 0);
+            child.rotation.z -= 0.0016 + (isPulse ? 0.012 : 0) + musicBands.bass * 0.006;
           } else if (child.name.indexOf("galaxy_ellipsoid") !== -1) {
-            child.rotation.z += 0.0024 + (isPulse ? 0.016 : 0);
+            child.rotation.z += 0.0024 + (isPulse ? 0.016 : 0) + musicBands.mid * 0.008;
           } else if (child.name.indexOf("accretion_layer_1") !== -1) {
-            child.rotation.z += 0.007;
+            child.rotation.z += 0.007 + musicBands.bass * 0.02;
             const pulse = 1.0 + Math.sin(Date.now() * 0.0035) * 0.05 + musicAmp * 0.25;
             child.scaling.set(pulse, pulse, pulse);
           } else if (child.name.indexOf("accretion_layer_2") !== -1) {
-            child.rotation.z -= 0.011;
+            child.rotation.z -= 0.011 + musicBands.mid * 0.02;
             const pulse = 1.0 + Math.cos(Date.now() * 0.0025) * 0.04 + musicAmp * 0.2;
             child.scaling.set(pulse, pulse, pulse);
           } else if (child.name.indexOf("gravitational_lensing") !== -1) {
-            child.rotation.z += 0.003;
+            child.rotation.z += 0.003 + musicBands.bass * 0.01;
             const pulse = 1.0 + Math.sin(Date.now() * 0.0015) * 0.06 + musicAmp * 0.3;
             child.scaling.set(pulse, pulse, pulse);
           } else if (child.name.indexOf("nebula_sphere_1") !== -1) {
-            child.rotation.y += 0.0008;
-            child.rotation.x += 0.0004;
+            child.rotation.y += 0.0008 + musicBands.mid * 0.003;
+            child.rotation.x += 0.0004 + musicBands.mid * 0.002;
           } else if (child.name.indexOf("nebula_sphere_2") !== -1) {
-            child.rotation.y -= 0.0006;
-            child.rotation.z += 0.0005;
+            child.rotation.y -= 0.0006 + musicBands.mid * 0.002;
+            child.rotation.z += 0.0005 + musicBands.mid * 0.001;
           } else {
-            child.rotation.z += 0.003;
+            child.rotation.z += 0.003 + musicBands.mid * 0.005;
           }
 
           // Animate texture offsets dynamically for a living, flowing space look!
-          if (child.material && child.material instanceof BABYLON.StandardMaterial) {
+          if (child.material) {
             const mat = child.material;
-            if (mat.diffuseTexture && mat.diffuseTexture instanceof BABYLON.Texture) {
-              if (child.name === "planet_sphere") {
-                mat.diffuseTexture.uOffset += 0.0008;
+            let tex: BABYLON.Texture | null = null;
+            if (mat instanceof BABYLON.StandardMaterial && mat.diffuseTexture instanceof BABYLON.Texture) {
+              tex = mat.diffuseTexture;
+            } else if (mat instanceof BABYLON.PBRMaterial && mat.albedoTexture instanceof BABYLON.Texture) {
+              tex = mat.albedoTexture as BABYLON.Texture;
+            }
+
+            if (tex) {
+              if (child.name === "planet_sphere" || child.name === "planet_clouds") {
+                const shift = child.name === "planet_clouds" ? 0.0013 : 0.00075;
+                tex.uOffset += shift + musicBands.mid * 0.0015;
+                if (mat instanceof BABYLON.PBRMaterial && mat.bumpTexture instanceof BABYLON.Texture) {
+                  mat.bumpTexture.uOffset = tex.uOffset;
+                }
               } else if (child.name.indexOf("nebula_sphere") !== -1) {
-                mat.diffuseTexture.uOffset += 0.0004;
-                mat.diffuseTexture.vOffset += 0.0002;
+                tex.uOffset += 0.0004 + musicBands.mid * 0.001;
+                tex.vOffset += 0.0002 + musicBands.mid * 0.0005;
               } else if (child.name === "star_aura") {
-                mat.diffuseTexture.uOffset += 0.002;
-                mat.diffuseTexture.vOffset -= 0.001;
+                tex.uOffset += 0.002 + musicBands.bass * 0.008;
+                tex.vOffset -= 0.001 + musicBands.mid * 0.004;
               } else if (child.name.indexOf("accretion_layer") !== -1 || child.name.indexOf("gravitational_lensing") !== -1) {
-                mat.diffuseTexture.uOffset += 0.004;
+                tex.uOffset += 0.004 + musicBands.bass * 0.01;
               } else if (child.name.indexOf("galaxy_ellipsoid") !== -1) {
-                mat.diffuseTexture.wAng += 0.0015;
+                tex.wAng += 0.0015 + musicBands.mid * 0.005;
               }
+
+              // Sync emissive/bump/cloud textures if applicable
               if (mat.emissiveTexture && mat.emissiveTexture instanceof BABYLON.Texture) {
-                mat.emissiveTexture.uOffset = mat.diffuseTexture.uOffset;
-                mat.emissiveTexture.vOffset = mat.diffuseTexture.vOffset;
+                mat.emissiveTexture.uOffset = tex.uOffset;
+                mat.emissiveTexture.vOffset = tex.vOffset;
                 if (child.name.indexOf("galaxy_ellipsoid") !== -1) {
-                  mat.emissiveTexture.wAng = mat.diffuseTexture.wAng;
+                  mat.emissiveTexture.wAng = (tex as any).wAng || 0;
                 }
               }
             }
           }
         });
       });
-    }
 
     // 5. Dynamic Group Opacity Transition: Elegant background fade based on isInterstellar stage
     let targetGroupOpacity = isInterstellarRef.current ? 1.0 : 0.32;
-    if (stageRef.current === 0) {
+    if (stageRef.current === 0 && !isInterstellarRef.current) {
       targetGroupOpacity = 0.45 + (screensaverOpacityRef.current * 0.55);
     } else {
       const stageChangeElapsed = Date.now() - lastStageChangeRef.current;
@@ -2413,6 +2890,9 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           mat.alpha = baseOpacity * (targetGroupOpacity + musicPulseOpacity * (1 - targetGroupOpacity));
         }
       });
+    }
+    } catch (err) {
+      console.error("[DEBUG] Error in updateCelestial3DMeshes:", err);
     }
   };
 
@@ -2479,6 +2959,12 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     stageRef.current = stage;
     lastStageChangeRef.current = Date.now();
 
+    if (prevStage !== stage && cameraRef.current) {
+      transitionStartTimeRef.current = Date.now();
+      transitionActiveRef.current = true;
+      transitionStartPosRef.current = cameraRef.current.position.clone();
+    }
+
     mappingTimersRef.current.forEach(clearTimeout);
     mappingTimersRef.current = [];
 
@@ -2521,6 +3007,179 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     pipeline.bloomScale = 0.5;
     composerRef.current = pipeline;
 
+    // Dedicated GlowLayer to make emissive 3D celestial objects (like galaxy cores and accretion disks) bloom softly and majestically
+    const glowLayer = new BABYLON.GlowLayer("glowLayer", scene, {
+      mainTextureRatio: 0.25, // lower resolution ratio yields a softer, wider bloom dispersion
+      blurKernelSize: 32,
+    });
+    glowLayer.intensity = 1.3;
+
+    // Register the custom gravitational lensing fragment shader
+    BABYLON.Effect.ShadersStore["gravitationalLensingPixelShader"] = `
+      precision highp float;
+      varying vec2 vUV;
+      uniform sampler2D textureSampler;
+
+      uniform vec3 u_lensCenters[8];
+      uniform float u_numLenses;
+      uniform float u_aspectRatio;
+      uniform float u_time;
+
+      void main(void) {
+        vec2 aspect = vec2(u_aspectRatio, 1.0);
+        vec2 totalDeflection = vec2(0.0);
+        float shadowAlpha = 0.0;
+
+        for (int i = 0; i < 8; i++) {
+          vec3 lens = u_lensCenters[i];
+          vec2 lensCenter = lens.xy;
+          float strength = lens.z;
+
+          // Vector from lens center to current UV, aspect-corrected for perfect radial symmetry
+          vec2 r = (vUV - lensCenter) * aspect;
+          float d = length(r);
+
+          if (d > 0.001) {
+            // Strong Einstein ring radius proportional to strength
+            float r_e = strength;
+
+            // Deflection magnitude based on general relativity lensing: delta = (r_e^2) / d
+            float deflectionMag = (r_e * r_e) / d;
+
+            // WebGL 1.0 compatible index activation without dynamic branch/breaks
+            float isActive = float(i) < u_numLenses ? 1.0 : 0.0;
+
+            // Accumulate aspect-corrected deflection vector
+            totalDeflection += (r / aspect) * (deflectionMag / d) * isActive;
+
+            // Black hole singularity / shadow boundary (event horizon capture zone)
+            float r_s = r_e * 0.42;
+            if (d < r_s) {
+              // Smooth darkening of the event horizon capture zone
+              shadowAlpha = max(shadowAlpha, smoothstep(r_s, r_s * 0.82, d) * isActive);
+            }
+          }
+        }
+
+        // Apply accumulated gravitational deflection to obtain the warped UV coordinates
+        vec2 warpedUV = vUV - totalDeflection;
+
+        // Astrophotographic Chromatic Aberration & Gravitational Dispersion
+        // Shift red and blue channels slightly outward along the deflection axis & screen edges for cinematic spectrum splitting
+        vec2 screenCenterDist = vUV - vec2(0.5);
+        float edgeDistSq = dot(screenCenterDist, screenCenterDist);
+        
+        // Dispersion vector depends on gravitational warp magnitude AND lens-edge aberration
+        vec2 dispersionDir = normalize(totalDeflection + screenCenterDist * 0.01 + vec2(1e-5));
+        float dispersionMagnitude = 0.0035 * edgeDistSq + length(totalDeflection) * 0.22;
+        vec2 splitShift = dispersionDir * dispersionMagnitude;
+
+        // Sample channels individually with boundaries clamped to prevent wrap artifacts
+        vec2 uvR = clamp(warpedUV - splitShift, vec2(0.0001), vec2(0.9999));
+        vec2 uvG = clamp(warpedUV, vec2(0.0001), vec2(0.9999));
+        vec2 uvB = clamp(warpedUV + splitShift, vec2(0.0001), vec2(0.9999));
+
+        float rChannel = texture2D(textureSampler, uvR).r;
+        float gChannel = texture2D(textureSampler, uvG).g;
+        float bChannel = texture2D(textureSampler, uvB).b;
+        float aChannel = texture2D(textureSampler, uvG).a;
+
+        vec4 color = vec4(rChannel, gChannel, bChannel, aChannel);
+
+        // Render the deep cosmic shadow of event horizons where light is swallowed
+        color.rgb = mix(color.rgb, vec3(0.0, 0.0, 0.0), shadowAlpha);
+
+        // 1. Astro-photographic Sensor Noise / Cosmic Film Grain (dynamic, time-varying pixel noise)
+        float noiseSeed = dot(vUV * (u_time + 1.0), vec2(12.9898, 78.233));
+        float grain = fract(sin(noiseSeed) * 43758.5453) * 0.022;
+        color.rgb += vec3(grain);
+
+        // 2. Deep Cosmic Vignette (vignetting at screen edges to frame the core cosmos)
+        float vignette = smoothstep(1.3, 0.48, length(screenCenterDist));
+        color.rgb *= mix(1.0, vignette, 0.38);
+
+        gl_FragColor = color;
+      }
+    `;
+
+    // Instantiate custom post process for screen-space warp
+    const lensingPostProcess = new BABYLON.PostProcess(
+      "GravitationalLensing",
+      "gravitationalLensing",
+      ["u_lensCenters", "u_numLenses", "u_aspectRatio", "u_time"],
+      [],
+      1.0,
+      camera,
+      BABYLON.Texture.BILINEAR_SAMPLINGMODE,
+      engine
+    );
+
+    lensingPostProcess.onApply = (effect) => {
+      const width = engine.getRenderWidth();
+      const height = engine.getRenderHeight();
+      const aspectRatio = width / (height || 1);
+      effect.setFloat("u_aspectRatio", aspectRatio);
+      effect.setFloat("u_time", (Date.now() % 1000000) / 1000.0);
+
+      const viewport = new BABYLON.Viewport(0, 0, width, height);
+      const transformMatrix = scene.getTransformMatrix();
+
+      const activeEntities = celestialEntitiesRef.current || [];
+      const candidates = activeEntities
+        .filter(e => !e.isDestroyed || (e.scale ?? 0) > 0.05)
+        .map(entity => {
+          // World position coordinates matching coordinate calculations in the update loop
+          const wx = entity.x - window.innerWidth / 2;
+          const wy = -(entity.y - window.innerHeight / 2);
+          const wz = entity.z || 0;
+
+          const position3D = new BABYLON.Vector3(wx, wy, wz);
+          const projected = BABYLON.Vector3.Project(
+            position3D,
+            BABYLON.Matrix.IdentityReadOnly,
+            transformMatrix,
+            viewport
+          );
+
+          // Normalized Device Coordinates to screen space UV
+          const u = projected.x / width;
+          const v = 1.0 - (projected.y / height); // Flip Y for WebGL texture sampler UV coords
+
+          // Map entity type to lensing base strength based on gravity size/importance
+          let baseStrength = 0.0;
+          if (entity.type === "blackhole") {
+            baseStrength = 0.075 * (entity.scale ?? 1.0);
+          } else if (entity.type === "star") {
+            baseStrength = 0.04 * (entity.scale ?? 1.0);
+          } else if (entity.type === "galaxy") {
+            baseStrength = 0.025 * (entity.scale ?? 1.0);
+          } else if (entity.type === "planet") {
+            baseStrength = 0.012 * (entity.scale ?? 1.0);
+          }
+
+          // Dynamic pulse scaling based on real-time audio amplitude for gravitational waves
+          const musicBands = (audio as any).getFrequencyBands ? (audio as any).getFrequencyBands() : { bass: 0, mid: 0, treble: 0 };
+          const strength = baseStrength * (1.0 + musicBands.bass * 0.4 + musicBands.mid * 0.15);
+
+          return { u, v, strength };
+        })
+        .filter(item => item.strength > 0.001)
+        .sort((a, b) => b.strength - a.strength)
+        .slice(0, 8);
+
+      const lensData = new Float32Array(24);
+      candidates.forEach((c, idx) => {
+        lensData[idx * 3] = c.u;
+        lensData[idx * 3 + 1] = c.v;
+        lensData[idx * 3 + 2] = c.strength;
+      });
+
+      (effect as any).setFloatArray3("u_lensCenters", lensData);
+      effect.setFloat("u_numLenses", candidates.length);
+    };
+
+    lensingPostProcessRef.current = lensingPostProcess;
+
     // Direct lighting & ambient light setup
     const ambientLight = new BABYLON.HemisphericLight("ambientLight", new BABYLON.Vector3(0, 1, 0), scene);
     ambientLight.intensity = 0.28;
@@ -2550,9 +3209,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     celestialGroupRef.current = celestialGroup;
 
     // 2. Layered Typography Tracer Texture
-    const hudTexture = new BABYLON.DynamicTexture("hudTex", { width: ww, height: wh }, scene, false);
+    const hudDpr = window.devicePixelRatio || 1;
+    const hudTexture = new BABYLON.DynamicTexture("hudTex", { width: ww * hudDpr, height: wh * hudDpr }, scene, false);
     const hudCtx = hudTexture.getContext() as CanvasRenderingContext2D | null;
     if (hudCtx) {
+      hudCtx.scale(hudDpr, hudDpr);
       drawStageLayoutTemplate(hudCtx, stageRef.current, ww, wh, "full");
     }
     hudTexture.hasAlpha = true;
@@ -2566,7 +3227,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     hudMaterial.backFaceCulling = false;
     hudMaterial.alphaMode = BABYLON.Engine.ALPHA_ADD;
     hudMaterial.useAlphaFromDiffuseTexture = true;
-    hudMaterial.disableDepthWrite = true;
+
     hudMaterial.alpha = 0.82;
 
     const hudPlane = BABYLON.MeshBuilder.CreatePlane("hudPlane", { width: ww, height: wh }, scene);
@@ -2707,7 +3368,9 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       varying vec3 vPos;
       void main(void) {
         gl_Position = worldViewProjection * vec4(position, 1.0);
-        if (extraData > 1.5) {
+        if (extraData > 2.5) {
+          gl_PointSize = pointSize * (1.6 + fract(position.x * 456.789) * 1.8); // Larger, soft galaxy light sources
+        } else if (extraData > 1.5) {
           gl_PointSize = pointSize * 0.9; // Tail particles
         } else if (extraData > 0.5) {
           gl_PointSize = pointSize * 0.65; // Lettering (extremely crisp and readable)
@@ -2736,7 +3399,10 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         // Soft gaussian-like falloff for anti-aliasing
         float gaussian = exp(-dist * dist * 12.0);
         
-        if (vExtra > 1.5) {
+        if (vExtra > 2.5) {
+          // Galaxy particles - very soft, highly diffuse falloff to represent a soft distant light source (bloom feel)
+          alpha = exp(-dist * dist * 3.8) * 0.85;
+        } else if (vExtra > 1.5) {
           // Tail particles - soft, slightly elongated
           alpha = gaussian * 0.4;
         } else if (vExtra > 0.5) {
@@ -2782,12 +3448,85 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     pointsMaterial.setTexture("textureSampler", circTex);
     pointsMaterial.setFloat("pointSize", (isMobileDevice ? 3.0 : 4.0) * dpr);
     pointsMaterial.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
+
     pointsMaterial.fillMode = 2;
-    pointsMaterial.disableDepthWrite = true;
+
     pointsMesh.material = pointsMaterial;
     pointsMaterialRef.current = pointsMaterial;
     pointsMesh.hasVertexAlpha = true;
     pointsMesh.alwaysSelectAsActiveMesh = true;
+
+    // Check if there's an active auto-restore sequence ID saved in localStorage
+    const autoRestoreId = localStorage.getItem("cosmic_debug_auto_restore");
+    if (autoRestoreId) {
+      try {
+        const saved = localStorage.getItem("cosmic_debug_sequences");
+        const list = saved ? JSON.parse(saved) : {};
+        const seq = list[autoRestoreId];
+        if (seq) {
+          console.log(`%c[COSMIC DEBUG] Auto-restoring sequence: ${autoRestoreId}`, "color: #10b981; font-weight: bold;");
+          nextGeminiSceneRef.current = {
+            archetype: seq.archetype,
+            systemName: seq.systemName,
+            systemDesc: seq.systemDesc,
+            systemTags: seq.systemTags,
+            entities: seq.entities,
+          };
+          if (animationComplete) {
+            animationComplete();
+          }
+        }
+      } catch (err) {
+        console.warn("[COSMIC DEBUG] Auto-restore failed:", err);
+      }
+    }
+
+    // Register global console command for direct sequence recall / activation
+    (window as any).activateSequence = (id: string | null) => {
+      if (!id) {
+        localStorage.removeItem("cosmic_debug_auto_restore");
+        console.log("%c[COSMIC DEBUG] Auto-restore cleared. Default screensaver and normal transitions resumed.", "color: #ff4b2b; font-weight: bold;");
+        return;
+      }
+      try {
+        const saved = localStorage.getItem("cosmic_debug_sequences");
+        const list = saved ? JSON.parse(saved) : {};
+        const seq = list[id];
+        if (!seq) {
+          console.error(`[COSMIC DEBUG] Sequence with ID '${id}' not found in localStorage.`);
+          return;
+        }
+
+        // Keep auto-restore updated
+        localStorage.setItem("cosmic_debug_auto_restore", id);
+        console.log(`%c[COSMIC DEBUG] Activating sequence: ${id}`, "color: #10b981; font-weight: bold;");
+
+        nextGeminiSceneRef.current = {
+          archetype: seq.archetype,
+          systemName: seq.systemName,
+          systemDesc: seq.systemDesc,
+          systemTags: seq.systemTags,
+          entities: seq.entities,
+        };
+
+        if (animationComplete) {
+          animationComplete();
+        }
+
+        const currentW = window.innerWidth;
+        const currentH = window.innerHeight;
+        generateInterstellarScene(currentW, currentH, true);
+        mapParticlesToInterstellar(currentW, currentH);
+
+        if (cameraRef.current && !isTransitActiveRef.current) {
+          transitionStartTimeRef.current = Date.now();
+          transitionActiveRef.current = true;
+          transitionStartPosRef.current = cameraRef.current.position.clone();
+        }
+      } catch (err) {
+        console.error("[COSMIC DEBUG] Failed to activate sequence:", err);
+      }
+    };
 
     // Seed the initial planets and singularity immediately on load
     generateInterstellarScene(ww, wh);
@@ -2834,6 +3573,14 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         /iPad|iPhone|iPod|Android/i.test(navigator.userAgent) || currentW < 768;
 
       const now = Date.now();
+      const dt = rendererRef.current ? rendererRef.current.getDeltaTime() : 16.666;
+      const globalTimeMultiplier = Math.min(dt / 16.666, 3.0);
+      
+      // Dynamic Web Audio API metrics for real-time visual synchronization
+      const musicAmpVal = (audio as any).getMusicAmplitude();
+      const musicBands = (audio as any).getFrequencyBands ? (audio as any).getFrequencyBands() : { bass: 0, mid: 0, treble: 0 };
+      const musicSpeedFactor = 1.0 + musicBands.mid * 2.2 + musicBands.bass * 0.8;
+
       const idleTime = now - lastUserActivityRef.current;
       const isIdle = idleTime > 10000; // 10 seconds idle timeout
       isScreensaverActiveRef.current = (stageRef.current === 0) && isIdle;
@@ -2906,6 +3653,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       
       const particles = particlesRef.current;
 
+      // Frame-start cached variables for particle calculations to eliminate redundant inner-loop computations
+      const entitiesList = celestialEntitiesRef.current;
+      const activeBlackholes = entitiesList.filter((e) => e && !e.isDestroyed && e.type === "blackhole");
+      const activeCollidables = entitiesList.filter((e) => e && !e.isDestroyed && e.type !== "galaxy" && e.type !== "nebula" && e.type !== "blackhole");
+
       let attractionMultiplier = 1.0;
       if (elapsed > 1200) {
         attractionMultiplier = Math.max(0.65, 1 - (elapsed - 1200) / 800);
@@ -2952,14 +3704,22 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         const transitionThreshold = activeSupernova.isCalmShift ? 8000 : 6000;
         
         if (snElapsed >= transitionThreshold && !activeSupernova.transitioned) {
+          console.log("[DEBUG] Calm shift transition threshold reached, generating new scene.");
           activeSupernova.transitioned = true;
-          if (onTransitionToInterstellar) {
-            onTransitionToInterstellar();
+          if (animationComplete) {
+            animationComplete();
           }
           const ww = window.innerWidth;
           const wh = window.innerHeight;
-          generateInterstellarScene(ww, wh);
+          generateInterstellarScene(ww, wh, true);
           mapParticlesToInterstellar(ww, wh);
+          
+          if (camera) {
+            transitionStartTimeRef.current = Date.now();
+            transitionActiveRef.current = true;
+            transitionStartPosRef.current = camera.position.clone();
+          }
+
           supernovaRef.current = null; // Clear supernova so physics is not prematurely triggered in the new scene
         }
         if (snElapsed >= (transitionThreshold + 1300)) {
@@ -2998,6 +3758,20 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
         if (p.isTail) {
           if (p.life && p.life > 0) {
+            // Gravitational pull of stardust/debris near black holes for orbital decay
+            activeBlackholes.forEach((entity) => {
+              const bdx = entity.x - p.x;
+              const bdy = entity.y - p.y;
+              const bdist = Math.sqrt(bdx * bdx + bdy * bdy) || 1;
+              const gravityRadiusMult = 4.5; // wider gravity field for fast debris particles
+              if (bdist < entity.radius * gravityRadiusMult) {
+                const pullFactor = 1.0 - bdist / (entity.radius * gravityRadiusMult);
+                const pullStrength = 3.5 * pullFactor;
+                p.vx += (bdx / bdist) * pullStrength;
+                p.vy += (bdy / bdist) * pullStrength;
+              }
+            });
+
             p.x += p.vx;
             p.y += p.vy;
             p.z += p.vz;
@@ -3017,10 +3791,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
             const g = p.g ?? 255;
             const b = p.b ?? 255;
 
+            const tailPulse = 1.0 + musicAmpVal * 0.8;
             const tailOpacity = p.life * 0.45;
-            colors[i * 4] = (r / 255) * globalAlpha * tailOpacity;
-            colors[i * 4 + 1] = (g / 255) * globalAlpha * tailOpacity;
-            colors[i * 4 + 2] = (b / 255) * globalAlpha * tailOpacity;
+            colors[i * 4] = (r / 255) * globalAlpha * tailOpacity * tailPulse;
+            colors[i * 4 + 1] = (g / 255) * globalAlpha * tailOpacity * tailPulse;
+            colors[i * 4 + 2] = (b / 255) * globalAlpha * tailOpacity * tailPulse;
             colors[i * 4 + 3] = tailOpacity;
           } else {
             positions[i * 3] = -99999;
@@ -3109,8 +3884,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           let drawAmbX = p.x;
           let drawAmbY = p.y;
 
-          celestialEntitiesRef.current.forEach((entity) => {
-            if (entity.isDestroyed || entity.type !== "blackhole") return;
+          activeBlackholes.forEach((entity) => {
             const ldx = drawAmbX - entity.x;
             const ldy = drawAmbY - entity.y;
             const ldist = Math.sqrt(ldx * ldx + ldy * ldy) || 1;
@@ -3134,19 +3908,19 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           positions[i * 3 + 1] = -(drawAmbY - currentH / 2);
           positions[i * 3 + 2] = p.z;
 
-          // Simple white or dim ambient color
-          colors[i * 4] = p.color === "#ffffff" ? 0.8 : 0.9;
-          colors[i * 4 + 1] = p.color === "#ffffff" ? 0.8 : 0.8;
-          colors[i * 4 + 2] = p.color === "#ffffff" ? 0.8 : 0.7;
+          // Simple white or dim ambient color pulsing with music
+          const ambientPulse = 1.0 + musicAmpVal * 0.45;
+          colors[i * 4] = (p.color === "#ffffff" ? 0.8 : 0.9) * ambientPulse;
+          colors[i * 4 + 1] = (p.color === "#ffffff" ? 0.8 : 0.8) * ambientPulse;
+          colors[i * 4 + 2] = (p.color === "#ffffff" ? 0.8 : 0.7) * ambientPulse;
           colors[i * 4 + 3] = 1.0;
           extras[i] = 0.0;
           continue;
         }
 
         // Calculate gravitational Time Dilation near black holes
-        let localTimeDilation = 1.0;
-        celestialEntitiesRef.current.forEach((entity) => {
-          if (entity.isDestroyed || entity.type !== "blackhole") return;
+        let localTimeDilation = globalTimeMultiplier;
+        activeBlackholes.forEach((entity) => {
           const gdx = entity.x - p.x;
           const gdy = entity.y - p.y;
           const gdist = Math.sqrt(gdx * gdx + gdy * gdy) || 1;
@@ -3155,8 +3929,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
             // General Relativistic Schwarzschild Time Dilation approximation
             const ratio = Math.max(0.04, Math.min(1.0, (gdist - entity.radius * 0.4) / (horizonZone - entity.radius * 0.4)));
             const dilation = Math.sqrt(ratio);
-            if (dilation < localTimeDilation) {
-              localTimeDilation = dilation;
+            if ((dilation * globalTimeMultiplier) < localTimeDilation) {
+              localTimeDilation = dilation * globalTimeMultiplier;
             }
           }
         });
@@ -3166,6 +3940,16 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           Math.sin(i * 0.05 + time * 0.1) *
           Math.abs(scrollVelocityRef.current) *
           0.03;
+
+        // Continuous Curl Noise vector field for fluid dynamics and spatiotemporal coherence
+        const curl = computeCurlNoise(p.x, p.y, time * 0.12);
+        const fluidTransitionFactor = isTypographyMode ? 0.12 : 0.75;
+        const springDistSq = (p.targetX - p.x) * (p.targetX - p.x) + (p.targetY - p.y) * (p.targetY - p.y);
+        const springFactorSq = Math.max(0.01, Math.min(1.0, springDistSq / 25000)); // 1 when far, 0 when close
+        const fluidInfluence = Math.max(0.0, Math.min(0.85, (1.0 - (p.isProjectText ? 0.75 : 0.22)) * fluidTransitionFactor * springFactorSq));
+        
+        p.vx += curl.x * fluidInfluence;
+        p.vy += curl.y * fluidInfluence;
 
         p.x += p.vx * localTimeDilation;
         p.y += p.vy * localTimeDilation;
@@ -3180,16 +3964,17 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
             p.interstellarType === "blackhole" ||
             p.interstellarType === "planet"
           ) {
-            p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.005) * 0.45 * localTimeDilation;
-            let entity =
+            p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.005) * 0.45 * localTimeDilation * musicSpeedFactor;
+            let entity = p.interstellarEntity ||
               celestialEntitiesRef.current[p.interstellarEntityIndex || 0];
 
             if (entity && entity.isDestroyed) {
               const activeEntityIdx = celestialEntitiesRef.current.findIndex(e => e && !e.isDestroyed && e.type === "blackhole");
               if (activeEntityIdx !== -1) {
                 p.interstellarEntityIndex = activeEntityIdx;
+                p.interstellarEntity = celestialEntitiesRef.current[activeEntityIdx];
                 p.orbitRadius = (p.orbitRadius || 50) * 0.96;
-                entity = celestialEntitiesRef.current[activeEntityIdx];
+                entity = p.interstellarEntity;
               }
             }
 
@@ -3232,8 +4017,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
               }
             }
           } else if (p.interstellarType === "nebula") {
-            p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.002) * 0.45 * localTimeDilation;
-            const entity =
+            p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.002) * 0.45 * localTimeDilation * musicSpeedFactor;
+            const entity = p.interstellarEntity ||
               celestialEntitiesRef.current[p.interstellarEntityIndex || 0];
             if (entity) {
               const angle = p.orbitAngle + i;
@@ -3245,13 +4030,13 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
             }
           } else if (p.interstellarType === "bridge") {
             p.bridgeProgress =
-              (p.bridgeProgress ?? 0) + (p.bridgeSpeed ?? 0.012) * 0.45 * localTimeDilation;
+              (p.bridgeProgress ?? 0) + (p.bridgeSpeed ?? 0.012) * 0.45 * localTimeDilation * musicSpeedFactor;
             if (p.bridgeProgress > 1) {
               p.bridgeProgress = 0;
             }
-            const start =
+            const start = p.bridgeStartEntity ||
               celestialEntitiesRef.current[p.bridgeStartEntityIndex ?? 0];
-            const end =
+            const end = p.bridgeEndEntity ||
               celestialEntitiesRef.current[p.bridgeEndEntityIndex ?? 1];
             if (start && end) {
               const t = p.bridgeProgress;
@@ -3271,6 +4056,26 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
               p.targetY = y;
               p.z = Math.sin(t * Math.PI) * 15;
             }
+          } else if (p.interstellarType === "background_galaxy") {
+            p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.012) * localTimeDilation * musicSpeedFactor;
+            
+            const rx = p.orbitRadius || 20;
+            const ry = p.galaxyType === "spiral" ? rx * 0.35 : rx * 0.8;
+            const ox = Math.cos(p.orbitAngle) * rx;
+            const oy = Math.sin(p.orbitAngle) * ry;
+            
+            const cosP = Math.cos(p.galaxyPitch || 0);
+            const sinP = Math.sin(p.galaxyPitch || 0);
+            const cosY = Math.cos(p.galaxyYaw || 0);
+            const sinY = Math.sin(p.galaxyYaw || 0);
+            
+            const lx = ox * cosY - oy * sinY * cosP;
+            const ly = ox * sinY + oy * cosY * cosP;
+            const lz = oy * sinP;
+            
+            p.targetX = (p.galaxyX || 0) + lx;
+            p.targetY = (p.galaxyY || 0) + ly;
+            p.z = (p.galaxyZ || -1400) + lz;
           } else if (p.interstellarType === "star") {
             p.targetX += Math.sin(time * 0.01 + i) * 0.05;
             p.targetY += Math.cos(time * 0.01 + i) * 0.05;
@@ -3285,64 +4090,67 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
         if (!isInterferenceSuppressed) {
           const gravityRadiusMult = isInterstellarRef.current ? 2.5 : 1.8;
-          celestialEntitiesRef.current.forEach((entity) => {
-            if (entity.isDestroyed) return;
+          
+          // 1. Black hole attraction
+          activeBlackholes.forEach((entity) => {
             const bdx = entity.x - p.x;
             const bdy = entity.y - p.y;
             const bdist = Math.sqrt(bdx * bdx + bdy * bdy) || 1;
+            if (bdist < entity.radius * gravityRadiusMult) {
+              const pullFactor = 1.0 - bdist / (entity.radius * gravityRadiusMult);
+              suctionAlpha = Math.max(suctionAlpha, pullFactor * (isInterstellarRef.current ? 1.0 : 0.3));
 
-            if (entity.type === "blackhole") {
-              if (bdist < entity.radius * gravityRadiusMult) {
-                const pullFactor = 1.0 - bdist / (entity.radius * gravityRadiusMult);
-                suctionAlpha = Math.max(suctionAlpha, pullFactor * (isInterstellarRef.current ? 1.0 : 0.3));
+              const basePullStrength = isInterstellarRef.current ? 4.8 : 1.4;
+              const tx = -bdy / bdist;
+              const ty = bdx / bdist;
 
-                const basePullStrength = isInterstellarRef.current ? 4.8 : 1.4;
-                const tx = -bdy / bdist;
-                const ty = bdx / bdist;
+              // Strong orbital velocity at first, slowly easing into high radial pull as it closes in
+              const closeness = 1.0 - (bdist / (entity.radius * gravityRadiusMult)); // 0 at outskirts, 1 at singularity
+              const orbitalStrength = basePullStrength * 1.85 * pullFactor;
+              const radialStrength = basePullStrength * 0.45 * pullFactor * (0.3 + closeness * 0.7);
 
-                // Strong orbital velocity at first, slowly easing into high radial pull as it closes in
-                const closeness = 1.0 - (bdist / (entity.radius * gravityRadiusMult)); // 0 at outskirts, 1 at singularity
-                const orbitalStrength = basePullStrength * 1.85 * pullFactor;
-                const radialStrength = basePullStrength * 0.45 * pullFactor * (0.3 + closeness * 0.7);
+              p.vx += (bdx / bdist) * radialStrength + tx * orbitalStrength;
+              p.vy += (bdy / bdist) * radialStrength + ty * orbitalStrength;
 
-                p.vx += (bdx / bdist) * radialStrength + tx * orbitalStrength;
-                p.vy += (bdy / bdist) * radialStrength + ty * orbitalStrength;
-
-                if (bdist < entity.radius * 1.25) {
-                  // Smoothly fade out particle emission brightness to exactly 0 as it crosses the event horizon
-                  const transitionProgress = (bdist - entity.radius * 1.02) / (entity.radius * 0.23);
-                  particleBrightness = Math.max(0.0, Math.min(1.0, transitionProgress));
-                  
-                  if (bdist < entity.radius * 0.5 && Math.random() < 0.15) {
-                    // Sucked into the singularity! Recycle the particle to keep the cosmic density balanced
-                    // Instead of teleporting to screen, move it way off screen so it drifts back slowly
-                    p.x = (Math.random() > 0.5 ? -100 : currentW + 100);
-                    p.y = (Math.random() > 0.5 ? -100 : currentH + 100);
-                    p.vx = 0;
-                    p.vy = 0;
-                  }
+              if (bdist < entity.radius * 1.25) {
+                // Smoothly fade out particle emission brightness to exactly 0 as it crosses the event horizon
+                const transitionProgress = (bdist - entity.radius * 1.02) / (entity.radius * 0.23);
+                particleBrightness = Math.max(0.0, Math.min(1.0, transitionProgress));
+                
+                if (bdist < entity.radius * 0.5 && Math.random() < 0.15) {
+                  // Sucked into the singularity! Recycle the particle to keep the cosmic density balanced
+                  p.x = (Math.random() > 0.5 ? -100 : currentW + 100);
+                  p.y = (Math.random() > 0.5 ? -100 : currentH + 100);
+                  p.vx = 0;
+                  p.vy = 0;
                 }
               }
-            } else if (entity.type !== "galaxy" && entity.type !== "nebula") {
-              // Collide with planets/stars
-              const colDist = entity.radius + (isMobileDevice ? 2 : 3);
-              if (bdist < colDist && !p.isTail) { // let tail particles (shatter debris) pass or maybe not? Let's say all particles
-                const nx = bdx / bdist;
-                const ny = bdy / bdist;
-                
-                // Bounce velocity
-                const dot = p.vx * nx + p.vy * ny;
-                if (dot > 0) {
-                    p.vx -= 2 * dot * nx;
-                    p.vy -= 2 * dot * ny;
-                    p.vx += (Math.random() - 0.5) * 4; // Add scatter
-                    p.vy += (Math.random() - 0.5) * 4;
-                }
-                
-                // Push out of the celestial body to prevent clipping
-                p.x = entity.x - nx * (colDist + 1);
-                p.y = entity.y - ny * (colDist + 1);
+            }
+          });
+
+          // 2. Rigid body collision with planets/stars
+          const colOffset = isMobileDevice ? 2 : 3;
+          activeCollidables.forEach((entity) => {
+            const bdx = entity.x - p.x;
+            const bdy = entity.y - p.y;
+            const bdist = Math.sqrt(bdx * bdx + bdy * bdy) || 1;
+            const colDist = entity.radius + colOffset;
+            if (bdist < colDist && !p.isTail) {
+              const nx = bdx / bdist;
+              const ny = bdy / bdist;
+              
+              // Bounce velocity
+              const dot = p.vx * nx + p.vy * ny;
+              if (dot > 0) {
+                  p.vx -= 2 * dot * nx;
+                  p.vy -= 2 * dot * ny;
+                  p.vx += (Math.random() - 0.5) * 4; // Add scatter
+                  p.vy += (Math.random() - 0.5) * 4;
               }
+              
+              // Push out of the celestial body to prevent clipping
+              p.x = entity.x - nx * (colDist + 1);
+              p.y = entity.y - ny * (colDist + 1);
             }
           });
         }
@@ -3390,13 +4198,20 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         }
 
         // Real-time music soundwaves bending spacetime!
-        const musicAmpVal = (audio as any).getMusicAmplitude();
-        if (musicAmpVal > 0.02) {
-          const waveFreq = 0.075;
-          const waveSpeed = 0.28;
-          const waveAmp = musicAmpVal * 15.0; // up to 15px ripple amplitude
-          floatX += Math.sin(time * waveSpeed + p.y * waveFreq + i * 0.03) * waveAmp;
-          floatY += Math.cos(time * waveSpeed * 0.85 + p.x * waveFreq + i * 0.03) * waveAmp;
+        // Bass causes large slow waves, while Treble causes high-frequency jitters
+        if (musicAmpVal > 0.01) {
+          if (musicBands.bass > 0.02) {
+            const bassWaveFreq = 0.045;
+            const bassWaveSpeed = 0.12;
+            const bassWaveAmp = musicBands.bass * 22.0; // deep sub-bass warping
+            floatX += Math.sin(time * bassWaveSpeed + p.y * bassWaveFreq + i * 0.01) * bassWaveAmp;
+            floatY += Math.cos(time * bassWaveSpeed * 0.9 + p.x * bassWaveFreq + i * 0.01) * bassWaveAmp;
+          }
+          if (musicBands.treble > 0.03) {
+            const trebleJitter = musicBands.treble * 5.0;
+            floatX += Math.sin(time * 0.45 + i * 0.2) * trebleJitter;
+            floatY += Math.cos(time * 0.42 + i * 0.2) * trebleJitter;
+          }
         }
         const floatZ = Math.sin(time * floatSpeed * 0.7 + i * 0.04) * 8;
         p.z += (floatZ - p.z) * 0.05;
@@ -3411,8 +4226,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         let drawY = p.y + floatY + selfMovementY;
 
         // Apply General Relativistic Gravitational Lensing (Einstein Deflection / Einstein Ring)
-        celestialEntitiesRef.current.forEach((entity) => {
-          if (entity.isDestroyed || entity.type !== "blackhole") return;
+        activeBlackholes.forEach((entity) => {
           const ldx = drawX - entity.x;
           const ldy = drawY - entity.y;
           const ldist = Math.sqrt(ldx * ldx + ldy * ldy) || 1;
@@ -3581,11 +4395,64 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           textAlphaDimmer = 1.0 - (screensaverOpacityRef.current * 0.72);
         }
 
-        colors[i * 4] = Math.min(1.0, Math.max(0.0, (r / 255) * globalAlpha * rFactor * particleBrightness * textAlphaDimmer));
-        colors[i * 4 + 1] = Math.min(1.0, Math.max(0.0, (g / 255) * globalAlpha * gFactor * particleBrightness * textAlphaDimmer));
-        colors[i * 4 + 2] = Math.min(1.0, Math.max(0.0, (b / 255) * globalAlpha * bFactor * particleBrightness * textAlphaDimmer));
+        // Dynamic frequency-band specific color shifts (e.g. Bass -> Red, Mids -> Green, Treble -> Blue/Cyan boost)
+        let audioColorR = 1.0;
+        let audioColorG = 1.0;
+        let audioColorB = 1.0;
+        if (musicAmpVal > 0.01) {
+          audioColorR += musicBands.bass * 0.4;
+          audioColorG += musicBands.mid * 0.35;
+          audioColorB += musicBands.treble * 0.45;
+        }
+
+        // Relativistic Doppler beaming and Gravitational redshift (astrophysical realism)
+        let dopplerR = 1.0;
+        let dopplerG = 1.0;
+        let dopplerB = 1.0;
+        let dopplerIntensity = 1.0;
+
+        if (isInterstellarRef.current && p.interstellarType === "blackhole" && p.orbitAngle !== undefined) {
+          // Relativistic Doppler Beaming:
+          // Approximate the line-of-sight velocity using the orbital angle's tangent component.
+          // Particles traveling towards the observer are blueshifted (hotter, bluer, brighter);
+          // particles traveling away are redshifted (cooler, redder, dimmer).
+          const velLineOfSight = -Math.sin(p.orbitAngle); // radial velocity projection
+
+          if (velLineOfSight > 0) {
+            // Blueshift (approaching): brighter, bluer
+            const factor = velLineOfSight * 0.42;
+            dopplerR = 1.0 - factor * 0.2;
+            dopplerG = 1.0 + factor * 0.1;
+            dopplerB = 1.0 + factor * 0.65;
+            dopplerIntensity = 1.0 + factor * 0.8;
+          } else {
+            // Redshift (receding): dimmer, redder
+            const factor = -velLineOfSight * 0.42;
+            dopplerR = 1.0 + factor * 0.55;
+            dopplerG = 1.0 - factor * 0.15;
+            dopplerB = 1.0 - factor * 0.4;
+            dopplerIntensity = Math.max(0.35, 1.0 - factor * 0.65);
+          }
+
+          // Gravitational Redshift (General Relativity Schwarzschild metric approximation):
+          // As stardust particles approach the Event Horizon (radius ~35), wavelengths stretch relativistically,
+          // causing them to shift towards deep red and fade out completely as they cross the photon sphere.
+          const horizonRadius = 35;
+          if (p.orbitRadius && p.orbitRadius < horizonRadius * 2.2) {
+            const grFactor = (horizonRadius * 2.2 - p.orbitRadius) / (horizonRadius * 1.2);
+            const redshift = Math.max(0, Math.min(0.65, grFactor));
+            dopplerR *= (1.0 + redshift * 0.35);
+            dopplerG *= (1.0 - redshift * 0.25);
+            dopplerB *= (1.0 - redshift * 0.55);
+            dopplerIntensity *= (1.0 - redshift * 0.5);
+          }
+        }
+
+        colors[i * 4] = Math.min(1.0, Math.max(0.0, (r / 255) * globalAlpha * rFactor * audioColorR * particleBrightness * textAlphaDimmer * dopplerR * dopplerIntensity));
+        colors[i * 4 + 1] = Math.min(1.0, Math.max(0.0, (g / 255) * globalAlpha * gFactor * audioColorG * particleBrightness * textAlphaDimmer * dopplerG * dopplerIntensity));
+        colors[i * 4 + 2] = Math.min(1.0, Math.max(0.0, (b / 255) * globalAlpha * bFactor * audioColorB * particleBrightness * textAlphaDimmer * dopplerB * dopplerIntensity));
         colors[i * 4 + 3] = globalAlpha * textAlphaDimmer;
-        extras[i] = p.isTail ? 2.0 : (!p.isCosmicAmbient ? 1.0 : 0.0);
+        extras[i] = p.isTail ? 2.0 : (p.interstellarType === "background_galaxy" ? 3.0 : (!p.isCosmicAmbient ? 1.0 : 0.0));
       }
 
       if (pointsMeshRef.current) {
@@ -3630,30 +4497,49 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         shakeZ = (Math.random() - 0.5) * shakeIntensity;
       }
 
-      // Gentle 3D camera mouse tilt or smooth cinematic 3D orbiting
+      // 1. Continuous mathematical interpolation of all unified input variables
+      const inputs = inputControllerRef.current;
+      inputs.currentScrollTimeline += (inputs.targetScrollTimeline - inputs.currentScrollTimeline) * 0.05;
+      inputs.currentCameraZDepthOffset += (inputs.targetCameraZDepthOffset - inputs.currentCameraZDepthOffset) * 0.05;
+      inputs.currentCameraParallaxX += (inputs.targetCameraParallaxX - inputs.currentCameraParallaxX) * 0.05;
+      inputs.currentCameraParallaxY += (inputs.targetCameraParallaxY - inputs.currentCameraParallaxY) * 0.05;
+      inputs.currentCameraPitch += (inputs.targetCameraPitch - inputs.currentCameraPitch) * 0.05;
+      inputs.currentCameraYaw += (inputs.targetCameraYaw - inputs.currentCameraYaw) * 0.05;
+      
+      const targetIntensity = inputs.targetLock.active ? 1.0 : 0.0;
+      inputs.currentLock.intensity += (targetIntensity - inputs.currentLock.intensity) * 0.05;
+      if (inputs.targetLock.active) {
+        inputs.currentLock.x += (inputs.targetLock.x - inputs.currentLock.x) * 0.05;
+        inputs.currentLock.y += (inputs.targetLock.y - inputs.currentLock.y) * 0.05;
+        inputs.currentLock.z += (inputs.targetLock.z - inputs.currentLock.z) * 0.05;
+      } else {
+        inputs.currentLock.x += (0 - inputs.currentLock.x) * 0.05;
+        inputs.currentLock.y += (0 - inputs.currentLock.y) * 0.05;
+        inputs.currentLock.z += (0 - inputs.currentLock.z) * 0.05;
+      }
+
+      // Gentle 3D camera mouse/gyro tilt or smooth cinematic 3D orbiting
       const cameraZ = currentH / (2 * Math.tan((fovRef.current * Math.PI) / 360));
-      let finalTargetX = (mouseRef.current.x - currentW / 2) * 0.16;
-      let finalTargetY = -(mouseRef.current.y - currentH / 2) * 0.16;
-      let finalTargetZ = -cameraZ;
+      
+      // Calculate baseline target coordinates including parallax and scroll Z depth offset
+      let finalTargetX = inputs.currentCameraParallaxX;
+      let finalTargetY = inputs.currentCameraParallaxY;
+      let finalTargetZ = -cameraZ + inputs.currentCameraZDepthOffset;
 
       if (isInterstellarRef.current) {
         // High-fidelity 3D orbital flyby path for cinematic 360-degree showcase
         const orbitAngle = time * 0.0022; // smooth 360 rotation speed
         const pitchAngle = Math.sin(time * 0.0006) * 0.28 + 0.18; // vertical slow-wave tilt
-        const currentRadius = cameraZ * (0.95 + Math.sin(time * 0.0012) * 0.07); // subtle breathing zoom
+        const currentRadius = cameraZ * (1.6 + Math.sin(time * 0.0012) * 0.15); // increased distance so objects are not too close
 
         // 3D spherical coordinates relative to center (0,0,0)
         const ox = currentRadius * Math.sin(orbitAngle) * Math.cos(pitchAngle);
         const oy = currentRadius * Math.sin(pitchAngle);
         const oz = currentRadius * Math.cos(orbitAngle) * Math.cos(pitchAngle);
 
-        // Incorporate subtle interactive mouse offset
-        const mouseOffsetX = (mouseRef.current.x - currentW / 2) * 0.22;
-        const mouseOffsetY = -(mouseRef.current.y - currentH / 2) * 0.22;
-
-        finalTargetX = ox + mouseOffsetX;
-        finalTargetY = oy + mouseOffsetY;
-        finalTargetZ = oz;
+        finalTargetX = ox + inputs.currentCameraParallaxX;
+        finalTargetY = oy + inputs.currentCameraParallaxY;
+        finalTargetZ = oz + inputs.currentCameraZDepthOffset;
       }
 
       // Smooth cinematic orbital sweep in screensaver mode
@@ -3661,7 +4547,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         const ssTime = now * 0.00014;
         const orbitAngle = ssTime;
         const pitchAngle = Math.sin(ssTime * 0.6) * 0.14 + 0.06;
-        const currentRadius = cameraZ * (0.92 + Math.sin(ssTime * 1.2) * 0.05);
+        const currentRadius = cameraZ * (1.3 + Math.sin(ssTime * 1.2) * 0.05);
 
         const ox = currentRadius * Math.sin(orbitAngle) * Math.cos(pitchAngle);
         const oy = currentRadius * Math.sin(pitchAngle);
@@ -3672,11 +4558,84 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         finalTargetZ = finalTargetZ * (1 - screensaverOpacityRef.current) + oz * screensaverOpacityRef.current;
       }
 
-      // Smooth camera interpolation for fluid transitions between states
-      camera.position.x += (finalTargetX + shakeX - camera.position.x) * 0.04;
-      camera.position.y += (finalTargetY + shakeY - camera.position.y) * 0.04;
-      camera.position.z += (finalTargetZ + shakeZ - camera.position.z) * 0.04;
-      camera.setTarget(BABYLON.Vector3.Zero());
+      // Cinematic Fly-Through Transition and Smooth Camera Interpolation
+      let isTransitioning = false;
+      let transitionT = 0;
+      const startPos = transitionStartPosRef.current;
+
+      if (transitionActiveRef.current && startPos) {
+        const duration = 2400; // 2.4 seconds of high-fidelity camera flyby
+        const elapsed = now - transitionStartTimeRef.current;
+        if (elapsed >= duration) {
+          transitionActiveRef.current = false;
+          transitionStartPosRef.current = null;
+        } else {
+          isTransitioning = true;
+          const rawT = elapsed / duration;
+          // Ease-in-out-quart for absolute continuity of start and end velocities (perfectly zero first derivatives)
+          transitionT = rawT < 0.5 ? 8 * rawT * rawT * rawT * rawT : 1 - Math.pow(-2 * rawT + 2, 4) / 2;
+        }
+      }
+
+      if (!isTransitActiveRef.current) {
+        if (isTransitioning && startPos) {
+          // Linearly interpolate the base coordinate path
+          const basePosX = (1 - transitionT) * startPos.x + transitionT * finalTargetX;
+          const basePosY = (1 - transitionT) * startPos.y + transitionT * finalTargetY;
+          const basePosZ = (1 - transitionT) * startPos.z + transitionT * finalTargetZ;
+
+          // Cinematic Fly-Through: Z Surge pushes directly THROUGH the central geometry plane (Z=0)
+          // Peak surge reaches +1400.0 at t=0.5, ensuring the lens goes far past Z=0.
+          const zSurge = Math.sin(transitionT * Math.PI) * 1400.0;
+
+          // Interactive/Organic weaving offsets simulating a complex pilot maneuver
+          const weaveX = Math.sin(transitionT * Math.PI) * 140.0 * Math.sin(transitionT * Math.PI * 2.5);
+          const weaveY = Math.sin(transitionT * Math.PI) * 90.0 * Math.cos(transitionT * Math.PI * 2.0);
+
+          // Apply position update directly, integrating camera shake
+          camera.position.x = basePosX + weaveX + shakeX;
+          camera.position.y = basePosY + weaveY + shakeY;
+          camera.position.z = basePosZ + zSurge + shakeZ;
+
+          // Target locks blending
+          const lockX = inputs.currentLock.x * inputs.currentLock.intensity;
+          const lockY = inputs.currentLock.y * inputs.currentLock.intensity;
+          const lockZ = inputs.currentLock.z * inputs.currentLock.intensity;
+
+          // Dynamic target offset to add parallax sweep while maneuvering
+          const targetOffsetX = weaveX * 0.42 + lockX;
+          const targetOffsetY = weaveY * 0.42 + lockY;
+          camera.setTarget(new BABYLON.Vector3(targetOffsetX, targetOffsetY, lockZ));
+
+          // Incorporate camera tilt (pitch and yaw)
+          camera.rotation.x += inputs.currentCameraPitch;
+          camera.rotation.y += inputs.currentCameraYaw;
+
+          // Dynamic rotational banking (roll):
+          // Simulate physical centripetal banking forces as the camera snakes through space.
+          const rollAngle = Math.sin(transitionT * Math.PI) * 0.52 * Math.cos(transitionT * Math.PI * 1.5);
+          camera.rotation.z = rollAngle;
+        } else {
+          // Standard smooth camera interpolation for normal states
+          camera.position.x += (finalTargetX + shakeX - camera.position.x) * 0.04;
+          camera.position.y += (finalTargetY + shakeY - camera.position.y) * 0.04;
+          camera.position.z += (finalTargetZ + shakeZ - camera.position.z) * 0.04;
+
+          // Target locks blending
+          const lockX = inputs.currentLock.x * inputs.currentLock.intensity;
+          const lockY = inputs.currentLock.y * inputs.currentLock.intensity;
+          const lockZ = inputs.currentLock.z * inputs.currentLock.intensity;
+
+          camera.setTarget(new BABYLON.Vector3(lockX, lockY, lockZ));
+
+          // Incorporate camera tilt (pitch and yaw)
+          camera.rotation.x += inputs.currentCameraPitch;
+          camera.rotation.y += inputs.currentCameraYaw;
+
+          // Reset camera roll gradually to 0 for vertical alignment when stable
+          camera.rotation.z *= 0.95;
+        }
+      }
 
       // Update particle shader uniforms for electrical pulse glowing waves
       if (pointsMaterialRef.current) {
@@ -3687,25 +4646,26 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       // Dynamically adjust bloom parameters for a truly high-end cinematic experience
       if (composerRef.current) {
         const pipeline = composerRef.current;
+        const baseBloom = isInterstellarRef.current ? 0.24 : 0.08;
         if (activeSupernova) {
           if (snElapsed >= 1200 && snElapsed < 2200) {
             // Gravitational collapse phase: build intensity
             const progress = (snElapsed - 1200) / 1000;
-            pipeline.bloomWeight = 0.08 + progress * 0.6; // build up
+            pipeline.bloomWeight = baseBloom + progress * 0.6; // build up
           } else if (snElapsed >= 2200 && snElapsed < 3200) {
             // Supernova detonation phase: cinematic blinding flash!
             const progress = (snElapsed - 2200) / 1000;
             const fadeOut = Math.max(0, 1 - progress);
-            pipeline.bloomWeight = 0.08 + fadeOut * 1.8; // intense bloom flare peaks at 1.88
+            pipeline.bloomWeight = baseBloom + fadeOut * 1.8; // intense bloom flare peaks
           } else {
-            pipeline.bloomWeight = 0.08;
+            pipeline.bloomWeight = baseBloom;
           }
         } else {
           // Standard cosmic breathing pulse with an added dynamic neon-blue bloom surge when electrical disturbances occur
           const pulse = Math.sin(time * 0.01) * 0.02;
           const electricSurge = Math.min(1.0, disturbance) * 0.72; // boost bloom weight momentarily on click/interaction
           const shockwaveSurge = shockwaveIntensity * 1.48; // gorgeous screen-wide neon bloom flare during periodic shocks!
-          pipeline.bloomWeight = 0.08 + pulse + electricSurge + shockwaveSurge;
+          pipeline.bloomWeight = baseBloom + pulse + electricSurge + shockwaveSurge;
         }
       }
     };
@@ -3763,19 +4723,135 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       mouseRef.current.x = e.clientX;
       mouseRef.current.y = e.clientY;
       mouseRef.current.lastMoved = Date.now();
+
+      const currentW = window.innerWidth;
+      const currentH = window.innerHeight;
+
+      // Normalize cursor coords between -1.0 and 1.0
+      const normX = (e.clientX - currentW / 2) / (currentW / 2 || 1);
+      const normY = -(e.clientY - currentH / 2) / (currentH / 2 || 1);
+
+      const inputs = inputControllerRef.current;
+      if (!inputs.gyroActive) {
+        inputs.targetCameraParallaxX = normX * 85.0;
+        inputs.targetCameraParallaxY = normY * 85.0;
+        inputs.targetCameraPitch = normY * 0.22; // max ~12 degrees pitch
+        inputs.targetCameraYaw = normX * 0.22;   // max ~12 degrees yaw
+      } else {
+        inputs.targetCameraParallaxX = normX * 45.0;
+        inputs.targetCameraParallaxY = normY * 45.0;
+      }
+
       resetActivity();
     };
 
+    const handleDeviceOrientation = (e: DeviceOrientationEvent) => {
+      if (e.beta !== null && e.gamma !== null) {
+        const inputs = inputControllerRef.current;
+        inputs.gyroActive = true;
+        
+        // Map tilt (beta front/back, gamma left/right) to exact same pitch/yaw variables
+        // Center beta at 60 degrees (comfortable viewing angle)
+        const targetPitch = Math.max(-0.45, Math.min(0.45, (e.beta - 60) * 0.012));
+        const targetYaw = Math.max(-0.45, Math.min(0.45, e.gamma * 0.012));
+
+        inputs.targetCameraPitch = targetPitch;
+        inputs.targetCameraYaw = targetYaw;
+      }
+    };
+
+    const requestGyroPermission = () => {
+      const DOC = window.DeviceOrientationEvent as any;
+      if (DOC && typeof DOC.requestPermission === "function") {
+        DOC.requestPermission()
+          .then((permissionState: string) => {
+            if (permissionState === "granted") {
+              window.addEventListener("deviceorientation", handleDeviceOrientation);
+            }
+          })
+          .catch((err: any) => {
+            console.warn("DeviceOrientation permission request failed:", err);
+          });
+      }
+    };
+
     const handleClick = (e: MouseEvent) => {
+      // Trigger permission on click for iOS deviceorientation support
+      requestGyroPermission();
+
       ripplesRef.current.push({ x: e.clientX, y: e.clientY, life: 1.0 });
-      supernovaRef.current = {
-        time: Date.now(),
-        exploded: false,
-        x: e.clientX,
-        y: e.clientY,
-      };
-      fetchNextGeminiScene();
+
+      // Compute Target Locks: Find closest celestial body near click coordinates
+      const currentW = window.innerWidth;
+      const currentH = window.innerHeight;
+      const clickX = e.clientX;
+      const clickY = e.clientY;
+
+      let nearestEntity: CelestialEntity | null = null;
+      let minDistance = 160; // target threshold in pixels
+      
+      celestialEntitiesRef.current.forEach((entity) => {
+        if (entity.isDestroyed) return;
+        const dist = Math.sqrt((entity.x - clickX) * (entity.x - clickX) + (entity.y - clickY) * (entity.y - clickY));
+        if (dist < minDistance) {
+          minDistance = dist;
+          nearestEntity = entity;
+        }
+      });
+
+      const inputs = inputControllerRef.current;
+      if (nearestEntity) {
+        const wx = (nearestEntity as CelestialEntity).x - currentW / 2;
+        const wy = -((nearestEntity as CelestialEntity).y - currentH / 2);
+        const wz = (nearestEntity as CelestialEntity).z || 0;
+        
+        inputs.targetLock = {
+          x: wx,
+          y: wy,
+          z: wz,
+          active: true,
+          entityId: (nearestEntity as CelestialEntity).id || "unknown"
+        };
+      } else {
+        inputs.targetLock = {
+          x: 0,
+          y: 0,
+          z: 0,
+          active: false,
+          entityId: null
+        };
+      }
+
+      // Trigger a cinematic cosmic shift on click so sequences can progress manually, but ONLY when in interstellar mode!
+      if (isInterstellarRef.current && !supernovaRef.current) {
+        // Smoothly fade out all current entities by setting them as destroyed
+        celestialEntitiesRef.current.forEach((entity) => {
+          entity.isDestroyed = true;
+        });
+
+        supernovaRef.current = {
+          time: Date.now(),
+          exploded: false,
+          isCalmShift: true,
+          x: e.clientX,
+          y: e.clientY,
+        };
+        console.log("[DEBUG] Click triggered supernova/shift", supernovaRef.current);
+        audio.playRippleShockwave();
+        fetchNextGeminiScene();
+      }
       resetActivity();
+    };
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches && e.touches[0]) {
+        const touch = e.touches[0];
+        const simulatedClick = {
+          clientX: touch.clientX,
+          clientY: touch.clientY,
+        } as MouseEvent;
+        handleClick(simulatedClick);
+      }
     };
 
     const handleScrollPhysics = () => {
@@ -3784,19 +4860,399 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       const delta = currentScrollY - lastScrollYRef.current;
       scrollVelocityRef.current += delta * 0.08;
       lastScrollYRef.current = currentScrollY;
+
+      // Progress overarching scene timeline and camera Z depth
+      const maxScroll = (document.documentElement.scrollHeight - window.innerHeight) || 1200;
+      const inputs = inputControllerRef.current;
+      inputs.targetScrollTimeline = currentScrollY / maxScroll;
+      inputs.targetCameraZDepthOffset = (currentScrollY / maxScroll) * -600.0; // zoom out rather than in
+
       resetActivity();
     };
 
     window.addEventListener("resize", handleResize);
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("click", handleClick);
+    window.addEventListener("touchstart", handleTouchStart, { passive: true });
     window.addEventListener("scroll", handleScrollPhysics, { passive: true });
+
+    // Register gyroscope directly if no special permission API exists
+    const DOC = window.DeviceOrientationEvent as any;
+    if (!DOC || typeof DOC.requestPermission !== "function") {
+      window.addEventListener("deviceorientation", handleDeviceOrientation);
+    }
+
+
+    // --- WORMHOLE TRANSIT LOGIC ---
+    let tunnelMesh: BABYLON.Mesh | null = null;
+    let tunnelMaterial: BABYLON.ShaderMaterial | null = null;
+    let flyingObjects: BABYLON.Mesh[] = [];
+    let pbrPlanets: BABYLON.Mesh[] = [];
+    let pbrStarLight: BABYLON.PointLight | null = null;
+    let transitStartTime = 0;
+    let transitCameraZ = 0;
+
+    const startWormholeTransit = async (targetPos?: BABYLON.Vector3, viewDir?: BABYLON.Vector3) => {
+      console.log("[DEBUG] startWormholeTransit triggered!");
+      console.log("[DEBUG] startWormholeTransit called", { targetPos, viewDir });
+      if (isTransitActiveRef.current) return;
+      isTransitActiveRef.current = true;
+      transitStartTime = Date.now();
+
+      const engine = rendererRef.current;
+      if (!scene || !camera || !engine) return;
+
+      // 1. Custom PostProcess: Radial blur & Chromatic Aberration
+      BABYLON.Effect.ShadersStore["wormholePixelShader"] = `
+        precision highp float;
+        varying vec2 vUV;
+        uniform sampler2D textureSampler;
+        uniform float time;
+        uniform float intensity;
+        void main(void) {
+            vec2 uv = vUV;
+            vec4 baseColor = texture2D(textureSampler, uv);
+            if (intensity <= 0.0) {
+                gl_FragColor = baseColor;
+                return;
+            }
+            
+            vec2 dir = 0.5 - uv;
+            float dist = length(dir);
+            dir = normalize(dir);
+            
+            // Smoothly building radial blur instead of shaky high-speed pulsing
+            float blurAmount = min(time * 0.015, 0.04) * intensity;
+            
+            vec4 sum = vec4(0.0);
+            for (int i = 0; i < 10; i++) {
+                sum += texture2D(textureSampler, uv + dir * (float(i) / 10.0) * blurAmount);
+            }
+            sum /= 10.0;
+            
+            // Subtle, elegant chromatic aberration
+            float ca = blurAmount * 0.35;
+            sum.r = texture2D(textureSampler, uv + dir * ca).r;
+            sum.b = texture2D(textureSampler, uv - dir * ca).b;
+            gl_FragColor = mix(baseColor, sum, intensity);
+        }
+      `;
+
+      const wormholePostProcess = new BABYLON.PostProcess("WormholePP", "wormhole", ["time", "intensity"], null, 1.0, camera);
+      let ppTime = 0;
+      let ppIntensity = 1.0;
+      wormholePostProcess.onApply = (effect) => {
+          ppTime += 0.016;
+          effect.setFloat("time", ppTime);
+          effect.setFloat("intensity", ppIntensity);
+      };
+
+      // Animate FOV to widen gently
+      BABYLON.Animation.CreateAndStartAnimation("fovAnim", camera, "fov", 60, 60, camera.fov, 1.6, 0 /* loop */, new BABYLON.QuadraticEase());
+
+      const origCameraPos = camera.position.clone();
+      const dir = viewDir ? viewDir.normalize() : new BABYLON.Vector3(0, 0, 1);
+      
+      // Look straight ahead in the travel direction to avoid disorienting target-rotation snaps!
+      const lookAtPoint = origCameraPos.add(dir.scale(2000));
+      camera.setTarget(lookAtPoint);
+
+      const flyDestination = targetPos || origCameraPos.add(dir.scale(1200));
+      
+      // EASE-IN-OUT: Camera gracefully accelerates and decelerates into and out of the wormhole
+      const easeInOut = new BABYLON.CubicEase();
+      easeInOut.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEINOUT);
+      BABYLON.Animation.CreateAndStartAnimation("camTransitAnim", camera, "position", 60, 180, origCameraPos, flyDestination, 0, easeInOut);
+
+      // Generate Tube (Transit Tunnel) starting 400 units in front of camera
+      const path = [];
+      const dirForPath = viewDir ? viewDir.normalize() : new BABYLON.Vector3(0, 0, 1);
+      for (let i = 0; i < 60; i++) {
+          path.push(origCameraPos.add(dirForPath.scale(400 + i * 45)));
+      }
+      tunnelMesh = BABYLON.MeshBuilder.CreateTube("wormhole_tunnel", { path: path, radius: 35, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
+      tunnelMesh.metadata = { dir: dirForPath };
+
+      // Build wormhole entrance portal meshes at tunnel start
+      const tunnelStartPos = origCameraPos.add(dirForPath.scale(400));
+
+      const mouthMesh = BABYLON.MeshBuilder.CreateTorus("wormhole_mouth", { diameter: 72, thickness: 3.5, tessellation: 64 }, scene);
+      mouthMesh.position = tunnelStartPos;
+      mouthMesh.lookAt(origCameraPos);
+      
+      const mouthMat = new BABYLON.PBRMaterial("mouthMat", scene);
+      mouthMat.emissiveColor = new BABYLON.Color3(0.0, 0.9, 1.0); // Neon blue glow
+      mouthMat.albedoColor = new BABYLON.Color3(0.05, 0.0, 0.2);
+      mouthMat.metallic = 0.9;
+      mouthMat.roughness = 0.1;
+      mouthMesh.material = mouthMat;
+      flyingObjects.push(mouthMesh);
+
+      const vortexDisc = BABYLON.MeshBuilder.CreateDisc("vortex_disc", { radius: 35, tessellation: 64 }, scene);
+      vortexDisc.position = tunnelStartPos.add(dirForPath.scale(0.5));
+      vortexDisc.lookAt(origCameraPos);
+      
+      BABYLON.Effect.ShadersStore["vortexVertexShader"] = `
+        precision highp float;
+        attribute vec3 position;
+        attribute vec2 uv;
+        uniform mat4 worldViewProjection;
+        varying vec2 vUV;
+        void main(void) {
+            vUV = uv;
+            gl_Position = worldViewProjection * vec4(position, 1.0);
+        }
+      `;
+      BABYLON.Effect.ShadersStore["vortexPixelShader"] = `
+        precision highp float;
+        varying vec2 vUV;
+        uniform float time;
+        void main(void) {
+            vec2 uv = vUV - vec2(0.5);
+            float dist = length(uv);
+            float angle = atan(uv.y, uv.x);
+            
+            // Slow, majestic spinning cosmic vortex with low frequency spiral arms
+            float spiral = sin(angle * 3.0 - dist * 6.5 + time * 1.8) * 0.5 + 0.5;
+            float fade = smoothstep(0.5, 0.0, dist);
+            
+            // Blend beautiful nebulous colors: violet-magenta and electric azure
+            vec3 deepViolet = vec3(0.42, 0.0, 0.85);
+            vec3 cosmicAzure = vec3(0.0, 0.72, 1.0);
+            vec3 color = mix(deepViolet, cosmicAzure, spiral);
+            
+            // Soft ethereal glow rather than harsh overexposure
+            gl_FragColor = vec4(color * 1.3, fade * 0.85);
+        }
+      `;
+      
+      const vortexMaterial = new BABYLON.ShaderMaterial("vortexMat", scene, {
+          vertex: "vortex",
+          fragment: "vortex",
+      }, {
+          attributes: ["position", "uv"],
+          uniforms: ["worldViewProjection", "time"]
+      });
+      vortexMaterial.backFaceCulling = false;
+      vortexMaterial.needAlphaBlending = () => true;
+      vortexDisc.material = vortexMaterial;
+      flyingObjects.push(vortexDisc);
+      
+      BABYLON.Effect.ShadersStore["tunnelVertexShader"] = `
+        precision highp float;
+        attribute vec3 position;
+        attribute vec2 uv;
+        uniform mat4 worldViewProjection;
+        varying vec2 vUV;
+        void main(void) {
+            vUV = uv;
+            gl_Position = worldViewProjection * vec4(position, 1.0);
+        }
+      `;
+      BABYLON.Effect.ShadersStore["tunnelPixelShader"] = `
+        precision highp float;
+        varying vec2 vUV;
+        uniform float time;
+        void main(void) {
+            vec2 uv = vUV;
+            
+            // Gentle, slow-moving plasma wave flow
+            float slowWave1 = sin(uv.y * 8.0 - time * 1.5 + sin(uv.x * 3.0)) * 0.5 + 0.5;
+            float slowWave2 = cos(uv.y * 14.0 - time * 1.0 + cos(uv.x * 5.0)) * 0.5 + 0.5;
+            
+            // Soft neon fibers / glowing threads that glide rather than strobe
+            float fiberPattern = sin(uv.x * 12.0 + time * 0.5) * cos(uv.y * 22.0 - time * 1.2) * 0.5 + 0.5;
+            float softFiber = pow(fiberPattern, 3.0);
+            
+            vec3 spaceBlue = vec3(0.01, 0.04, 0.18);
+            vec3 purpleNeon = vec3(0.38, 0.0, 0.72);
+            vec3 electricCyan = vec3(0.0, 0.75, 0.95);
+            
+            vec3 baseColor = mix(spaceBlue, purpleNeon, slowWave1 * 0.6);
+            baseColor = mix(baseColor, electricCyan, slowWave2 * 0.35);
+            
+            vec3 finalColor = baseColor + electricCyan * softFiber * 1.4;
+            float alpha = 0.55 + slowWave1 * 0.2 + softFiber * 0.25;
+            
+            gl_FragColor = vec4(finalColor, alpha);
+        }
+      `;
+
+      tunnelMaterial = new BABYLON.ShaderMaterial("tunnelMat", scene, {
+          vertex: "tunnel",
+          fragment: "tunnel",
+      }, {
+          attributes: ["position", "uv"],
+          uniforms: ["worldViewProjection", "time"]
+      });
+      tunnelMesh.material = tunnelMaterial;
+
+      // Populate with abstract geometries
+      
+      const dirForObjs = viewDir ? viewDir.normalize() : new BABYLON.Vector3(0, 0, 1);
+      for (let i = 0; i < 20; i++) {
+          let mesh = i % 2 === 0 ? BABYLON.MeshBuilder.CreateTorusKnot("tk" + i, {radius: 2, tube: 0.5}, scene) : BABYLON.MeshBuilder.CreatePolyhedron("ph" + i, {type: 2, size: 3}, scene);
+          // Distribute along the tunnel direction
+          const forwardOffset = Math.random() * 1000 + 100;
+          const radialOffset = new BABYLON.Vector3((Math.random() - 0.5) * 60, (Math.random() - 0.5) * 60, 0);
+          mesh.position = origCameraPos.add(dirForObjs.scale(forwardOffset)).add(radialOffset);
+          
+          let mat = new BABYLON.StandardMaterial("std" + i, scene);
+          mat.emissiveColor = new BABYLON.Color3(Math.random(), Math.random(), Math.random());
+          mat.wireframe = true;
+          mesh.material = mat;
+          flyingObjects.push(mesh);
+      }
+
+      // 3. New Solar System (After 3 seconds)
+      setTimeout(() => {
+          const geminiData = nextGeminiSceneRef.current;
+
+          // Decelerate camera & restore FOV
+          BABYLON.Animation.CreateAndStartAnimation("fovAnimRest", camera, "fov", 60, 60, camera.fov, fovRef.current * Math.PI / 180 || 1.0, 0, new BABYLON.QuadraticEase());
+          // Warp camera to give the illusion of exiting the wormhole, then glide to rest position
+          camera.position = new BABYLON.Vector3(0, 0, -cameraZRef.current - 1500);
+          camera.setTarget(BABYLON.Vector3.Zero());
+          BABYLON.Animation.CreateAndStartAnimation(
+              "camRestAnim", 
+              camera, 
+              "position", 
+              60, 
+              90, 
+              camera.position, 
+              new BABYLON.Vector3(0, 0, -cameraZRef.current), 
+              0, 
+              new BABYLON.CubicEase(),
+              () => {
+                  isTransitActiveRef.current = false;
+                  if (cameraRef.current) {
+                      transitionStartTimeRef.current = Date.now();
+                      transitionActiveRef.current = true;
+                      transitionStartPosRef.current = cameraRef.current.position.clone();
+                  }
+                  if (animationComplete) {
+                      animationComplete();
+                  }
+              }
+          );
+          
+          console.log("[DEBUG] Detaching wormholePostProcess"); camera.detachPostProcess(wormholePostProcess); wormholePostProcess.dispose();
+                    
+          if (tunnelMesh) {
+              tunnelMesh.dispose();
+          }
+          flyingObjects.forEach(m => {
+              if (m) m.dispose();
+          });
+          
+          flyingObjects = [];
+          tunnelMesh = null;
+
+          const ww = window.innerWidth;
+          const wh = window.innerHeight;
+
+
+          isInterstellarRef.current = true;
+
+          // Generate Pristine Solar System using high-fidelity engine and our fetched Gemini scene data
+          if (geminiData) {
+              nextGeminiSceneRef.current = geminiData; 
+          }
+          generateInterstellarScene(ww, wh, true);
+          mapParticlesToInterstellar(ww, wh);
+      }, 3000);
+    };
+
+    const triggerPlanetaryFlyby = (targetNode: any) => {
+        if (!camera || isTransitActiveRef.current) return;
+        isTransitActiveRef.current = true;
+        const targetPos = targetNode.position;
+        // Cinematic flyby: animate camera to a point near the planet
+        const offset = new BABYLON.Vector3(250, 150, 350);
+        const flyToPos = targetPos.add(offset);
+        
+        BABYLON.Animation.CreateAndStartAnimation("camFly", camera, "position", 60, 120, camera.position, flyToPos, 0, new BABYLON.CubicEase(), () => {
+            isTransitActiveRef.current = false;
+        });
+        BABYLON.Animation.CreateAndStartAnimation("camTarget", camera, "target", 60, 120, camera.getTarget(), targetPos, 0, new BABYLON.CubicEase());
+    };
+
+    scene.onBeforeRenderObservable.add(() => {
+        if (isTransitActiveRef.current && tunnelMaterial) {
+            const elapsedSeconds = (Date.now() - transitStartTime) * 0.001;
+            tunnelMaterial.setFloat("time", elapsedSeconds * 5.0);
+            
+            const vortex = scene.getMeshByName("vortex_disc");
+            if (vortex && vortex.material) {
+                (vortex.material as BABYLON.ShaderMaterial).setFloat("time", elapsedSeconds);
+            }
+            
+            const moveDir = tunnelMesh && tunnelMesh.metadata && tunnelMesh.metadata.dir ? tunnelMesh.metadata.dir : new BABYLON.Vector3(0, 0, 1);
+            flyingObjects.forEach(m => {
+                m.position.subtractInPlace(moveDir.scale(5));
+                m.rotation.x += 0.05;
+                m.rotation.y += 0.05;
+                // If it goes behind the camera, wrap it to the front
+                if (camera && BABYLON.Vector3.Distance(m.position, camera.position) < 50) {
+                     m.position.addInPlace(moveDir.scale(1000));
+                }
+            });
+        }
+        // Very basic rotation for PBR planets
+        if (!isTransitActiveRef.current && pbrPlanets.length > 1) {
+            for (let i = 1; i < pbrPlanets.length; i++) {
+                const p = pbrPlanets[i];
+                p.position.x = p.position.x * Math.cos(0.001) - p.position.z * Math.sin(0.001);
+                p.position.z = p.position.x * Math.sin(0.001) + p.position.z * Math.cos(0.001);
+                p.rotation.y += 0.01;
+            }
+        }
+    });
+
+    scene.onPointerObservable.add((pointerInfo) => {
+        if (pointerInfo.type === BABYLON.PointerEventTypes.POINTERDOWN) {
+            console.log("[DEBUG] scene.onPointerObservable POINTERDOWN triggered", pointerInfo);
+        }
+        if (pointerInfo.type === BABYLON.PointerEventTypes.POINTERDOWN) {
+            const pickResult = pointerInfo.pickInfo;
+            if (pickResult && pickResult.hit && pickResult.pickedMesh) {
+                const meshName = pickResult.pickedMesh.name;
+                const parentNode = pickResult.pickedMesh.parent;
+                if (meshName !== "hudPlane") {
+                    if (parentNode && (parentNode.name === "planet_group" || parentNode.name === "bh_group" || parentNode.name === "nebula_group" || parentNode.name === "galaxy_group" || parentNode.name === "star_group")) {
+                        triggerPlanetaryFlyby(parentNode);
+                        return;
+                    }
+                    if (meshName.startsWith("planet_") || meshName === "ring_mesh" || meshName === "atmosphere_glow" || meshName.startsWith("event_horizon_") || meshName.startsWith("star_")) {
+                        triggerPlanetaryFlyby(pickResult.pickedMesh);
+                        return;
+                    }
+                }
+            }
+            if (!isInterstellarRef.current) {
+                if (camera) {
+                    const ray = scene.createPickingRay(scene.pointerX, scene.pointerY, BABYLON.Matrix.Identity(), camera);
+                    const targetPoint = ray.origin.add(ray.direction.scale(1500));
+                    startWormholeTransit(targetPoint, ray.direction);
+                } else {
+                    startWormholeTransit();
+                }
+            }
+        }
+    });
 
     return () => {
       window.removeEventListener("resize", handleResize);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("click", handleClick);
+      window.removeEventListener("touchstart", handleTouchStart);
       window.removeEventListener("scroll", handleScrollPhysics);
+      window.removeEventListener("deviceorientation", handleDeviceOrientation);
+      delete (window as any).activateSequence;
+
+      if (lensingPostProcessRef.current) {
+        lensingPostProcessRef.current.dispose();
+      }
 
       if (rendererRef.current) {
         rendererRef.current.stopRenderLoop();

@@ -1,15 +1,76 @@
 import React, { useState, useEffect } from 'react';
 import { ParticleCanvas } from './components/ParticleCanvas';
-import { projects } from './types';
 import { WavelengthBackground } from './components/WavelengthBackground';
+import { ErrorOverlay } from './components/ErrorOverlay';
+import { projects } from './types';
 import { AnimatePresence, motion } from 'motion/react';
-import { ExternalLink, Github, Volume2, VolumeX, Eye, EyeOff } from 'lucide-react';
+import { ExternalLink, Github, Volume2, VolumeX, Eye, EyeOff, Terminal } from 'lucide-react';
 import { audio } from './utils/audio';
+
+function ErrorOverlay() {
+  const [errors, setErrors] = useState<string[]>([]);
+  useEffect(() => {
+    const origError = console.error;
+    console.error = (...args) => {
+      setErrors(e => [...e, args.map(a => {
+        try {
+          return typeof a === 'object' ? JSON.stringify(a) : String(a);
+        } catch (err) {
+          return String(a);
+        }
+      }).join(' ')].slice(-5));
+      origError(...args);
+    };
+    window.onerror = (msg, url, line, col, error) => {
+      setErrors(e => [...e, `${msg} at ${line}:${col}`].slice(-5));
+    };
+    return () => { console.error = origError; };
+  }, []);
+  if (errors.length === 0) return null;
+  return (
+    <div style={{position:'fixed', zIndex: 9999, top:0, left:0, background:'rgba(255,0,0,0.8)', color:'white', padding:10, fontSize:12, pointerEvents:'none', width:'100%'}}>
+      {errors.map((e, i) => <div key={i}>{e}</div>)}
+    </div>
+  );
+}
 
 export default function App() {
   const [stage, setStage] = useState(0);
   const [isInterstellar, setIsInterstellar] = useState(false);
-  const [sequenceInfo, setSequenceInfo] = useState({
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  useEffect(() => {
+    const origLog = console.log;
+    console.log = (...args) => {
+      origLog(...args);
+      const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+      if (msg.includes("[DEBUG]") || msg.includes("Error")) {
+         setDebugLogs(prev => [...prev.slice(-15), msg]);
+      }
+    };
+    
+    const origError = console.error;
+    console.error = (...args) => {
+      origError(...args);
+      const msg = "[ERROR] " + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+      setDebugLogs(prev => [...prev.slice(-15), msg]);
+    };
+
+    window.onerror = (message, source, lineno, colno, error) => {
+      const msg = "[ERROR] " + message + " at " + source + ":" + lineno;
+      setDebugLogs(prev => [...prev.slice(-15), msg]);
+    };
+    window.onunhandledrejection = (event) => {
+      const msg = "[ERROR] Unhandled Rejection: " + (event.reason ? event.reason.toString() : 'Unknown');
+      setDebugLogs(prev => [...prev.slice(-15), msg]);
+    };
+  }, []);
+  const [sequenceInfo, setSequenceInfo] = useState<{
+    id?: string;
+    name: string;
+    description: string;
+    tags: string[];
+  }>({
+    id: 'seq-andromeda-gateway',
     name: 'Interstellar Void',
     description: 'A pocket universe birthed from the supernova dust. Move your cursor to bend spacetime with gravity, or click anywhere to collapse reality and seed a new cosmic sequence.',
     tags: ['★ NEBULAS', '🪐 PLANETS & RINGS', '☄ ACCRETION DISK', '🕳 BLACK HOLE']
@@ -17,12 +78,15 @@ export default function App() {
   const [mousePos, setMousePos] = useState({ x: -1000, y: -1000 });
   const [muted, setMuted] = useState(true);
   const [showSequenceCard, setShowSequenceCard] = useState(true);
+  const [showDebug, setShowDebug] = useState(false);
   const [isIdle, setIsIdle] = useState(false);
   const [isSoundHovered, setIsSoundHovered] = useState(false);
   const [isInfoHovered, setIsInfoHovered] = useState(false);
+  const [isDebugHovered, setIsDebugHovered] = useState(false);
 
   const isSoundCompacted = isIdle && !isSoundHovered;
   const isInfoCompacted = isIdle && !isInfoHovered;
+  const isDebugCompacted = isIdle && !isDebugHovered;
 
   useEffect(() => {
     let ticking = false;
@@ -116,8 +180,14 @@ export default function App() {
 
   return (
     <div className="relative bg-black text-slate-200 overflow-x-hidden font-sans selection:bg-[#c14b2a]/30 selection:text-white">
+      <ErrorOverlay />
       {/* Background visual engine */}
       <WavelengthBackground />
+      {showDebug && (
+        <div className="fixed top-0 left-0 z-[9999] p-4 text-green-400 font-mono text-xs max-w-[50vw] pointer-events-none bg-black/80">
+          {debugLogs.map((log, i) => <div key={i}>{log}</div>)}
+        </div>
+      )}
       
       {/* Control Pod in Top Right Corner */}
       <div className="fixed top-6 right-6 lg:top-8 lg:right-8 z-50 flex items-center gap-3">
@@ -200,6 +270,37 @@ export default function App() {
             <div className={`w-[2px] bg-[#c14b2a] rounded-sm transition-all duration-300 [animation-delay:0.3s] ${muted ? 'h-1 opacity-30' : 'h-3.5'}`} />
           </div>
         </button>
+
+        {/* Debug Logs Overlay Toggle */}
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowDebug(!showDebug);
+          }}
+          onMouseEnter={() => setIsDebugHovered(true)}
+          onMouseLeave={() => setIsDebugHovered(false)}
+          className={`flex items-center justify-center gap-2 border bg-[#f9f8f3]/5 border-[#e8e2d7]/15 hover:bg-[#e8e2d7]/10 hover:border-[#e8e2d7]/30 text-[#f5f2eb] rounded-full font-mono tracking-widest font-semibold transition-all duration-300 shadow-[0_15px_30px_rgba(0,0,0,0.3)] backdrop-blur-md cursor-pointer group ${
+            isDebugCompacted 
+              ? 'w-10 h-10 p-0 opacity-25' 
+              : 'px-4 py-2 w-auto opacity-100 text-[10px]'
+          }`}
+          title={showDebug ? "Hide system debug overlay" : "Show system debug overlay"}
+        >
+          <span className="relative flex h-2 w-2 items-center justify-center shrink-0">
+            {showDebug && (
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#4deeea] opacity-75"></span>
+            )}
+            <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${!showDebug ? 'bg-[#e8e2d7]/40' : 'bg-[#4deeea]'}`}></span>
+          </span>
+          
+          {!isDebugCompacted && (
+            <span className="overflow-hidden whitespace-nowrap">
+              {showDebug ? 'DEBUG ON' : 'DEBUG OFF'}
+            </span>
+          )}
+          
+          <Terminal className="w-3.5 h-3.5 shrink-0" />
+        </button>
       </div>
 
       {/* HUD Layout for Project Details (Immersive, no box overlays) */}
@@ -218,7 +319,7 @@ export default function App() {
               className="w-full max-w-[500px] pointer-events-auto"
             >
               {/* Top Section */}
-              <div className="flex flex-col items-start z-10 w-full relative mb-8 opacity-0 pointer-events-none">
+              <div className="flex flex-col items-start z-10 w-full relative mb-8">
                 <div id="project-number" className="font-mono text-xs text-[#f5f2eb]/40 tracking-[0.4em] leading-none mb-4 font-semibold uppercase">
                   Project {String(activeProjectIndex + 1).padStart(2, '0')} // 04
                 </div>
@@ -228,7 +329,7 @@ export default function App() {
               </div>
 
               {/* Middle textual content */}
-              <div className="z-10 text-left mb-10 opacity-0 pointer-events-none">
+              <div className="z-10 text-left mb-10">
                 <h3 id="project-title" className="text-4xl sm:text-5xl lg:text-6xl font-semibold text-[#f5f2eb] mb-6 tracking-tight font-serif drop-shadow-[0_4px_32px_rgba(0,0,0,0.9)]">
                   {project.title}
                 </h3>
@@ -239,7 +340,7 @@ export default function App() {
 
               {/* Tags & Actions */}
               <div className="z-10 flex flex-col gap-8">
-                <div className="flex flex-wrap gap-2 opacity-0 pointer-events-none">
+                <div className="flex flex-wrap gap-2">
                   {project.tags.map(tag => (
                      <span key={tag} className="project-tag px-3 py-1.5 bg-[#f5f2eb]/5 backdrop-blur-sm border border-[#e1d6c0]/20 rounded-full text-[10px] font-mono text-[#f5f2eb]/80 tracking-widest shadow-sm">
                        {tag}
@@ -266,8 +367,15 @@ export default function App() {
           >
             {/* Top Section */}
             <div className="flex flex-col gap-0.5">
-              <div className="font-mono text-[8px] text-[#f5f2eb]/40 tracking-widest font-semibold uppercase">
-                COSMIC SEQUENCE
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[8px] text-[#f5f2eb]/40 tracking-widest font-semibold uppercase">
+                  COSMIC SEQUENCE
+                </span>
+                {sequenceInfo.id && (
+                  <span className="font-mono text-[7.5px] text-[#ffd778] font-bold tracking-wider uppercase border border-[#ffd778]/25 px-1 bg-[#ffd778]/5 rounded">
+                    {sequenceInfo.id}
+                  </span>
+                )}
               </div>
               <div className="font-mono text-[9px] tracking-widest text-[#4deeea] font-bold uppercase drop-shadow-[0_0_8px_rgba(77,238,234,0.3)]">
                 ASTROPHYSICS ENGINE
@@ -297,17 +405,17 @@ export default function App() {
       </AnimatePresence>
 
       {/* Particle System Canvas - Positioned slightly above the HTML so it looks like it's drawing the frame around the readable text */}
-      <div className="fixed inset-0 z-10 pointer-events-none opacity-90">
+      <div className="fixed inset-0 z-10 opacity-90">
         <ParticleCanvas 
           stage={stage} 
           isInterstellar={isInterstellar} 
-          onTransitionToInterstellar={() => setIsInterstellar(true)} 
+          animationComplete={() => setIsInterstellar(true)} 
           onSequenceGenerated={setSequenceInfo}
         />
       </div>
 
       {/* The invisible scrolling track providing native scroll height */}
-      <div className="w-full relative z-20 shrink-0" style={{ height: '800vh' }} />
+      <div className="w-full relative z-20 shrink-0 pointer-events-none" style={{ height: '800vh' }} />
 
       {/* Unobtrusive scroll direction hint */}
       <div 

@@ -181,6 +181,11 @@ async function startServer() {
   }
 
   // API endpoint to generate cosmic scene
+  app.post("/api/log-error", express.json(), (req, res) => {
+    console.log("CLIENT ERROR:", req.body.error);
+    res.json({ ok: true });
+  });
+
   app.post("/api/generate-cosmic-scene", async (req, res) => {
     try {
       const client = getAIClient();

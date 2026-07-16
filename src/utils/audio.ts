@@ -116,6 +116,38 @@ class AudioEngine {
     return avg / 255.0; // returns 0.0 to 1.0 amplitude
   }
 
+  getFrequencyBands(): { bass: number; mid: number; treble: number } {
+    if (!this.isInitialized || !this.analyser || this.isMuted) {
+      return { bass: 0, mid: 0, treble: 0 };
+    }
+    const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+    this.analyser.getByteFrequencyData(dataArray);
+    
+    let bassSum = 0;
+    let midSum = 0;
+    let trebleSum = 0;
+    
+    // With fftSize = 64, we have 32 bins.
+    // Bass: bins 0 to 5
+    // Mid: bins 6 to 15
+    // Treble: bins 16 to 31
+    for (let i = 0; i < 6; i++) {
+      bassSum += dataArray[i] || 0;
+    }
+    for (let i = 6; i < 16; i++) {
+      midSum += dataArray[i] || 0;
+    }
+    for (let i = 16; i < 32; i++) {
+      trebleSum += dataArray[i] || 0;
+    }
+    
+    return {
+      bass: (bassSum / 6) / 255.0,
+      mid: (midSum / 10) / 255.0,
+      treble: (trebleSum / 16) / 255.0
+    };
+  }
+
   private startAmbientDrones() {
     if (!this.ctx || !this.droneFilter) return;
 
