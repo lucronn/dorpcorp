@@ -7,32 +7,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { ExternalLink, Github, Volume2, VolumeX, Eye, EyeOff, Terminal } from 'lucide-react';
 import { audio } from './utils/audio';
 
-function ErrorOverlay() {
-  const [errors, setErrors] = useState<string[]>([]);
-  useEffect(() => {
-    const origError = console.error;
-    console.error = (...args) => {
-      setErrors(e => [...e, args.map(a => {
-        try {
-          return typeof a === 'object' ? JSON.stringify(a) : String(a);
-        } catch (err) {
-          return String(a);
-        }
-      }).join(' ')].slice(-5));
-      origError(...args);
-    };
-    window.onerror = (msg, url, line, col, error) => {
-      setErrors(e => [...e, `${msg} at ${line}:${col}`].slice(-5));
-    };
-    return () => { console.error = origError; };
-  }, []);
-  if (errors.length === 0) return null;
-  return (
-    <div style={{position:'fixed', zIndex: 9999, top:0, left:0, background:'rgba(255,0,0,0.8)', color:'white', padding:10, fontSize:12, pointerEvents:'none', width:'100%'}}>
-      {errors.map((e, i) => <div key={i}>{e}</div>)}
-    </div>
-  );
-}
+
 
 export default function App() {
   const [stage, setStage] = useState(0);

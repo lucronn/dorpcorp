@@ -52,6 +52,9 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     { id: string; mesh: BABYLON.TransformNode | BABYLON.Mesh; entityRef: CelestialEntity }[]
   >([]);
   const lensingPostProcessRef = useRef<BABYLON.PostProcess | null>(null);
+  const wormholePostProcessRef = useRef<BABYLON.PostProcess | null>(null);
+  const wormholeIntensityRef = useRef<number>(0.0);
+  const wormholeTimeRef = useRef<number>(0.0);
 
   // Unified Input Controller for continuous mathematical interpolation
   const inputControllerRef = useRef({
@@ -207,24 +210,17 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       const curNew: CelestialEntity = {
         ...target,
         x: spawnX,
-        startX: spawnX,
         y: spawnY,
-        startY: spawnY,
         z: -200,
+        startX: spawnX,
+        startY: spawnY,
         startZ: -200,
-        targetZ: 0,
         scale: 0.0,
         startScale: 0.0,
         targetScale: 1.0,
         isDestroyed: false,
         id: target.id || `${target.type}-${i}-${Math.random().toString(36).substring(2, 9)}`,
-        
-        startX: spawnX,
-        startY: spawnY,
-        startZ: -200,
         startRadius: 1,
-        startScale: 0.0,
-        
         targetX: target.x,
         targetY: target.y,
         targetZ: target.z ?? 0,
@@ -2986,7 +2982,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
     // 1. Initialize Babylon.js Engine & Scene
     fovRef.current = 60;
-    cameraZRef.current = wh / (2 * Math.tan((fovRef.current * Math.PI) / 360));
+    cameraZRef.current = Math.max(10.0, wh / (2 * Math.tan((fovRef.current * Math.PI) / 360)));
     
     const { scene, camera } = initializeScene(
       canvas,
@@ -3026,37 +3022,118 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       uniform float u_time;
 
       void main(void) {
+        if (u_numLenses <= 0.0) {
+          gl_FragColor = texture2D(textureSampler, vUV);
+          return;
+        }
+
         vec2 aspect = vec2(u_aspectRatio, 1.0);
         vec2 totalDeflection = vec2(0.0);
         float shadowAlpha = 0.0;
 
-        for (int i = 0; i < 8; i++) {
-          vec3 lens = u_lensCenters[i];
-          vec2 lensCenter = lens.xy;
-          float strength = lens.z;
-
-          // Vector from lens center to current UV, aspect-corrected for perfect radial symmetry
-          vec2 r = (vUV - lensCenter) * aspect;
+        // Unroll the loop manually to guarantee WebGL 1.0 compatibility
+        // (WebGL 1.0 / GLSL ES 1.0 explicitly forbids dynamic indexing of uniform arrays with loop variables)
+        if (u_numLenses > 0.0) {
+          vec3 lens = u_lensCenters[0];
+          vec2 r = (vUV - lens.xy) * aspect;
           float d = length(r);
-
           if (d > 0.001) {
-            // Strong Einstein ring radius proportional to strength
-            float r_e = strength;
-
-            // Deflection magnitude based on general relativity lensing: delta = (r_e^2) / d
-            float deflectionMag = (r_e * r_e) / d;
-
-            // WebGL 1.0 compatible index activation without dynamic branch/breaks
-            float isActive = float(i) < u_numLenses ? 1.0 : 0.0;
-
-            // Accumulate aspect-corrected deflection vector
-            totalDeflection += (r / aspect) * (deflectionMag / d) * isActive;
-
-            // Black hole singularity / shadow boundary (event horizon capture zone)
+            float r_e = lens.z;
+            totalDeflection += (r / aspect) * (((r_e * r_e) / d) / d);
             float r_s = r_e * 0.42;
             if (d < r_s) {
-              // Smooth darkening of the event horizon capture zone
-              shadowAlpha = max(shadowAlpha, smoothstep(r_s, r_s * 0.82, d) * isActive);
+              shadowAlpha = max(shadowAlpha, smoothstep(r_s, r_s * 0.82, d));
+            }
+          }
+        }
+        if (u_numLenses > 1.0) {
+          vec3 lens = u_lensCenters[1];
+          vec2 r = (vUV - lens.xy) * aspect;
+          float d = length(r);
+          if (d > 0.001) {
+            float r_e = lens.z;
+            totalDeflection += (r / aspect) * (((r_e * r_e) / d) / d);
+            float r_s = r_e * 0.42;
+            if (d < r_s) {
+              shadowAlpha = max(shadowAlpha, smoothstep(r_s, r_s * 0.82, d));
+            }
+          }
+        }
+        if (u_numLenses > 2.0) {
+          vec3 lens = u_lensCenters[2];
+          vec2 r = (vUV - lens.xy) * aspect;
+          float d = length(r);
+          if (d > 0.001) {
+            float r_e = lens.z;
+            totalDeflection += (r / aspect) * (((r_e * r_e) / d) / d);
+            float r_s = r_e * 0.42;
+            if (d < r_s) {
+              shadowAlpha = max(shadowAlpha, smoothstep(r_s, r_s * 0.82, d));
+            }
+          }
+        }
+        if (u_numLenses > 3.0) {
+          vec3 lens = u_lensCenters[3];
+          vec2 r = (vUV - lens.xy) * aspect;
+          float d = length(r);
+          if (d > 0.001) {
+            float r_e = lens.z;
+            totalDeflection += (r / aspect) * (((r_e * r_e) / d) / d);
+            float r_s = r_e * 0.42;
+            if (d < r_s) {
+              shadowAlpha = max(shadowAlpha, smoothstep(r_s, r_s * 0.82, d));
+            }
+          }
+        }
+        if (u_numLenses > 4.0) {
+          vec3 lens = u_lensCenters[4];
+          vec2 r = (vUV - lens.xy) * aspect;
+          float d = length(r);
+          if (d > 0.001) {
+            float r_e = lens.z;
+            totalDeflection += (r / aspect) * (((r_e * r_e) / d) / d);
+            float r_s = r_e * 0.42;
+            if (d < r_s) {
+              shadowAlpha = max(shadowAlpha, smoothstep(r_s, r_s * 0.82, d));
+            }
+          }
+        }
+        if (u_numLenses > 5.0) {
+          vec3 lens = u_lensCenters[5];
+          vec2 r = (vUV - lens.xy) * aspect;
+          float d = length(r);
+          if (d > 0.001) {
+            float r_e = lens.z;
+            totalDeflection += (r / aspect) * (((r_e * r_e) / d) / d);
+            float r_s = r_e * 0.42;
+            if (d < r_s) {
+              shadowAlpha = max(shadowAlpha, smoothstep(r_s, r_s * 0.82, d));
+            }
+          }
+        }
+        if (u_numLenses > 6.0) {
+          vec3 lens = u_lensCenters[6];
+          vec2 r = (vUV - lens.xy) * aspect;
+          float d = length(r);
+          if (d > 0.001) {
+            float r_e = lens.z;
+            totalDeflection += (r / aspect) * (((r_e * r_e) / d) / d);
+            float r_s = r_e * 0.42;
+            if (d < r_s) {
+              shadowAlpha = max(shadowAlpha, smoothstep(r_s, r_s * 0.82, d));
+            }
+          }
+        }
+        if (u_numLenses > 7.0) {
+          vec3 lens = u_lensCenters[7];
+          vec2 r = (vUV - lens.xy) * aspect;
+          float d = length(r);
+          if (d > 0.001) {
+            float r_e = lens.z;
+            totalDeflection += (r / aspect) * (((r_e * r_e) / d) / d);
+            float r_s = r_e * 0.42;
+            if (d < r_s) {
+              shadowAlpha = max(shadowAlpha, smoothstep(r_s, r_s * 0.82, d));
             }
           }
         }
@@ -3070,7 +3147,9 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         float edgeDistSq = dot(screenCenterDist, screenCenterDist);
         
         // Dispersion vector depends on gravitational warp magnitude AND lens-edge aberration
-        vec2 dispersionDir = normalize(totalDeflection + screenCenterDist * 0.01 + vec2(1e-5));
+        vec2 dispersionVec = totalDeflection + screenCenterDist * 0.01;
+        float dispLen = length(dispersionVec);
+        vec2 dispersionDir = dispLen > 0.0001 ? dispersionVec / dispLen : vec2(0.0);
         float dispersionMagnitude = 0.0035 * edgeDistSq + length(totalDeflection) * 0.22;
         vec2 splitShift = dispersionDir * dispersionMagnitude;
 
@@ -3179,6 +3258,61 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     };
 
     lensingPostProcessRef.current = lensingPostProcess;
+
+    // Register the custom wormhole shader and post-process permanently to avoid rebuilding the pipeline on the fly
+    BABYLON.Effect.ShadersStore["wormholePixelShader"] = `
+      precision highp float;
+      varying vec2 vUV;
+      uniform sampler2D textureSampler;
+      uniform float time;
+      uniform float intensity;
+      void main(void) {
+          vec2 uv = vUV;
+          vec4 baseColor = texture2D(textureSampler, uv);
+          if (intensity <= 0.0) {
+              gl_FragColor = baseColor;
+              return;
+          }
+          
+          vec2 dir = vec2(0.5) - uv;
+          float dist = length(dir);
+          if (dist > 0.0001) {
+              dir = dir / dist;
+          } else {
+              dir = vec2(0.0);
+          }
+          
+          // Smoothly building radial blur
+          float blurAmount = min(time * 0.015, 0.04) * intensity;
+          
+          vec4 sum = vec4(0.0);
+          sum += texture2D(textureSampler, uv + dir * 0.0 * blurAmount);
+          sum += texture2D(textureSampler, uv + dir * 0.1 * blurAmount);
+          sum += texture2D(textureSampler, uv + dir * 0.2 * blurAmount);
+          sum += texture2D(textureSampler, uv + dir * 0.3 * blurAmount);
+          sum += texture2D(textureSampler, uv + dir * 0.4 * blurAmount);
+          sum += texture2D(textureSampler, uv + dir * 0.5 * blurAmount);
+          sum += texture2D(textureSampler, uv + dir * 0.6 * blurAmount);
+          sum += texture2D(textureSampler, uv + dir * 0.7 * blurAmount);
+          sum += texture2D(textureSampler, uv + dir * 0.8 * blurAmount);
+          sum += texture2D(textureSampler, uv + dir * 0.9 * blurAmount);
+          sum /= 10.0;
+          
+          // Subtle, elegant chromatic aberration
+          float ca = blurAmount * 0.35;
+          sum.r = texture2D(textureSampler, uv + dir * ca).r;
+          sum.b = texture2D(textureSampler, uv - dir * ca).b;
+          gl_FragColor = mix(baseColor, sum, intensity);
+      }
+    `;
+
+    const wormholePostProcess = new BABYLON.PostProcess("WormholePP", "wormhole", ["time", "intensity"], null, 1.0, camera);
+    wormholePostProcess.onApply = (effect) => {
+        wormholeTimeRef.current += 0.016;
+        effect.setFloat("time", wormholeTimeRef.current);
+        effect.setFloat("intensity", wormholeIntensityRef.current);
+    };
+    wormholePostProcessRef.current = wormholePostProcess;
 
     // Direct lighting & ambient light setup
     const ambientLight = new BABYLON.HemisphericLight("ambientLight", new BABYLON.Vector3(0, 1, 0), scene);
@@ -4519,7 +4653,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       }
 
       // Gentle 3D camera mouse/gyro tilt or smooth cinematic 3D orbiting
-      const cameraZ = currentH / (2 * Math.tan((fovRef.current * Math.PI) / 360));
+      const cameraZ = Math.max(10.0, currentH / (2 * Math.tan((fovRef.current * Math.PI) / 360)));
       
       // Calculate baseline target coordinates including parallax and scroll Z depth offset
       let finalTargetX = inputs.currentCameraParallaxX;
@@ -4689,7 +4823,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
       if (hudPlaneRef.current && cameraRef.current) {
         const planeZ = -60;
-        const cameraZ = wh / (2 * Math.tan((fovRef.current * Math.PI) / 360));
+        const cameraZ = Math.max(10.0, wh / (2 * Math.tan((fovRef.current * Math.PI) / 360)));
         // Camera is at -cameraZ. Distance to plane is cameraZ + planeZ
         const scaleFactor = (cameraZ + planeZ) / cameraZ;
         hudPlaneRef.current.scaling.set(scaleFactor, scaleFactor, 1);
@@ -4903,49 +5037,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       if (!scene || !camera || !engine) return;
 
       // 1. Custom PostProcess: Radial blur & Chromatic Aberration
-      BABYLON.Effect.ShadersStore["wormholePixelShader"] = `
-        precision highp float;
-        varying vec2 vUV;
-        uniform sampler2D textureSampler;
-        uniform float time;
-        uniform float intensity;
-        void main(void) {
-            vec2 uv = vUV;
-            vec4 baseColor = texture2D(textureSampler, uv);
-            if (intensity <= 0.0) {
-                gl_FragColor = baseColor;
-                return;
-            }
-            
-            vec2 dir = 0.5 - uv;
-            float dist = length(dir);
-            dir = normalize(dir);
-            
-            // Smoothly building radial blur instead of shaky high-speed pulsing
-            float blurAmount = min(time * 0.015, 0.04) * intensity;
-            
-            vec4 sum = vec4(0.0);
-            for (int i = 0; i < 10; i++) {
-                sum += texture2D(textureSampler, uv + dir * (float(i) / 10.0) * blurAmount);
-            }
-            sum /= 10.0;
-            
-            // Subtle, elegant chromatic aberration
-            float ca = blurAmount * 0.35;
-            sum.r = texture2D(textureSampler, uv + dir * ca).r;
-            sum.b = texture2D(textureSampler, uv - dir * ca).b;
-            gl_FragColor = mix(baseColor, sum, intensity);
-        }
-      `;
-
-      const wormholePostProcess = new BABYLON.PostProcess("WormholePP", "wormhole", ["time", "intensity"], null, 1.0, camera);
-      let ppTime = 0;
-      let ppIntensity = 1.0;
-      wormholePostProcess.onApply = (effect) => {
-          ppTime += 0.016;
-          effect.setFloat("time", ppTime);
-          effect.setFloat("intensity", ppIntensity);
-      };
+      wormholeTimeRef.current = 0.0;
+      wormholeIntensityRef.current = 1.0;
 
       // Animate FOV to widen gently
       BABYLON.Animation.CreateAndStartAnimation("fovAnim", camera, "fov", 60, 60, camera.fov, 1.6, 0 /* loop */, new BABYLON.QuadraticEase());
@@ -5136,7 +5229,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
               }
           );
           
-          console.log("[DEBUG] Detaching wormholePostProcess"); camera.detachPostProcess(wormholePostProcess); wormholePostProcess.dispose();
+          console.log("[DEBUG] Turning off wormholePostProcess intensity");
+          wormholeIntensityRef.current = 0.0;
                     
           if (tunnelMesh) {
               tunnelMesh.dispose();
@@ -5252,6 +5346,10 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
       if (lensingPostProcessRef.current) {
         lensingPostProcessRef.current.dispose();
+      }
+
+      if (wormholePostProcessRef.current) {
+        wormholePostProcessRef.current.dispose();
       }
 
       if (rendererRef.current) {
