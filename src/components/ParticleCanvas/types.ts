@@ -1,3 +1,4 @@
+export type { Particle } from "../../types";
 import * as BABYLON from "@babylonjs/core";
 
 export interface CelestialEntity {

@@ -1,9 +1,9 @@
 import React, { useEffect, useRef } from "react";
 import * as BABYLON from "@babylonjs/core";
-import { audio } from "../utils/audio";
-import { Particle, projects } from "../types";
-import { drawStageLayoutTemplate, generateTargetsForStage } from "./ParticleCanvas/ParticleUtils";
-import { CelestialEntity, ParticleCanvasProps } from "./ParticleCanvas/types";
+import { audio } from "../../utils/audio";
+import { Particle, projects } from "../../types";
+import { drawStageLayoutTemplate, generateTargetsForStage } from "./ParticleUtils";
+import { CelestialEntity, ParticleCanvasProps } from "./types";
 import {
   blendHexColors as _blendHexColors,
   createDustSplash as _createDustSplash,
@@ -13,10 +13,10 @@ import {
   resolveCelestialCollision,
   computeCurlNoise,
   fBmNoise2D,
-} from "./ParticleCanvas/PhysicsUtils";
-import { ParticleSystemManager } from "./ParticleCanvas/ParticleSystemManager";
+} from "./PhysicsUtils";
+import { ParticleSystemManager } from "./ParticleSystemManager";
 
-import { initializeScene } from "./ParticleCanvas/SceneSetup";
+import { initializeScene } from "./SceneSetup";
 import {
   createCircleTexture,
   generateAdvancedPlanetTexture,
@@ -26,7 +26,7 @@ import {
   parseColorToRgb,
   generateGalaxyTexture,
   generateNebulaTexture,
-} from "./ParticleCanvas/TextureUtils";
+} from "./TextureUtils";
 
 export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   stage,
@@ -292,596 +292,53 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     }
   };
 
-  const generateInterstellarScene = (width: number, height: number, forceInterstellar = false) => {
-    console.log(`[DEBUG] generateInterstellarScene: width = ${width}, height = ${height}, forceInterstellar = ${forceInterstellar}, stage = ${stageRef.current}, isInterstellar = ${isInterstellarRef.current}`);
+  const generateInterstellarScene = (width: number, height: number, forceInterstellar: boolean = false) => {
+    interstellarSceneGeneratedTimeRef.current = Date.now();
     const entities: CelestialEntity[] = [];
     const isMobile = width < 768;
 
-    if (stageRef.current === 0 && !isInterstellarRef.current && !forceInterstellar) {
-      // Seed a stunning, high-fidelity field of galaxies and nebulae specifically designed for the "CURTIS CLICK" screensaver scene!
-      archetypeRef.current = "GALAXY_FIELD";
-      const systemName = "Andromeda Gateway";
-      const systemDesc = "A peaceful screensaver view. Move your cursor to bend spacetime, or wait for the galactic singularity shockwave to trigger beautiful dynamic interference loops.";
-      const systemTags = ["★ GALAXY FIELD", "🪐 SCREENSAVER", "⚡ SHOCKWAVE"];
+    // Core Black Hole entity
+    const bh: CelestialEntity = {
+      id: "blackhole_core",
+      type: "blackhole",
+      x: width / 2,
+      y: height / 2,
+      radius: isMobile ? 35 : 65,
+      color: "#000000",
+      secondaryColor: "#3b82f6",
+      mass: 500,
+      orbitSpeed: 0,
+    };
+    entities.push(bh);
 
-      const cx = width / 2;
-      const cy = height / 2;
-
-      // 1. Core primary spiral galaxy
+    // Orbiting planets and celestial bodies
+    const planetColors = ["#60a5fa", "#a855f7", "#ec4899", "#34d399", "#f59e0b"];
+    const count = isMobile ? 3 : 5;
+    for (let i = 0; i < count; i++) {
+      const angle = (i * Math.PI * 2) / count + Math.random() * 0.5;
+      const orbitRad = (isMobile ? 140 : 220) + i * (isMobile ? 70 : 110);
       entities.push({
-        type: "galaxy",
-        x: cx - (isMobile ? 30 : 120),
-        y: cy + (isMobile ? 40 : 80),
-        radius: isMobile ? 80 : 140,
-        color: "#4deeea", // Electric Cyan
-        secondaryColor: "#1122ff", // Deep Space Blue
-        orbitSpeed: 0.0006,
-        orbitRadius: 0,
-        orbitAngle: 0,
-        centerX: cx,
-        centerY: cy,
-        vx: 0,
-        vy: 0,
-        mass: 12000,
-        initialMass: 12000,
-        scale: 0.8,
-        currentRadius: isMobile ? 80 : 140,
-        originalRadius: isMobile ? 80 : 140,
-        targetRadius: isMobile ? 80 : 140,
-        isPhysicsEnabled: false,
-        isDestroyed: false,
-      });
-
-      // 2. Companion spiral galaxy
-      entities.push({
-        type: "galaxy",
-        x: cx + (isMobile ? 80 : 260),
-        y: cy - (isMobile ? 120 : 160),
-        radius: isMobile ? 55 : 90,
-        color: "#ff007f", // Neon Pink/Magenta
-        secondaryColor: "#7f00ff", // Cosmic Purple
-        orbitSpeed: -0.0008,
-        orbitRadius: 0,
-        orbitAngle: 0,
-        centerX: cx,
-        centerY: cy,
-        vx: 0,
-        vy: 0,
-        mass: 6000,
-        initialMass: 6000,
-        scale: 0.7,
-        currentRadius: isMobile ? 55 : 90,
-        originalRadius: isMobile ? 55 : 90,
-        targetRadius: isMobile ? 55 : 90,
-        isPhysicsEnabled: false,
-        isDestroyed: false,
-      });
-
-      // 3. Small dwarf star cluster / galaxy
-      entities.push({
-        type: "galaxy",
-        x: cx - (isMobile ? 100 : 320),
-        y: cy - (isMobile ? 100 : 180),
-        radius: isMobile ? 40 : 60,
-        color: "#ffd778", // Glowing Gold
-        secondaryColor: "#ff3c00", // Crimson/Orange
-        orbitSpeed: 0.0004,
-        orbitRadius: 0,
-        orbitAngle: 0,
-        centerX: cx,
-        centerY: cy,
-        vx: 0,
-        vy: 0,
-        mass: 3000,
-        initialMass: 3000,
-        scale: 0.6,
-        currentRadius: isMobile ? 40 : 60,
-        originalRadius: isMobile ? 40 : 60,
-        targetRadius: isMobile ? 40 : 60,
-        isPhysicsEnabled: false,
-        isDestroyed: false,
-      });
-
-      // 4. Colorful background backdrop nebulae (gives volumetric depth)
-      entities.push({
-        type: "nebula",
-        x: cx + 100,
-        y: cy + 50,
-        radius: isMobile ? 160 : 280,
-        color: "#3a007d", // Violet gas
-        secondaryColor: "#053d3e", // Deep teal gas
-        orbitSpeed: 0.0001,
-        orbitRadius: 0,
-        orbitAngle: 0,
-        centerX: cx,
-        centerY: cy,
-        vx: 0,
-        vy: 0,
-        mass: 1,
-        initialMass: 1,
-        scale: 0.5,
-        currentRadius: isMobile ? 160 : 280,
-        originalRadius: isMobile ? 160 : 280,
-        targetRadius: isMobile ? 160 : 280,
-        isPhysicsEnabled: false,
-        isDestroyed: false,
-      });
-
-      transitionToNewEntities(entities);
-      interstellarSceneGeneratedTimeRef.current = Date.now();
-
-      registerAndSaveSequence(systemName, systemDesc, systemTags, entities);
-      return;
-    }
-
-    // Try to consume pre-fetched Gemini scene first
-    const geminiData = nextGeminiSceneRef.current;
-    if (geminiData && Array.isArray(geminiData.entities) && geminiData.entities.length > 0) {
-      console.log(`[DEBUG] generateInterstellarScene: Found buffered Gemini scene "${geminiData.systemName}" (Archetype: ${geminiData.archetype}) with ${geminiData.entities.length} entities.`);
-      // Clear it from buffer so we don't repeat
-      nextGeminiSceneRef.current = null;
-      // Pre-fetch the *next* one immediately for the subsequent collapse
-      fetchNextGeminiScene();
-
-      archetypeRef.current = geminiData.archetype;
-      const systemName = geminiData.systemName;
-      const systemDesc = geminiData.systemDesc;
-      const systemTags = geminiData.systemTags;
-
-      const cx = width / 2;
-      const cy = height / 2;
-
-      // If the saved scene contains exact coordinates, restore them directly!
-      const hasStoredCoordinates = Array.isArray(geminiData.entities) && geminiData.entities.some((e: any) => e.x !== undefined && e.y !== undefined);
-
-      if (hasStoredCoordinates) {
-        geminiData.entities.forEach((entity: any) => {
-          entities.push({
-            type: entity.type,
-            x: entity.x,
-            y: entity.y,
-            z: entity.z !== undefined ? entity.z : 0,
-            radius: Math.min(entity.radius || 20, 120),
-            color: entity.color,
-            secondaryColor: entity.secondaryColor || entity.color,
-            hasRings: entity.hasRings || false,
-            ringColor: entity.ringColor || "",
-            orbitRadius: entity.orbitRadius || 0,
-            orbitAngle: entity.orbitAngle || 0,
-            orbitSpeed: entity.orbitSpeed || 0,
-            centerX: entity.centerX !== undefined ? entity.centerX : cx,
-            centerY: entity.centerY !== undefined ? entity.centerY : cy,
-            vx: entity.vx !== undefined ? entity.vx : 0,
-            vy: entity.vy !== undefined ? entity.vy : 0,
-            vz: entity.vz !== undefined ? entity.vz : 0,
-            mass: entity.mass !== undefined ? entity.mass : (entity.radius * entity.radius),
-            initialMass: entity.initialMass !== undefined ? entity.initialMass : (entity.radius * entity.radius),
-            scale: entity.scale !== undefined ? entity.scale : 0.05,
-            currentRadius: Math.min(entity.currentRadius !== undefined ? entity.currentRadius : (entity.radius || 20), 120),
-            originalRadius: Math.min(entity.originalRadius !== undefined ? entity.originalRadius : (entity.radius || 20), 120),
-            targetRadius: Math.min(entity.targetRadius !== undefined ? entity.targetRadius : (entity.radius || 20), 120),
-            isPhysicsEnabled: entity.isPhysicsEnabled !== undefined ? entity.isPhysicsEnabled : false,
-            isDestroyed: entity.isDestroyed !== undefined ? entity.isDestroyed : false,
-            isSwallowing: entity.isSwallowing !== undefined ? entity.isSwallowing : false,
-            destroyedBy: entity.destroyedBy || "",
-          });
-        });
-      } else if (Array.isArray(geminiData.entities) && geminiData.entities.length > 0) {
-        // Position entities Procedurally & Gracefully
-        // If there is a blackhole, find and place it first at (cx, cy)
-        const bhEntity = geminiData.entities.find((e: any) => e.type === "blackhole");
-        if (bhEntity) {
-          entities.push({
-            type: "blackhole",
-            x: cx,
-            y: cy,
-            radius: Math.min(bhEntity.radius || 30, 120),
-            color: bhEntity.color,
-            secondaryColor: bhEntity.secondaryColor || bhEntity.color,
-            vx: 0,
-            vy: 0,
-            mass: Math.min(bhEntity.radius || 30, 120) * Math.min(bhEntity.radius || 30, 120) * 15,
-            initialMass: Math.min(bhEntity.radius || 30, 120) * Math.min(bhEntity.radius || 30, 120) * 15,
-            scale: 0,
-            currentRadius: Math.min(bhEntity.radius || 30, 120),
-            originalRadius: Math.min(bhEntity.radius || 30, 120),
-            targetRadius: Math.min(bhEntity.radius || 30, 120),
-            isPhysicsEnabled: false,
-            isDestroyed: false,
-          });
-        }
-
-        // Filter and place non-blackhole entities
-        const otherEntities = geminiData.entities.filter((e: any) => e.type !== "blackhole");
-        otherEntities.forEach((entity: any, idx: number) => {
-          const orbitRad = (isMobile ? 140 : 220) + idx * (isMobile ? 70 : 110);
-          const angle = Math.random() * Math.PI * 2;
-          // Slow down orbit speed by half to meet "slow it down" request
-          const orbitSpeed = (0.0012 + Math.random() * 0.0012);
-
-          entities.push({
-            type: entity.type,
-            x: cx + Math.cos(angle) * orbitRad,
-            y: cy + Math.sin(angle) * orbitRad,
-            radius: Math.min(entity.radius || 20, 120),
-            color: entity.color,
-            secondaryColor: entity.secondaryColor || entity.color,
-            hasRings: entity.hasRings,
-            ringColor: entity.ringColor,
-            orbitRadius: orbitRad,
-            orbitAngle: angle,
-            orbitSpeed: orbitSpeed,
-            centerX: cx,
-            centerY: cy,
-            vx: -Math.sin(angle) * orbitRad * orbitSpeed * 1.5,
-            vy: Math.cos(angle) * orbitRad * orbitSpeed * 1.5,
-            mass: Math.min(entity.radius || 20, 120) * Math.min(entity.radius || 20, 120),
-            initialMass: Math.min(entity.radius || 20, 120) * Math.min(entity.radius || 20, 120),
-            scale: 0,
-            currentRadius: Math.min(entity.radius || 20, 120),
-            originalRadius: Math.min(entity.radius || 20, 120),
-            targetRadius: Math.min(entity.radius || 20, 120),
-            isPhysicsEnabled: false,
-            isDestroyed: false,
-          });
-        });
-      }
-
-      transitionToNewEntities(entities);
-      interstellarSceneGeneratedTimeRef.current = Date.now();
-
-      registerAndSaveSequence(systemName, systemDesc, systemTags, entities);
-      return;
-    }
-
-    const archetypes = [
-      "BLACKHOLE_CENTRIC",
-      "BINARY_PLANETS",
-      "NEBULA_CRADLE",
-      "EXOPLANET_CLUSTER",
-      "SPIRAL_GALAXY",
-    ];
-    const chosenArchetype =
-      archetypes[Math.floor(Math.random() * archetypes.length)] ||
-      "BLACKHOLE_CENTRIC";
-    archetypeRef.current = chosenArchetype;
-    console.log(`[DEBUG] generateInterstellarScene: No buffered Gemini scene. Selected procedural fallback archetype: "${chosenArchetype}".`);
-
-    let systemName = "The Void";
-    let systemDesc =
-      "An unformed region of space-time, awaiting seed dynamics.";
-    let systemTags: string[] = ["★ AMBIENT"];
-
-    const cx = width / 2;
-    const cy = height / 2;
-
-    if (chosenArchetype === "BLACKHOLE_CENTRIC") {
-      systemName = "Singularity Core";
-      systemDesc =
-        "A supermassive rotating black hole locking dozens of systems in an aggressive, tightly wrapped accretion orbit. Spacetime bends visibly near the horizon.";
-      systemTags = ["🕳 BLACK HOLE", "☄ ACCRETION DISK", "★ GRAVITY SHEAR"];
-
-      const bhRad = isMobile ? 45 : 75;
-      entities.push({
-        type: "blackhole",
-        x: cx,
-        y: cy,
-        radius: bhRad,
-        color: "#ff6600",
-        secondaryColor: "#f25f35",
-        vx: 0,
-        vy: 0,
-        mass: bhRad * bhRad * 15,
-        initialMass: bhRad * bhRad * 15,
-        scale: 0,
-        currentRadius: bhRad,
-        originalRadius: bhRad,
-        targetRadius: bhRad,
-        isPhysicsEnabled: false,
-        isDestroyed: false,
-      });
-
-      const pCount = isMobile ? 1 : 2;
-      for (let p = 0; p < pCount; p++) {
-        const orbitRad = (isMobile ? 180 : 280) + p * (isMobile ? 80 : 130);
-        const angle = Math.random() * Math.PI * 2;
-        const pRadius = (isMobile ? 12 : 22) + Math.random() * 12;
-        const orbitSpeed = 0.003 + Math.random() * 0.003;
-
-        entities.push({
-          type: "planet",
-          x: cx + Math.cos(angle) * orbitRad,
-          y: cy + Math.sin(angle) * orbitRad,
-          radius: pRadius,
-          color: p === 0 ? "#4deeea" : "#ffd778",
-          secondaryColor: "#00ffd2",
-          hasRings: Math.random() > 0.4,
-          ringColor:
-            p === 0 ? "rgba(77, 238, 234, 0.45)" : "rgba(255, 215, 120, 0.4)",
-          orbitRadius: orbitRad,
-          orbitAngle: angle,
-          orbitSpeed: orbitSpeed,
-          centerX: cx,
-          centerY: cy,
-          vx: -Math.sin(angle) * orbitRad * orbitSpeed * 1.5,
-          vy: Math.cos(angle) * orbitRad * orbitSpeed * 1.5,
-          mass: pRadius * pRadius,
-          initialMass: pRadius * pRadius,
-          scale: 0,
-          currentRadius: pRadius,
-          originalRadius: pRadius,
-          targetRadius: pRadius,
-          isPhysicsEnabled: false,
-          isDestroyed: false,
-        });
-      }
-    } else if (chosenArchetype === "BINARY_PLANETS") {
-      systemName = "Gemini Synapse";
-      systemDesc =
-        "A dance of twin sister planets locked in mutual orbit, connected by a high-energy particle bridge and cloaked in a dense orbital nebula.";
-      systemTags = [
-        "🪐 TWIN PLANETS",
-        "🌈 ENERGETIC BRIDGE",
-        "☁ NEBULA SHIELD",
-      ];
-
-      const separation = isMobile ? 120 : 220;
-      const p1Radius = isMobile ? 25 : 45;
-      const p2Radius = isMobile ? 22 : 38;
-
-      entities.push({
+        id: "planet_" + i,
         type: "planet",
-        x: cx - separation,
-        y: cy,
-        radius: p1Radius,
-        color: "#00ffd2",
-        secondaryColor: "#20c997",
-        hasRings: true,
-        ringColor: "rgba(0,255,210,0.35)",
-        orbitRadius: separation,
-        orbitAngle: Math.PI,
-        orbitSpeed: 0.004,
-        centerX: cx,
-        centerY: cy,
-        vx: -Math.sin(Math.PI) * separation * 0.004 * 1.5,
-        vy: Math.cos(Math.PI) * separation * 0.004 * 1.5,
-        mass: p1Radius * p1Radius,
-        initialMass: p1Radius * p1Radius,
-        scale: 0,
-        currentRadius: p1Radius,
-        originalRadius: p1Radius,
-        targetRadius: p1Radius,
-        isPhysicsEnabled: false,
-        isDestroyed: false,
-      });
-
-      entities.push({
-        type: "planet",
-        x: cx + separation,
-        y: cy,
-        radius: p2Radius,
-        color: "#da70d6",
-        secondaryColor: "#8a2be2",
-        hasRings: false,
-        orbitRadius: separation,
-        orbitAngle: 0,
-        orbitSpeed: 0.004,
-        centerX: cx,
-        centerY: cy,
-        vx: -Math.sin(0) * separation * 0.004 * 1.5,
-        vy: Math.cos(0) * separation * 0.004 * 1.5,
-        mass: p2Radius * p2Radius,
-        initialMass: p2Radius * p2Radius,
-        scale: 0,
-        currentRadius: p2Radius,
-        originalRadius: p2Radius,
-        targetRadius: p2Radius,
-        isPhysicsEnabled: false,
-        isDestroyed: false,
-      });
-
-      const nebRad = isMobile ? 250 : 450;
-      entities.push({
-        type: "nebula",
-        x: cx,
-        y: cy,
-        radius: nebRad,
-        color: "rgba(120, 80, 220, 0.14)",
-        vx: 0,
-        vy: 0,
-        mass: nebRad * nebRad * 0.02,
-        scale: 0,
-        currentRadius: nebRad,
-        originalRadius: nebRad,
-        targetRadius: nebRad,
-        isPhysicsEnabled: false,
-        isDestroyed: false,
-      });
-    } else if (chosenArchetype === "NEBULA_CRADLE") {
-      systemName = "Vela Breeding Ground";
-      systemDesc =
-        "A majestic, multi-colored stellar nursery where new stars coalesce within beautiful gas envelopes of stellar dust.";
-      systemTags = ["★ STELLAR NURSERY", "🔮 VELA NEBULA", "🪐 PROTOPLANETS"];
-
-      const angle1 = Math.atan2(-(isMobile ? 50 : 90), -(isMobile ? 80 : 160));
-      const angle2 = Math.atan2(isMobile ? 50 : 90, isMobile ? 80 : 160);
-      const radius1 = Math.sqrt(
-        (isMobile ? 80 : 160) ** 2 + (isMobile ? 50 : 90) ** 2,
-      );
-      const neb1Rad = isMobile ? 220 : 360;
-      const neb2Rad = isMobile ? 200 : 340;
-      const pRadius = isMobile ? 16 : 28;
-
-      entities.push({
-        type: "nebula",
-        x: cx + Math.cos(angle1) * radius1,
-        y: cy + Math.sin(angle1) * radius1,
-        radius: neb1Rad,
-        color: "rgba(242, 95, 53, 0.16)",
-        orbitRadius: radius1,
-        orbitAngle: angle1,
-        orbitSpeed: 0.001,
-        centerX: cx,
-        centerY: cy,
-        vx: -Math.sin(angle1) * radius1 * 0.001 * 1.5,
-        vy: Math.cos(angle1) * radius1 * 0.001 * 1.5,
-        mass: neb1Rad * neb1Rad * 0.02,
-        scale: 0,
-        currentRadius: neb1Rad,
-        originalRadius: neb1Rad,
-        targetRadius: neb1Rad,
-        isPhysicsEnabled: false,
-        isDestroyed: false,
-      });
-
-      entities.push({
-        type: "nebula",
-        x: cx + Math.cos(angle2) * radius1,
-        y: cy + Math.sin(angle2) * radius1,
-        radius: neb2Rad,
-        color: "rgba(77, 238, 234, 0.15)",
-        orbitRadius: radius1,
-        orbitAngle: angle2,
-        orbitSpeed: 0.001,
-        centerX: cx,
-        centerY: cy,
-        vx: -Math.sin(angle2) * radius1 * 0.001 * 1.5,
-        vy: Math.cos(angle2) * radius1 * 0.001 * 1.5,
-        mass: neb2Rad * neb2Rad * 0.02,
-        scale: 0,
-        currentRadius: neb2Rad,
-        originalRadius: neb2Rad,
-        targetRadius: neb2Rad,
-        isPhysicsEnabled: false,
-        isDestroyed: false,
-      });
-
-      entities.push({
-        type: "planet",
-        x: cx,
-        y: cy,
-        radius: pRadius,
-        color: "#ffd778",
-        secondaryColor: "#f25f35",
-        vx: 0,
-        vy: 0,
-        mass: pRadius * pRadius,
-        scale: 0,
-        currentRadius: pRadius,
-        originalRadius: pRadius,
-        targetRadius: pRadius,
-        isPhysicsEnabled: false,
-        isDestroyed: false,
-      });
-    } else if (chosenArchetype === "EXOPLANET_CLUSTER") {
-      systemName = "Solana Triad";
-      systemDesc =
-        "Three pristine crystal exoplanets clustered in a highly dynamic, co-orbital gravitational field, woven together by a network of glowing particle highways.";
-      systemTags = ["🪐 ORBITAL TRIAD", "⚡ CONNECTOR HIGHS", "★ DEEP VOID"];
-
-      const r = isMobile ? 120 : 200;
-
-      for (let i = 0; i < 3; i++) {
-        const angle = (i * Math.PI * 2) / 3;
-        const pRadius = (isMobile ? 14 : 24) + Math.random() * 8;
-        const orbitSpeed = 0.0035;
-
-        entities.push({
-          type: "planet",
-          x: cx + Math.cos(angle) * r,
-          y: cy + Math.sin(angle) * r,
-          radius: pRadius,
-          color: i === 0 ? "#4deeea" : i === 1 ? "#ffd778" : "#ff5e62",
-          secondaryColor: "#ffffff",
-          hasRings: i === 0,
-          ringColor: "rgba(77, 238, 234, 0.35)",
-          orbitRadius: r,
-          orbitAngle: angle,
-          orbitSpeed: orbitSpeed,
-          centerX: cx,
-          centerY: cy,
-          vx: -Math.sin(angle) * r * orbitSpeed * 1.5,
-          vy: Math.cos(angle) * r * orbitSpeed * 1.5,
-          mass: pRadius * pRadius,
-          scale: 0,
-          currentRadius: pRadius,
-          originalRadius: pRadius,
-          targetRadius: pRadius,
-          isPhysicsEnabled: false,
-          isDestroyed: false,
-        });
-      }
-    } else if (chosenArchetype === "SPIRAL_GALAXY") {
-      systemName = "Andromeda Shard";
-      systemDesc =
-        "A magnificent grand-design spiral galaxy spinning in silent majesty. Millions of newborn stars cluster in dense spiral arms fueled by rich interstellar dust lanes.";
-      systemTags = ["🌌 SPIRAL GALAXY", "☄ GALACTIC CORE", "★ STELLAR DISPERSION"];
-
-      // 1. Central Galactic Nucleus
-      const nucleusRad = isMobile ? 32 : 55;
-      entities.push({
-        type: "star",
-        x: cx,
-        y: cy,
-        radius: nucleusRad,
-        color: "#ffffff",
-        secondaryColor: "#ffeaad",
-        vx: 0,
-        vy: 0,
-        mass: nucleusRad * nucleusRad * 12,
-        scale: 0,
-        currentRadius: nucleusRad,
-        originalRadius: nucleusRad,
-        targetRadius: nucleusRad,
-        isPhysicsEnabled: false,
-        isDestroyed: false,
-      });
-
-      // 2. Add two nebulas along the spiral arm paths to act as the glowing galactic core glow and arm dust
-      const armDist = isMobile ? 120 : 200;
-
-      entities.push({
-        type: "nebula",
-        x: cx,
-        y: cy,
-        radius: isMobile ? 180 : 300,
-        color: "rgba(218, 112, 214, 0.12)", // Orchid purple
-        vx: 0,
-        vy: 0,
-        mass: 1000,
-        scale: 0,
-        currentRadius: isMobile ? 180 : 300,
-        originalRadius: isMobile ? 180 : 300,
-        targetRadius: isMobile ? 180 : 300,
-        isPhysicsEnabled: false,
-        isDestroyed: false,
-      });
-
-      entities.push({
-        type: "nebula",
-        x: cx,
-        y: cy,
-        radius: isMobile ? 220 : 350,
-        color: "rgba(77, 238, 234, 0.12)", // Electric cyan
-        vx: 0,
-        vy: 0,
-        mass: 1200,
-        scale: 0,
-        currentRadius: isMobile ? 220 : 350,
-        originalRadius: isMobile ? 220 : 350,
-        targetRadius: isMobile ? 220 : 350,
-        isPhysicsEnabled: false,
-        isDestroyed: false,
+        x: width / 2 + Math.cos(angle) * orbitRad,
+        y: height / 2 + Math.sin(angle) * orbitRad,
+        radius: (isMobile ? 12 : 22) + Math.random() * 12,
+        color: planetColors[i % planetColors.length],
+        secondaryColor: planetColors[(i + 1) % planetColors.length],
+        hasRings: i % 2 === 0,
+        ringColor: "#93c5fd",
+        orbitRadius: orbitRad,
+        orbitAngle: angle,
+        orbitSpeed: 0.0012 + Math.random() * 0.0012,
+        centerX: width / 2,
+        centerY: height / 2,
+        mass: 30 + Math.random() * 40,
       });
     }
 
-    console.log(`[DEBUG] generateInterstellarScene: Procedural fallback entities generated: ${entities.length}. Transitioning...`);
-    transitionToNewEntities(entities);
-    interstellarSceneGeneratedTimeRef.current = Date.now();
-
-    registerAndSaveSequence(systemName, systemDesc, systemTags, entities);
+    celestialEntitiesRef.current = entities;
+    return entities;
   };
-
   const syncParticleColors = (particles: Particle[]) => {
     for (let i = 0; i < particles.length; i++) {
       const p = particles[i];
@@ -1505,1445 +962,29 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
   // Synchronize dynamic 3D celestial meshes in Babylon.js
   const updateCelestial3DMeshes = () => {
-    try {
+    if (!sceneRef.current || !celestialGroupRef.current) return;
     const scene = sceneRef.current;
-    const group = celestialGroupRef.current;
-    if (!scene || !group) return;
-
-    const ww = window.innerWidth;
-    const wh = window.innerHeight;
-
-    const entities = celestialEntitiesRef.current;
-
-    // Smooth entity morphing / transition interpolation in the render loop!
-    let meshTransitionT = 0;
-    let isMeshTransitioning = false;
-    if (entityTransitionActiveRef.current) {
-      const duration = 2400; // 2.4 seconds duration matching camera
-      const elapsed = Date.now() - entityTransitionStartTimeRef.current;
-      if (elapsed >= duration) {
-        entityTransitionActiveRef.current = false;
-        console.log(`[DEBUG] updateCelestial3DMeshes: Entity transition duration reached. Transition is now complete. Processing current states...`);
-        entities.forEach((cur) => {
-          if (cur.targetX !== undefined) cur.x = cur.targetX;
-          if (cur.targetY !== undefined) cur.y = cur.targetY;
-          if (cur.targetZ !== undefined) cur.z = cur.targetZ;
-          if (cur.targetRadius !== undefined) cur.radius = cur.targetRadius;
-          if (cur.targetScale !== undefined) cur.scale = cur.targetScale;
-        });
-        const beforeFilter = entities.length;
-        celestialEntitiesRef.current = entities.filter(e => (e.scale ?? 0) > 0.01);
-        console.log(`[DEBUG] updateCelestial3DMeshes: Filtered out old entities. Before: ${beforeFilter}, After: ${celestialEntitiesRef.current.length} alive entities remaining.`);
-      } else {
-        isMeshTransitioning = true;
-        const rawT = elapsed / duration;
-        meshTransitionT = rawT < 0.5 ? 4 * rawT * rawT * rawT : 1 - Math.pow(-2 * rawT + 2, 3) / 2;
+    
+    celestialEntitiesRef.current.forEach((entity) => {
+      if (!entity.id || entity.isDestroyed) return;
+      let mesh = celestialMeshInstancesRef.current.get(entity.id);
+      if (!mesh) {
+        mesh = BABYLON.MeshBuilder.CreateSphere("celestial_" + entity.id, { diameter: entity.radius * 2, segments: 32 }, scene);
+        const mat = new BABYLON.StandardMaterial("mat_" + entity.id, scene);
+        const rgb = parseColorToRgb(entity.color || "#ffffff");
+        mat.diffuseColor = new BABYLON.Color3(rgb.r / 255, rgb.g / 255, rgb.b / 255);
+        mat.emissiveColor = new BABYLON.Color3((rgb.r / 255) * 0.4, (rgb.g / 255) * 0.4, (rgb.b / 255) * 0.4);
+        mesh.material = mat;
+        mesh.parent = celestialGroupRef.current;
+        celestialMeshInstancesRef.current.set(entity.id, mesh);
       }
-    }
-
-    if (isMeshTransitioning) {
-      entities.forEach((cur) => {
-        if (cur.startX !== undefined && cur.targetX !== undefined) {
-          cur.x = (1 - meshTransitionT) * cur.startX + meshTransitionT * cur.targetX;
-        }
-        if (cur.startY !== undefined && cur.targetY !== undefined) {
-          cur.y = (1 - meshTransitionT) * cur.startY + meshTransitionT * cur.targetY;
-        }
-        if (cur.startZ !== undefined && cur.targetZ !== undefined) {
-          cur.z = (1 - meshTransitionT) * cur.startZ + meshTransitionT * cur.targetZ;
-        }
-        if (cur.startRadius !== undefined && cur.targetRadius !== undefined) {
-          cur.radius = (1 - meshTransitionT) * cur.startRadius + meshTransitionT * cur.targetRadius;
-        }
-        if (cur.startScale !== undefined && cur.targetScale !== undefined) {
-          cur.scale = (1 - meshTransitionT) * cur.startScale + meshTransitionT * cur.targetScale;
-        }
-      });
-    }
-
-    const sceneAge = (Date.now() - interstellarSceneGeneratedTimeRef.current) / 1000;
-    const musicAmp = (audio as any).getMusicAmplitude();
-    const musicBands = (audio as any).getFrequencyBands ? (audio as any).getFrequencyBands() : { bass: 0, mid: 0, treble: 0 };
-
-    // Automatic Calming Cosmic Shift transition after 240 seconds for a slower, serene screensaver experience
-    if (isInterstellarRef.current && sceneAge > 240.0 && !supernovaRef.current) {
-      triggerCalmCosmicShift();
-    }
-
-    // --- AUTONOMOUS COSMIC EVOLUTION ENGINE ---
-
-    // 1. Cosmic Spawn Protection: Prevent empty space by seeding young planets
-    const aliveEntities = entities.filter(e => !e.isDestroyed);
-    if (aliveEntities.length < 5 && Math.random() < 0.008) {
-      const angle = Math.random() * Math.PI * 2;
-      const r = (ww < 768 ? 160 : 320) + Math.random() * 220;
-      const pRadius = 14 + Math.random() * 14;
-      const orbitSpeed = 0.0025 + Math.random() * 0.0025;
-      const newPlanet: CelestialEntity = {
-        type: "planet",
-        x: ww / 2 + Math.cos(angle) * r,
-        y: wh / 2 + Math.sin(angle) * r,
-        radius: pRadius,
-        color: ["#4deeea", "#ffd778", "#ff5e62", "#a124f5", "#00ffbe"][Math.floor(Math.random() * 5)] || "#4deeea",
-        secondaryColor: "#ffffff",
-        hasRings: Math.random() > 0.4,
-        ringColor: "rgba(255, 255, 255, 0.45)",
-        orbitRadius: r,
-        orbitAngle: angle,
-        orbitSpeed: orbitSpeed,
-        centerX: ww / 2,
-        centerY: wh / 2,
-        vx: -Math.sin(angle) * r * orbitSpeed * 1.3,
-        vy: Math.cos(angle) * r * orbitSpeed * 1.3,
-        mass: pRadius * pRadius,
-        scale: 0.05,
-        currentRadius: pRadius,
-        originalRadius: pRadius,
-        targetRadius: pRadius,
-        isPhysicsEnabled: true,
-        isDestroyed: false,
-      };
-      entities.push(newPlanet);
-      createDustSplash(newPlanet.x, newPlanet.y, newPlanet.color, 120);
-      audio.playStageSwell(1); // Play deep swelling tone
-
-      registerAndSaveSequence(
-        "Stellar Nucleus Birth",
-        "Stardust accretion has crossed a critical mass point. A young planet is birthed into decaying orbit, pulled by the master gravitational field.",
-        ["★ STAR NURSERY", "☄ CORE CONCRETION", "★ INWARD SPIRAL"],
-        entities
-      );
-    }
-
-    // 2. Continuous Gravity Drift: Apply gentle inward spiral drag
-    entities.forEach((entity) => {
-      if (entity.isDestroyed || entity.type === "blackhole") return;
-      
-      const bh = entities.find(e => e && !e.isDestroyed && e.type === "blackhole");
-      if (!bh) return;
-
-      const dx = bh.x - entity.x;
-      const dy = bh.y - entity.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-
-      if (entity.isSwallowing) {
-        // Strong spiral pull
-        const spiralPull = 0.15;
-        entity.vx = (entity.vx || 0) + (dx / dist) * spiralPull;
-        entity.vy = (entity.vy || 0) + (dy / dist) * spiralPull;
-        // Keep scale constant until close to black hole
-        if (dist < bh.radius * 1.5) {
-            entity.isDestroyed = true;
-        }
-      } else {
-        // Decay orbit slightly with subtle drag
-        const dragPull = 0.0008;
-        entity.vx = (entity.vx || 0) + (dx / dist) * dragPull;
-        entity.vy = (entity.vy || 0) + (dy / dist) * dragPull;
+      mesh.position.x = entity.x - window.innerWidth / 2;
+      mesh.position.y = -(entity.y - window.innerHeight / 2);
+      mesh.position.z = entity.z || 0;
+      if (entity.rotation !== undefined) {
+        mesh.rotation.y += entity.rotation;
       }
     });
-
-    // 3. Autonomous Cosmic Event Loop (Triggers on rare, extremely calm 45s intervals)
-    const now = Date.now();
-    if (now - lastAutonomousEventTimeRef.current > 45000) {
-      lastAutonomousEventTimeRef.current = now;
-      const nonBhEntities = entities.filter(e => !e.isDestroyed && e.type !== "blackhole");
-      const eventChoice = Math.floor(Math.random() * 4);
-
-      if (eventChoice === 0 && nonBhEntities.length >= 2) {
-        // Event A: EINSTEIN-ROSEN QUANTUM WORMHOLE
-        const e1 = nonBhEntities[Math.floor(Math.random() * nonBhEntities.length)]!;
-        const e2 = nonBhEntities[Math.floor(Math.random() * nonBhEntities.length)]!;
-        if (e1 !== e2) {
-          const idx1 = entities.indexOf(e1);
-          const idx2 = entities.indexOf(e2);
-          activeWormholeRef.current = {
-            startEntityIdx: idx1,
-            endEntityIdx: idx2,
-            life: 1.0,
-            duration: 8000,
-          };
-
-          // Funnel background particles through the wormhole bridge
-          const particles = particlesRef.current;
-          let bridgeCount = 0;
-          particles.forEach((p) => {
-            if (!p.isTail && !p.isCosmicAmbient && bridgeCount < 200) {
-              p.interstellarType = "bridge";
-              p.bridgeStartEntityIndex = idx1;
-              p.bridgeStartEntity = entities[idx1];
-              p.bridgeEndEntityIndex = idx2;
-              p.bridgeEndEntity = entities[idx2];
-              p.bridgeProgress = Math.random();
-              p.bridgeSpeed = 0.007 + Math.random() * 0.015;
-              bridgeCount++;
-            }
-          });
-
-          audio.playStageSwell(1); // deep zimmer-like chord shift
-
-          registerAndSaveSequence(
-            "Wormhole Bridge Activated",
-            "A localized quantum bridge has bent spacetime between two orbits. Hot stellar plasma particles funnel instantly through the dimensional throat.",
-            ["🕳 ER BRIDGE", "☄ SPATIAL WARP", "★ BENT METRIC"],
-            entities
-          );
-        }
-      } else if (eventChoice === 1 && nonBhEntities.length >= 1) {
-        // Event B: LOCALIZED COMPACT COLLAPSE (Stellar core collapse, remains inside the same scene)
-        const star = nonBhEntities[Math.floor(Math.random() * nonBhEntities.length)]!;
-        star.isDestroyed = true;
-        
-        const isNeutronStar = Math.random() > 0.5;
-        const remnant: CelestialEntity = {
-          type: isNeutronStar ? "star" : "blackhole",
-          x: star.x,
-          y: star.y,
-          radius: isNeutronStar ? 6 : 10,
-          color: isNeutronStar ? "#4deeea" : "#110b14",
-          secondaryColor: isNeutronStar ? "#ffffff" : "#000000",
-          vx: (star.vx || 0) * 0.5,
-          vy: (star.vy || 0) * 0.5,
-          mass: isNeutronStar ? star.mass * 0.6 : star.mass * 1.5,
-          scale: 0.05,
-          currentRadius: isNeutronStar ? 6 : 10,
-          originalRadius: isNeutronStar ? 6 : 10,
-          targetRadius: isNeutronStar ? 6 : 10,
-          isPhysicsEnabled: true,
-          isDestroyed: false,
-        };
-
-        entities.push(remnant);
-
-        createDustSplash(star.x, star.y, star.color, 180);
-        createDustSplash(star.x, star.y, "#ffffff", 120);
-        audio.playSupernova(); // Deep vibrational sub-bass explosion!
-
-        registerAndSaveSequence(
-          isNeutronStar ? "Neutron Star Synthesis" : "Micro Singularity Formation",
-          isNeutronStar 
-            ? "A massive star has collapsed under gravity, fusing its protons and electrons into a super-dense, spinning neutron core."
-            : "A dying star core collapsed past its Schwarzschild radius, punching a miniature hole in the fabric of space.",
-          [isNeutronStar ? "★ COMPACT STAR" : "🕳 SINGULARITY", "☄ CORE COLLAPSE", "★ LOCAL NEBULA"],
-          entities
-        );
-      } else if (eventChoice === 2) {
-        // Event C: EXOPLANETARY SEED NURSERY (Spawns twin planets that will peacefully merge later)
-        const angle = Math.random() * Math.PI * 2;
-        const r1 = (ww < 768 ? 120 : 220);
-        const child1: CelestialEntity = {
-          type: "planet",
-          x: ww / 2 + Math.cos(angle) * r1,
-          y: wh / 2 + Math.sin(angle) * r1,
-          radius: 17,
-          color: "#4deeea",
-          vx: -Math.cos(angle) * 0.6, // majestic, cinematic, ultra-slow speed
-          vy: -Math.sin(angle) * 0.6,
-          mass: 289,
-          scale: 0.05,
-          currentRadius: 17,
-          originalRadius: 17,
-          targetRadius: 17,
-          isPhysicsEnabled: true,
-          isDestroyed: false,
-        };
-        const child2: CelestialEntity = {
-          type: "planet",
-          x: ww / 2 - Math.cos(angle) * r1,
-          y: wh / 2 - Math.sin(angle) * r1,
-          radius: 15,
-          color: "#ff5e62",
-          vx: Math.cos(angle) * 0.6, // majestic, cinematic, ultra-slow speed
-          vy: Math.sin(angle) * 0.6,
-          mass: 225,
-          scale: 0.05,
-          currentRadius: 15,
-          originalRadius: 15,
-          targetRadius: 15,
-          isPhysicsEnabled: true,
-          isDestroyed: false,
-        };
-        entities.push(child1, child2);
-        createDustSplash(child1.x, child1.y, child1.color, 90);
-        createDustSplash(child2.x, child2.y, child2.color, 90);
-        audio.playStageSwell(2);
-
-        registerAndSaveSequence(
-          "Gravitational Coalescence",
-          "Twin protoplanetary bodies are pulled onto a head-on collision course. High electromagnetic resistance compresses spacetime before contact.",
-          ["☄ TWIN CORES", "☄ VECTOR COLLISION", "★ REPULSION"],
-          entities
-        );
-      } else if (eventChoice === 3) {
-        // Event D: STELLIFEROUS NURSERY CONDENSATION
-        const angle = Math.random() * Math.PI * 2;
-        const r1 = (ww < 768 ? 160 : 280) + Math.random() * 100;
-        const newNebula: CelestialEntity = {
-          type: "nebula",
-          x: ww / 2 + Math.cos(angle) * r1,
-          y: wh / 2 + Math.sin(angle) * r1,
-          radius: 60 + Math.random() * 40,
-          color: ["#ff007f", "#a124f5", "#00f0ff"][Math.floor(Math.random() * 3)] || "#ff007f",
-          secondaryColor: "#1a0033",
-          vx: -Math.sin(angle) * 0.4, // ultra slow drift
-          vy: Math.cos(angle) * 0.4,
-          mass: 400,
-          scale: 0.05,
-          currentRadius: 80,
-          originalRadius: 80,
-          targetRadius: 80,
-          isPhysicsEnabled: true,
-          isDestroyed: false,
-        };
-        entities.push(newNebula);
-        createDustSplash(newNebula.x, newNebula.y, newNebula.color, 150);
-        audio.playStageSwell(2);
-
-        registerAndSaveSequence(
-          "Stelliferous Condensation",
-          "An interstellar gas cloud is cooling and condensing, creating a vibrant nebula of ionized cosmic plasma.",
-          ["★ IONIZED GAS", "☄ NEBULA DRIVEN", "★ STAR NURSERY"],
-          entities
-        );
-      }
-    }
-
-    // 4. Update wormhole lifetime decay
-    if (activeWormholeRef.current) {
-      activeWormholeRef.current.duration -= 16;
-      if (activeWormholeRef.current.duration <= 0) {
-        activeWormholeRef.current = null;
-      }
-    }
-    const swallowEntity = (bh: CelestialEntity, victim: CelestialEntity) => {
-      victim.isSwallowing = true;
-      victim.destroyedBy = "blackhole";
-      const newMass = (bh.mass || 100) + (victim.mass || 50);
-      bh.mass = newMass;
-      
-      // Blackhole target radius swells from ingested mass!
-      const targetRadius = Math.min(bh.radius * 1.5, Math.sqrt(newMass / 15));
-      bh.targetRadius = targetRadius;
-      
-      // Grow the blackhole and let the simulation run.
-      // Cosmic spawn protection will seed new young planets automatically for infinite variety.
-      // We only transition if the blackhole undergoes extreme mass swelling (4x initial mass).
-      const initialBhMass = bh.initialMass || (bh.radius * bh.radius * 15);
-      if (newMass > initialBhMass * 4.0 && !supernovaRef.current) {
-        supernovaRef.current = {
-            time: Date.now(),
-            exploded: false,
-            x: bh.x,
-            y: bh.y,
-            isCalmShift: true
-        };
-        audio.playStageSwell(2);
-        fetchNextGeminiScene();
-      }
-      
-      createSpaghettificationDebris(bh, victim);
-      createShatterDebris(victim.x, victim.y, victim.color || "#ffffff", 100);
-      audio.playRippleShockwave(); // trigger cosmic merger impact audio!
-    };
-
-    const mergeEntities = (survivor: CelestialEntity, victim: CelestialEntity) => {
-      victim.isDestroyed = true;
-      victim.destroyedBy = "collision";
-
-      const m1 = survivor.mass || 10;
-      const m2 = victim.mass || 10;
-      const newMass = m1 + m2;
-      survivor.mass = newMass;
-      
-      // Grow survivor's radius based on new mass
-      const targetRadius = Math.min(survivor.radius * 1.5, Math.sqrt(newMass));
-      survivor.targetRadius = targetRadius;
-
-      // Physically accurate center-of-mass positioning & momentum conservation
-      const midX = (survivor.x * m1 + victim.x * m2) / newMass;
-      const midY = (survivor.y * m1 + victim.y * m2) / newMass;
-      const midZ = (((survivor.z || 0) * m1) + ((victim.z || 0) * m2)) / newMass;
-
-      survivor.x = midX;
-      survivor.y = midY;
-      survivor.z = midZ;
-
-      if (survivor.isPhysicsEnabled || victim.isPhysicsEnabled) {
-        survivor.vx = ((survivor.vx || 0) * m1 + (victim.vx || 0) * m2) / newMass;
-        survivor.vy = ((survivor.vy || 0) * m1 + (victim.vy || 0) * m2) / newMass;
-        survivor.vz = ((survivor.vz || 0) * m1 + (victim.vz || 0) * m2) / newMass;
-        survivor.isPhysicsEnabled = true;
-      }
-
-      // Play collision sound
-      audio.playRippleShockwave();
-      
-      // Inject high-intensity space-time ripple
-      ripplesRef.current.push({
-        x: midX,
-        y: midY,
-        life: 1.0,
-      });
-
-      // Spawn shatter and dust debris
-      createShatterDebris(midX, midY, victim.color || "#ffffff", 80);
-      createDustSplash(midX, midY, survivor.color || "#ffffff", 40);
-
-      registerAndSaveSequence(
-        "Planetary Coalescence",
-        "Two cosmic bodies collide, merging into a larger planet and seeding a fresh stardust ring in their orbital plane.",
-        ["🪐 COALESCENCE", "☄ KINETIC MERGER", "★ MASS ACCRETION"],
-        entities
-      );
-    };
-
-    // --- Interactive Mouse Gravitational Warp & Supernova Trigger ---
-    const activeSupernova = supernovaRef.current;
-    if (activeSupernova) {
-      entities.forEach((entity) => {
-        if (entity.isDestroyed) return;
-        entity.isPhysicsEnabled = true;
-        
-        // Push/pull force on trigger click
-        const dx = entity.x - activeSupernova.x;
-        const dy = entity.y - activeSupernova.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        if (dist < 500) {
-          const force = 2.2 * (1.0 - dist / 500);
-          entity.vx = (entity.vx || 0) + (dx / dist) * force;
-          entity.vy = (entity.vy || 0) + (dy / dist) * force;
-        }
-      });
-    }
-
-    // Proximity mouse gravity pull
-    const mouseX = mouseRef.current.x;
-    const mouseY = mouseRef.current.y;
-    if (mouseX > 0 && mouseY > 0) {
-      entities.forEach((entity) => {
-        if (entity.isDestroyed || entity.type === "blackhole") return;
-        const dx = mouseX - entity.x;
-        const dy = mouseY - entity.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 220) {
-          entity.isPhysicsEnabled = true;
-          const pullForce = 0.08 * (1.0 - dist / 220);
-          entity.vx = (entity.vx || 0) + (dx / dist) * pullForce;
-          entity.vy = (entity.vy || 0) + (dy / dist) * pullForce;
-        }
-      });
-    }
-
-    // Natural system age orbital instability decay
-    if (sceneAge > 45.0) {
-      entities.forEach((entity) => {
-        entity.isPhysicsEnabled = true;
-      });
-    }
-
-    // --- Gravitational Orbital Physics Engine ---
-    if (entities.length > 0) {
-      const G = 0.12; // Gravitational constant
-      
-      // Calculate mutual attraction forces
-      for (let i = 0; i < entities.length; i++) {
-        const e1 = entities[i];
-        if (!e1 || e1.isDestroyed) continue;
-        
-        for (let j = i + 1; j < entities.length; j++) {
-          const e2 = entities[j];
-          if (!e2 || e2.isDestroyed) continue;
-          
-          const dx = e2.x - e1.x;
-          const dy = e2.y - e1.y;
-          const dz = (e2.z || 0) - (e1.z || 0);
-          const distSq = dx * dx + dy * dy + dz * dz;
-          const dist = Math.sqrt(distSq);
-          
-          if (dist < 10) continue; // prevent singularities
-          
-          const isBothPlanets = e1.type === "planet" && e2.type === "planet";
-          const colDist = e1.radius + e2.radius;
-          const compressionZone = colDist * 2.8;
-
-          if (isBothPlanets && dist < compressionZone) {
-            // Unshackle both planets into full orbital physics decay
-            e1.isPhysicsEnabled = true;
-            e2.isPhysicsEnabled = true;
-
-            const compressionFactor = (dist - colDist) / (compressionZone - colDist);
-            const intensity = 1.0 - Math.max(0, Math.min(1, compressionFactor)); // 0.0 at edge, 1.0 at contact
-
-            // 1. OPPOSING MAGNETIC FIELDS RESISTANCE (repulsion force)
-            // Pushback grows stronger as they compress together, like magnet like-poles
-            const repulsionForce = Math.pow(intensity, 2) * 1.5;
-            e1.vx = (e1.vx || 0) - (dx / dist) * repulsionForce;
-            e1.vy = (e1.vy || 0) - (dy / dist) * repulsionForce;
-            e1.vz = (e1.vz || 0) - (dz / dist) * repulsionForce;
-            e2.vx = (e2.vx || 0) + (dx / dist) * repulsionForce;
-            e2.vy = (e2.vy || 0) + (dy / dist) * repulsionForce;
-            e2.vz = (e2.vz || 0) + (dz / dist) * repulsionForce;
-
-            // 2. VISCOUS KINETIC FRICTION on their mutual approach axis
-            const relVx = e2.vx - e1.vx;
-            const relVy = e2.vy - e1.vy;
-            const relVz = (e2.vz || 0) - (e1.vz || 0);
-            const approachSpeed = (relVx * dx + relVy * dy + relVz * dz) / dist; // approaching if negative
-            if (approachSpeed < 0) {
-              const viscosity = intensity * 0.45; // heavy electromagnetic resistance
-              e1.vx += (dx / dist) * (-approachSpeed * viscosity);
-              e1.vy += (dy / dist) * (-approachSpeed * viscosity);
-              e1.vz += (dz / dist) * (-approachSpeed * viscosity);
-              e2.vx -= (dx / dist) * (-approachSpeed * viscosity);
-              e2.vy -= (dy / dist) * (-approachSpeed * viscosity);
-              e2.vz -= (dz / dist) * (-approachSpeed * viscosity);
-            }
-
-            // 3. PHYSICAL RADIUS DEFORMATION / SQUISHING
-            e1.targetRadius = e1.radius * (1.0 - intensity * 0.35);
-            e2.targetRadius = e2.radius * (1.0 - intensity * 0.35);
-
-            // 4. SPACETIME VIOLENT VIBRATION (extreme stress shaking)
-            const shakeAmount = intensity * 4.5;
-            e1.x += (Math.random() - 0.5) * shakeAmount;
-            e1.y += (Math.random() - 0.5) * shakeAmount;
-            e1.z = (e1.z || 0) + (Math.random() - 0.5) * shakeAmount;
-            e2.x += (Math.random() - 0.5) * shakeAmount;
-            e2.y += (Math.random() - 0.5) * shakeAmount;
-            e2.z = (e2.z || 0) + (Math.random() - 0.5) * shakeAmount;
-
-            // 5. ENERGETIC ELECTRICAL FRICTION SPARKS / SHOCKWAVES
-            if (Math.random() < 0.45) {
-              const midX = (e1.x + e2.x) / 2;
-              const midY = (e1.y + e2.y) / 2;
-              createDustSplash(midX, midY, "#ffffff", 2); // Pure white space-time tear sparks
-              createDustSplash(midX, midY, e1.color, 1);
-              createDustSplash(midX, midY, e2.color, 1);
-            }
-
-            if (Math.random() < 0.15) {
-              const midX = (e1.x + e2.x) / 2;
-              const midY = (e1.y + e2.y) / 2;
-              ripplesRef.current.push({ x: midX, y: midY, life: 1.0 });
-            }
-          } else {
-            const forceE1 = (G * (e2.mass || 10)) / (distSq + 250);
-            const forceE2 = (G * (e1.mass || 10)) / (distSq + 250);
-
-            if (e1.type === "blackhole") {
-              const tx = -dy / dist;
-              const ty = dx / dist;
-              const orbitInfluence = forceE2 * 1.8;
-              e2.vx = (e2.vx || 0) - (dx / dist) * forceE2 * 0.45 + tx * orbitInfluence;
-              e2.vy = (e2.vy || 0) - (dy / dist) * forceE2 * 0.45 + ty * orbitInfluence;
-              e2.vz = (e2.vz || 0) - (dz / dist) * forceE2;
-            } else if (e2.type === "blackhole") {
-              const tx = -dy / dist;
-              const ty = dx / dist;
-              const orbitInfluence = forceE1 * 1.8;
-              e1.vx = (e1.vx || 0) + (dx / dist) * forceE1 * 0.45 + tx * orbitInfluence;
-              e1.vy = (e1.vy || 0) + (dy / dist) * forceE1 * 0.45 + ty * orbitInfluence;
-              e1.vz = (e1.vz || 0) + (dz / dist) * forceE1;
-            } else {
-              if (e1.type !== "blackhole") {
-                e1.vx = (e1.vx || 0) + (dx / dist) * forceE1;
-                e1.vy = (e1.vy || 0) + (dy / dist) * forceE1;
-                e1.vz = (e1.vz || 0) + (dz / dist) * forceE1;
-              }
-              if (e2.type !== "blackhole") {
-                e2.vx = (e2.vx || 0) - (dx / dist) * forceE2;
-                e2.vy = (e2.vy || 0) - (dy / dist) * forceE2;
-                e2.vz = (e2.vz || 0) - (dz / dist) * forceE2;
-              }
-            }
-          }
-        }
-      }
-
-      // Smooth coordinate velocity interpolation
-      entities.forEach((entity) => {
-        if (entity.isDestroyed) return;
-
-        // Ensure Z variables are initialized
-        entity.z = entity.z ?? 0;
-        entity.vz = entity.vz ?? 0;
-        if (entity.orbitInclination === undefined) {
-          entity.orbitInclination = entity.type === "blackhole" ? 0 : (Math.random() - 0.5) * 0.38;
-        }
-
-        if (entity.isPhysicsEnabled) {
-          // Space dust drag decays orbits into beautiful spiral accretion paths
-          const drag = 0.994;
-          entity.vx = (entity.vx || 0) * drag;
-          entity.vy = (entity.vy || 0) * drag;
-          entity.vz = (entity.vz || 0) * drag;
-
-          entity.x += entity.vx;
-          entity.y += entity.vy;
-          entity.z += entity.vz;
-        } else {
-          // Smooth stable orbits on initial state
-          if (
-            entity.orbitRadius !== undefined &&
-            entity.orbitAngle !== undefined &&
-            entity.orbitSpeed !== undefined &&
-            entity.centerX !== undefined &&
-            entity.centerY !== undefined
-          ) {
-            entity.orbitAngle += entity.orbitSpeed * 0.45;
-            
-            // Compute 3D Keplerian inclined position
-            const rawX = Math.cos(entity.orbitAngle) * entity.orbitRadius;
-            const rawY = Math.sin(entity.orbitAngle) * entity.orbitRadius;
-            
-            const cosInc = Math.cos(entity.orbitInclination || 0);
-            const sinInc = Math.sin(entity.orbitInclination || 0);
-            
-            const orbitX = entity.centerX + rawX;
-            const orbitY = entity.centerY + rawY * cosInc;
-            const orbitZ = rawY * sinInc;
-            
-            // Big Bang smooth float outward on birth transition
-            entity.x += (orbitX - entity.x) * 0.05;
-            entity.y += (orbitY - entity.y) * 0.05;
-            entity.z += (orbitZ - entity.z) * 0.05;
-          }
-        }
-      });
-
-      // Handle collisions & swallowing
-      for (let i = 0; i < entities.length; i++) {
-        const e1 = entities[i];
-        if (!e1 || e1.isDestroyed) continue;
-
-        for (let j = i + 1; j < entities.length; j++) {
-          const e2 = entities[j];
-          if (!e2 || e2.isDestroyed) continue;
-
-          // Skip collisions for entities currently scaling up / spawning
-          if ((e1.scale ?? 0) < 0.9 || (e2.scale ?? 0) < 0.9) continue;
-
-          const dx = e2.x - e1.x;
-          const dy = e2.y - e1.y;
-          const dz = (e2.z || 0) - (e1.z || 0);
-          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          const colDist = e1.radius + e2.radius;
-
-          if (dist < colDist) {
-            if (e1.type === "blackhole") {
-              swallowEntity(e1, e2);
-            } else if (e2.type === "blackhole") {
-              swallowEntity(e2, e1);
-            } else {
-              // Calculate relative velocity
-              const rvx = (e2.vx || 0) - (e1.vx || 0);
-              const rvy = (e2.vy || 0) - (e1.vy || 0);
-              const rvz = (e2.vz || 0) - (e1.vz || 0);
-              const relVel = Math.sqrt(rvx * rvx + rvy * rvy + rvz * rvz);
-
-              // Merging occurs at extremely high velocities or massive radius disparity
-              const radiusRatio = Math.max(e1.radius, e2.radius) / Math.min(e1.radius, e2.radius);
-              if (relVel > 12.0 || radiusRatio > 2.5) {
-                if (e1.radius >= e2.radius) {
-                  mergeEntities(e1, e2);
-                } else {
-                  mergeEntities(e2, e1);
-                }
-              } else {
-                // Inelastic bounce with momentum conservation and heat dissipation
-                const colResult = resolveCelestialCollision(e1, e2, 0.45);
-                if (colResult) {
-                  audio.playRippleShockwave();
-
-                  const dissipatedEnergy = colResult.kineticEnergyDissipated;
-                  const count = Math.min(150, Math.max(20, Math.floor(dissipatedEnergy * 0.15)));
-
-                  createShatterDebris(
-                    colResult.contactPointX,
-                    colResult.contactPointY,
-                    e1.color || "#ffffff",
-                    Math.floor(count * 0.5)
-                  );
-                  createDustSplash(
-                    colResult.contactPointX,
-                    colResult.contactPointY,
-                    e2.color || "#ffffff",
-                    Math.floor(count * 0.5)
-                  );
-
-                  ripplesRef.current.push({
-                    x: colResult.contactPointX,
-                    y: colResult.contactPointY,
-                    life: 0.65,
-                  });
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // Ensure all active entities have stable unique IDs
-    entities.forEach((entity, idx) => {
-      if (!entity.id) {
-        entity.id = `${entity.type}-${idx}-${Math.random().toString(36).substring(2, 9)}`;
-      }
-    });
-    const activeEntityIds = new Set(entities.map(e => e.id));
-
-    // Safely dispose of removed meshes or fully faded-out destroyed/swallowed entities
-    const nextMeshInstances: typeof celestialMeshInstancesRef.current = [];
-    celestialMeshInstancesRef.current.forEach((inst) => {
-      const entity = inst.entityRef;
-      const isStillPresent = activeEntityIds.has(entity.id);
-      const shouldDispose = !isStillPresent || (entity.isDestroyed && (entity.scale ?? 0) <= 0.02);
-
-      if (shouldDispose) {
-        inst.mesh.getChildMeshes(false).forEach((m) => {
-          if (m.material) {
-            const mats = (m.material as any).subMaterials || [m.material];
-            mats.forEach((mat: any) => {
-              if (mat) {
-                const textures = mat.getActiveTextures ? mat.getActiveTextures() : [];
-                textures.forEach((tex: any) => {
-                  if (tex && typeof tex.dispose === "function") {
-                    tex.dispose();
-                  }
-                });
-                if (typeof mat.dispose === "function") {
-                  mat.dispose();
-                }
-              }
-            });
-          }
-          m.dispose();
-        });
-        inst.mesh.dispose();
-      } else {
-        nextMeshInstances.push(inst);
-      }
-    });
-    celestialMeshInstancesRef.current = nextMeshInstances;
-
-    // Create meshes incrementally for new entities that do not have a mesh yet
-    entities.forEach((entity, idx) => {
-      const hasMesh = celestialMeshInstancesRef.current.some(inst => inst.entityRef.id === entity.id);
-      if (hasMesh) return;
-      if (entity.isDestroyed) return;
-
-      const entityId = entity.id!;
-      const wx = entity.x - ww / 2;
-      const wy = -(entity.y - wh / 2);
-
-      entity.scale = entity.scale ?? 0;
-      entity.currentRadius = entity.currentRadius ?? entity.radius;
-      entity.originalRadius = entity.originalRadius ?? entity.radius;
-      const initScale = entity.scale * (entity.currentRadius / entity.originalRadius);
-
-        if (entity.type === "blackhole") {
-          const bhContainer = new BABYLON.TransformNode("bh_group", scene);
-          bhContainer.position.set(wx, wy, 0);
-
-          // 1. Accretion disk - Layer 1: Core fiery orange-yellow distorted waves
-          const diskRadius = entity.radius * 3.6;
-          const diskTex1 = generateDistortedLightwaveTexture("#ffa600", scene);
-          const diskMat1 = new BABYLON.PBRMaterial("diskMat1", scene);
-          diskMat1.albedoTexture = diskTex1;
-          diskMat1.emissiveTexture = diskTex1;
-          diskMat1.emissiveColor = new BABYLON.Color3(1, 1, 1);
-          diskMat1.disableLighting = true;
-          diskMat1.backFaceCulling = false;
-          diskMat1.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
-
-          diskMat1.alpha = 0.95;
-
-          const diskMesh1 = BABYLON.MeshBuilder.CreateTorus("accretion_layer_1", {
-            diameter: diskRadius * 1.8,
-            thickness: entity.radius * 0.22,
-            tessellation: 64
-          }, scene);
-          diskMesh1.material = diskMat1;
-          diskMesh1.rotation.x = Math.PI / 2.3;
-          diskMesh1.parent = bhContainer;
-
-          // Accretion disk - Layer 2: Opposing-spin golden wave warp (slightly tilted)
-          const diskTex2 = generateDistortedLightwaveTexture("#ffdf00", scene);
-          const diskMat2 = new BABYLON.PBRMaterial("diskMat2", scene);
-          diskMat2.albedoTexture = diskTex2;
-          diskMat2.emissiveTexture = diskTex2;
-          diskMat2.emissiveColor = new BABYLON.Color3(1, 1, 1);
-          diskMat2.disableLighting = true;
-          diskMat2.backFaceCulling = false;
-          diskMat2.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
-
-          diskMat2.alpha = 0.75;
-
-          const diskMesh2 = BABYLON.MeshBuilder.CreateTorus("accretion_layer_2", {
-            diameter: diskRadius * 1.6,
-            thickness: entity.radius * 0.16,
-            tessellation: 64
-          }, scene);
-          diskMesh2.material = diskMat2;
-          diskMesh2.rotation.x = Math.PI / 2.45;
-          diskMesh2.rotation.y = 0.12;
-          diskMesh2.parent = bhContainer;
-
-          // Accretion disk - Layer 3: Gravitational lensing ring (outer halo, near perpendicular view)
-          const lensRadius = entity.radius * 4.6;
-          const diskTex3 = generateDistortedLightwaveTexture("#ffffff", scene);
-          const diskMat3 = new BABYLON.PBRMaterial("diskMat3", scene);
-          diskMat3.albedoTexture = diskTex3;
-          diskMat3.emissiveTexture = diskTex3;
-          diskMat3.emissiveColor = new BABYLON.Color3(1, 1, 1);
-          diskMat3.disableLighting = true;
-          diskMat3.backFaceCulling = false;
-          diskMat3.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
-
-          diskMat3.alpha = 0.45;
-
-          const diskMesh3 = BABYLON.MeshBuilder.CreateTorus("gravitational_lensing", {
-            diameter: lensRadius * 1.8,
-            thickness: entity.radius * 0.12,
-            tessellation: 64
-          }, scene);
-          diskMesh3.material = diskMat3;
-          diskMesh3.rotation.x = Math.PI / 2.1;
-          diskMesh3.rotation.y = -0.08;
-          diskMesh3.parent = bhContainer;
-
-          // 2. Event Horizon Shadow
-          const ehMat = new BABYLON.PBRMaterial("ehMat", scene);
-          ehMat.albedoColor = new BABYLON.Color3(0, 0, 0);
-          ehMat.emissiveColor = new BABYLON.Color3(0, 0, 0);
-          ehMat.disableLighting = true;
-
-          const ehMesh = BABYLON.MeshBuilder.CreateSphere("event_horizon_core", {
-            diameter: entity.radius * 1.02 * 2,
-            segments: 32
-          }, scene);
-          ehMesh.material = ehMat;
-          ehMesh.parent = bhContainer;
-
-          // 2b. Event Horizon Glowing Corona (Einstein Ring / Photon Sphere lens aura)
-          const coronaTex = createCircularGlowTexture(hexToRgba(entity.color, 0.95), scene);
-          const coronaMat = new BABYLON.PBRMaterial("coronaMat", scene);
-          coronaMat.albedoTexture = coronaTex;
-          coronaMat.emissiveTexture = coronaTex;
-          coronaMat.emissiveColor = new BABYLON.Color3(1, 1, 1);
-          coronaMat.disableLighting = true;
-          coronaMat.backFaceCulling = false;
-          coronaMat.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
-
-          coronaMat.alpha = 0.9;
-
-          const coronaMesh = BABYLON.MeshBuilder.CreateSphere("event_horizon_corona", {
-            diameter: entity.radius * 1.15 * 2,
-            segments: 32
-          }, scene);
-          coronaMesh.material = coronaMat;
-          coronaMesh.parent = bhContainer;
-
-          bhContainer.scaling.set(initScale, initScale, initScale);
-          if (celestialGroupRef.current) {
-            bhContainer.parent = celestialGroupRef.current;
-          }
-          celestialMeshInstancesRef.current.push({
-            id: entityId,
-            mesh: bhContainer,
-            entityRef: entity,
-          });
-        } else if (entity.type === "planet") {
-          const planetContainer = new BABYLON.TransformNode("planet_group", scene);
-          planetContainer.position.set(wx, wy, 0);
-
-          // 1. Planet core sphere with PBR shadow-side bioluminescence
-          const planetTexture = generateAdvancedPlanetTexture(
-            entity.color,
-            entity.secondaryColor || entity.color,
-            scene
-          );
-
-          const sphereMat = new BABYLON.PBRMaterial("sphereMat", scene);
-          sphereMat.albedoTexture = planetTexture;
-          sphereMat.bumpTexture = planetTexture;
-          sphereMat.emissiveTexture = planetTexture;
-          // Subtly light up the dark side of the planet with a soft bioluminescent gas glow
-          sphereMat.emissiveColor = new BABYLON.Color3(0.08, 0.08, 0.12);
-          
-          sphereMat.roughness = 0.55;
-          sphereMat.metallic = 0.12;
-          sphereMat.directIntensity = 1.35;
-          sphereMat.specularIntensity = 1.0;
-          if (sphereMat.bumpTexture) {
-            sphereMat.bumpTexture.level = 0.52; // physically based bump scale
-          }
-
-          const sphereMesh = BABYLON.MeshBuilder.CreateSphere("planet_sphere", {
-            diameter: entity.radius * 2,
-            segments: 64
-          }, scene);
-          sphereMesh.material = sphereMat;
-          sphereMesh.parent = planetContainer;
-
-          // 1.5. Dynamic semi-transparent cloud layer sphere spinning independently
-          const cloudTexture = generateAdvancedPlanetTexture(
-            entity.secondaryColor || entity.color,
-            "#ffffff",
-            scene
-          );
-          const cloudMat = new BABYLON.PBRMaterial("cloudMat", scene);
-          cloudMat.albedoTexture = cloudTexture;
-          cloudMat.alpha = 0.42; // semi-transparent
-          cloudMat.alphaMode = BABYLON.Engine.ALPHA_ADD; // glowing additive vapor
-          cloudMat.roughness = 0.45;
-          cloudMat.metallic = 0.02;
-
-          const cloudMesh = BABYLON.MeshBuilder.CreateSphere("planet_clouds", {
-            diameter: entity.radius * 2.03, // floating slightly above the core
-            segments: 32
-          }, scene);
-          cloudMesh.material = cloudMat;
-          cloudMesh.parent = planetContainer;
-
-          // 2. Paper-thin concentric flat striated rings (Double-Sided Disc instead of Torus!)
-          if (entity.hasRings) {
-            const ringTexture = generateConcentricRingTexture(entity.ringColor || entity.color, scene);
-            
-            const ringMesh = BABYLON.MeshBuilder.CreateDisc("ring_mesh", {
-              radius: entity.radius * 2.1, // radius fits concentric texture nicely
-              tessellation: 64,
-              sideOrientation: BABYLON.Mesh.DOUBLESIDE
-            }, scene);
-
-            const ringMat = new BABYLON.StandardMaterial("ringMat", scene);
-            if (ringTexture) {
-              ringMat.diffuseTexture = ringTexture;
-              ringMat.emissiveTexture = ringTexture;
-              ringMat.useAlphaFromDiffuseTexture = true;
-            } else {
-              const rCol = parseColorToRgb(entity.ringColor || entity.color);
-              ringMat.emissiveColor = new BABYLON.Color3(rCol.r / 255, rCol.g / 255, rCol.b / 255);
-            }
-
-            ringMat.disableLighting = true;
-            ringMat.backFaceCulling = false;
-            ringMat.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
-            ringMat.alpha = 0.85;
-
-            ringMesh.material = ringMat;
-            ringMesh.rotation.x = Math.PI / 2.3;
-            ringMesh.rotation.y = 0.15;
-            ringMesh.parent = planetContainer;
-          }
-
-          // 3. Real 3D Atmosphere Glow Sphere using volumetric Fresnel rim lighting
-          const atmosphereGlowMesh = BABYLON.MeshBuilder.CreateSphere("atmosphere_glow", {
-            diameter: entity.radius * 2.12,
-            segments: 32
-          }, scene);
-
-          const rgb = parseColorToRgb(entity.color);
-          const atmosColor = new BABYLON.Color3(rgb.r / 255, rgb.g / 255, rgb.b / 255);
-
-          const atmosphereGlowMat = new BABYLON.StandardMaterial("atmosphereGlowMat", scene);
-          atmosphereGlowMat.emissiveColor = atmosColor;
-          atmosphereGlowMat.disableLighting = true;
-          atmosphereGlowMat.backFaceCulling = false;
-          atmosphereGlowMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
-
-          // Pure 3D Fresnel effect for atmospheric rim glow
-          const atmosFresnel = new BABYLON.FresnelParameters();
-          atmosFresnel.isEnabled = true;
-          atmosFresnel.bias = 0.05;
-          atmosFresnel.power = 3.5;
-          atmosFresnel.leftColor = atmosColor;
-          atmosFresnel.rightColor = BABYLON.Color3.Black();
-          atmosphereGlowMat.emissiveFresnelParameters = atmosFresnel;
-          atmosphereGlowMat.opacityFresnelParameters = atmosFresnel;
-
-          atmosphereGlowMesh.material = atmosphereGlowMat;
-          atmosphereGlowMesh.parent = planetContainer;
-
-          planetContainer.scaling.set(initScale, initScale, initScale);
-          if (celestialGroupRef.current) {
-            planetContainer.parent = celestialGroupRef.current;
-          }
-          celestialMeshInstancesRef.current.push({
-            id: entityId,
-            mesh: planetContainer,
-            entityRef: entity,
-          });
-        } else if (entity.type === "nebula") {
-          const nebContainer = new BABYLON.TransformNode("nebula_group", scene);
-          nebContainer.position.set(wx, wy, -100);
-
-          const nebTex = generateNebulaTexture(entity.color, entity.secondaryColor || entity.color, scene);
-          
-          const numShells = 4;
-          for (let s = 0; s < numShells; s++) {
-            const scaleFactor = 2.4 - s * 0.4;
-            const shellMesh = BABYLON.MeshBuilder.CreateSphere(`neb_shell_${s}`, {
-              diameter: entity.radius * scaleFactor,
-              segments: 16
-            }, scene);
-
-            const shellMat = new BABYLON.PBRMaterial(`neb_shell_mat_${s}`, scene);
-            shellMat.albedoTexture = nebTex;
-            shellMat.emissiveTexture = nebTex;
-            shellMat.emissiveColor = new BABYLON.Color3(0.12, 0.12, 0.12);
-            shellMat.disableLighting = true; // gas emits/absorbs its own light
-            shellMat.backFaceCulling = false;
-            shellMat.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
-
-            shellMat.alpha = 0.45 - s * 0.08;
-
-
-            shellMesh.material = shellMat;
-            shellMesh.parent = nebContainer;
-            
-            // Apply unique offset angles for rotational volumetric parallax
-            shellMesh.rotation.x = (s * 1.15) + 0.5;
-            shellMesh.rotation.y = (s * 2.3) - 0.2;
-            shellMesh.rotation.z = s * -0.75;
-          }
-
-          nebContainer.scaling.set(initScale, initScale, initScale);
-          if (celestialGroupRef.current) {
-            nebContainer.parent = celestialGroupRef.current;
-          }
-          celestialMeshInstancesRef.current.push({
-            id: entityId,
-            mesh: nebContainer,
-            entityRef: entity,
-          });
-        } else if (entity.type === "galaxy") {
-          const galaxyContainer = new BABYLON.TransformNode("galaxy_group", scene);
-          galaxyContainer.position.set(wx, wy, -50);
-
-          const galTex = generateGalaxyTexture(
-            entity.color,
-            entity.secondaryColor || entity.color,
-            scene
-          );
-
-          // Layer 1: Core swirling arms (3D flattened sphere/ellipsoid for depth)
-          const galMat = new BABYLON.StandardMaterial("galMat", scene);
-          galMat.diffuseTexture = galTex;
-          galMat.emissiveTexture = galTex;
-          galMat.disableLighting = true;
-          galMat.backFaceCulling = false;
-          galMat.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
-
-          galMat.useAlphaFromDiffuseTexture = true;
-
-          galMat.alpha = 0.92;
-
-          const galMesh = BABYLON.MeshBuilder.CreateSphere("galaxy_ellipsoid", {
-            diameterX: entity.radius * 2.8,
-            diameterY: entity.radius * 2.8,
-            diameterZ: entity.radius * 0.28,
-            segments: 32
-          }, scene);
-          galMesh.material = galMat;
-          galMesh.rotation.x = Math.PI / 3.8; // beautiful cinematic inclination
-          galMesh.rotation.y = 0.15;
-          galMesh.parent = galaxyContainer;
-
-          // Layer 2: Slow counter-rotation background dust and star fields for depth
-          const galTex2 = generateGalaxyTexture(
-            entity.secondaryColor || entity.color,
-            entity.color,
-            scene
-          );
-          const galMat2 = new BABYLON.StandardMaterial("galMat2", scene);
-          galMat2.diffuseTexture = galTex2;
-          galMat2.emissiveTexture = galTex2;
-          galMat2.disableLighting = true;
-          galMat2.backFaceCulling = false;
-          galMat2.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
-
-          galMat2.useAlphaFromDiffuseTexture = true;
-
-          galMat2.alpha = 0.52;
-
-          const galMesh2 = BABYLON.MeshBuilder.CreateSphere("galaxy_ellipsoid_bg", {
-            diameterX: entity.radius * 3.0,
-            diameterY: entity.radius * 3.0,
-            diameterZ: entity.radius * 0.18,
-            segments: 32
-          }, scene);
-          galMesh2.material = galMat2;
-          galMesh2.rotation.x = Math.PI / 3.8;
-          galMesh2.rotation.y = 0.15;
-          galMesh2.scaling.set(0.92, 0.92, 0.92);
-          galMesh2.parent = galaxyContainer;
-
-          // Layer 3: Central spherical high-brightness core bulb
-          const coreMat = new BABYLON.StandardMaterial("galaxyCoreMat", scene);
-          const gCol = parseColorToRgb(entity.color);
-          coreMat.emissiveColor = new BABYLON.Color3(gCol.r / 255, gCol.g / 255, gCol.b / 255);
-          coreMat.disableLighting = true;
-
-          const coreMesh = BABYLON.MeshBuilder.CreateSphere("galaxy_core", {
-            diameter: entity.radius * 0.65,
-            segments: 16
-          }, scene);
-          coreMesh.material = coreMat;
-          coreMesh.parent = galaxyContainer;
-
-          galaxyContainer.scaling.set(initScale, initScale, initScale);
-          if (celestialGroupRef.current) {
-            galaxyContainer.parent = celestialGroupRef.current;
-          }
-          celestialMeshInstancesRef.current.push({
-            id: entityId,
-            mesh: galaxyContainer,
-            entityRef: entity,
-          });
-        } else if (entity.type === "star") {
-          const starContainer = new BABYLON.TransformNode("star_group", scene);
-          starContainer.position.set(wx, wy, 0);
-
-          // 1. Neutron Star Core (extremely bright white/cyan core)
-          const sCol = parseColorToRgb(entity.secondaryColor || "#ffffff");
-          const coreMat = new BABYLON.StandardMaterial("starCoreMat", scene);
-          coreMat.emissiveColor = new BABYLON.Color3(sCol.r / 255, sCol.g / 255, sCol.b / 255);
-          coreMat.disableLighting = true;
-
-          const coreMesh = BABYLON.MeshBuilder.CreateSphere("star_core", {
-            diameter: entity.radius * 0.8 * 2,
-            segments: 32
-          }, scene);
-          coreMesh.material = coreMat;
-          coreMesh.parent = starContainer;
-
-          // 2. High-energy pulsing outer plasma aura (3D Sphere with Fresnel glow!)
-          const auraTex = createCircularGlowTexture(
-            hexToRgba(entity.color, 0.95),
-            scene
-          );
-          const auraMat = new BABYLON.StandardMaterial("starAuraMat", scene);
-          auraMat.diffuseTexture = auraTex;
-          auraMat.emissiveTexture = auraTex;
-          auraMat.disableLighting = true;
-          auraMat.backFaceCulling = false;
-          auraMat.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
-
-          auraMat.useAlphaFromDiffuseTexture = true;
-
-          auraMat.alpha = 0.9;
-
-          const starFresnel = new BABYLON.FresnelParameters();
-          starFresnel.isEnabled = true;
-          starFresnel.bias = 0.1;
-          starFresnel.power = 2.2;
-          const auraCol = parseColorToRgb(entity.color);
-          starFresnel.leftColor = new BABYLON.Color3(auraCol.r / 255, auraCol.g / 255, auraCol.b / 255);
-          starFresnel.rightColor = BABYLON.Color3.Black();
-          auraMat.emissiveFresnelParameters = starFresnel;
-          auraMat.opacityFresnelParameters = starFresnel;
-
-          const auraMesh = BABYLON.MeshBuilder.CreateSphere("star_aura", {
-            diameter: entity.radius * 3.5,
-            segments: 32
-          }, scene);
-          auraMesh.material = auraMat;
-          auraMesh.parent = starContainer;
-
-          starContainer.scaling.set(initScale, initScale, initScale);
-          if (celestialGroupRef.current) {
-            starContainer.parent = celestialGroupRef.current;
-          }
-          celestialMeshInstancesRef.current.push({
-            id: entityId,
-            mesh: starContainer,
-            entityRef: entity,
-          });
-        }
-      });
-
-      // Just update existing instances coordinates & scale & gentle rotation animation
-      celestialMeshInstancesRef.current.forEach((inst) => {
-        const entity = inst.entityRef;
-        const wx = entity.x - ww / 2;
-        const wy = -(entity.y - wh / 2);
-
-        // Smooth flowing size transition
-        entity.scale = entity.scale ?? 0;
-        
-        if (entity.isDestroyed && entity.destroyedBy === "collision") {
-          // Instant vanish for shattering collisions
-          entity.scale = 0;
-        } else {
-          const targetScale = entity.isDestroyed ? 0 : 1;
-          entity.scale += (targetScale - entity.scale) * 0.08;
-        }
-
-        entity.currentRadius = entity.currentRadius ?? entity.radius;
-        entity.targetRadius = entity.targetRadius ?? entity.radius;
-        entity.currentRadius += (entity.targetRadius - entity.currentRadius) * 0.08;
-
-        entity.originalRadius = entity.originalRadius ?? entity.radius;
-        const radiusScale = entity.currentRadius / entity.originalRadius;
-
-        // Dynamic pulse scaling based on audio frequency bands
-        let dynamicPulse = 1.0;
-        if (entity.type === "star" || entity.type === "blackhole") {
-          dynamicPulse = 1.0 + musicBands.bass * 0.18 + musicBands.mid * 0.08;
-        } else if (entity.type === "planet") {
-          dynamicPulse = 1.0 + musicBands.mid * 0.14 + musicBands.treble * 0.05;
-        } else if (entity.type === "nebula" || entity.type === "galaxy") {
-          dynamicPulse = 1.0 + musicBands.bass * 0.08 + musicBands.mid * 0.06;
-        }
-
-        const finalScale = entity.scale * radiusScale * dynamicPulse;
-
-        // Apply Relativistic Tidal Stretching (Spaghettification) as it nears the black hole!
-        let finalScaleX = finalScale;
-        let finalScaleY = finalScale;
-        let finalScaleZ = finalScale;
-
-        let blackholeDist = 100000;
-        let nearestBh: CelestialEntity | null = null;
-        celestialEntitiesRef.current.forEach((other) => {
-          if (other.type === "blackhole" && !other.isDestroyed && other !== entity) {
-            const odx = other.x - entity.x;
-            const ody = other.y - entity.y;
-            const odist = Math.sqrt(odx * odx + ody * ody);
-            if (odist < blackholeDist) {
-              blackholeDist = odist;
-              nearestBh = other;
-            }
-          }
-        });
-
-        if (nearestBh && entity.type !== "blackhole" && entity.type !== "nebula") {
-          const bh = nearestBh as CelestialEntity;
-          const horizonZone = bh.radius * 3.5;
-          if (blackholeDist < horizonZone) {
-            // Strong gravitational tidal deformation (spaghettification!)
-            const intensity = (horizonZone - blackholeDist) / horizonZone; // 0 to 1
-            const stretchFactor = 1.0 + intensity * 0.65;
-            const compressFactor = 1.0 - intensity * 0.32;
-            
-            finalScaleX = finalScale * stretchFactor;
-            finalScaleY = finalScale * compressFactor;
-            finalScaleZ = finalScale * compressFactor;
-
-            // Rotate the mesh to align with the black hole center so the stretch points towards the singularity!
-            const angleToBh = Math.atan2(bh.y - entity.y, bh.x - entity.x);
-            inst.mesh.rotation.z = -angleToBh; // align rotation to face the black hole!
-          } else {
-            inst.mesh.rotation.z = 0; // reset
-          }
-        } else {
-          inst.mesh.rotation.z = 0; // reset
-        }
-
-        inst.mesh.scaling.set(finalScaleX, finalScaleY, finalScaleZ);
-
-        if (entity.type !== "nebula") {
-          // Calculate gravitational Z-bend potential-well depth
-          let meshZ = entity.z || 0;
-          let meshGravityZ = 0;
-          celestialEntitiesRef.current.forEach((other) => {
-            if (other.isDestroyed || other === entity) return;
-            const odx = other.x - entity.x;
-            const ody = other.y - entity.y;
-            const odist = Math.sqrt(odx * odx + ody * ody) || 1;
-            const range = other.radius * (other.type === "blackhole" ? 3.5 : 2.0);
-            if (odist < range) {
-              const intensity = (range - odist) / range;
-              const pullDepth = other.type === "blackhole" ? 180 : 45;
-              meshGravityZ += Math.pow(intensity, 1.8) * pullDepth;
-            }
-          });
-          meshZ += meshGravityZ;
-
-          inst.mesh.position.set(wx, wy, meshZ);
-        } else {
-          inst.mesh.position.set(wx, wy, -30);
-          if (cameraRef.current) {
-            inst.mesh.rotation.copyFrom(cameraRef.current.rotation);
-          }
-        }
-
-        // Spin spheres/disks using Babylon getChildMeshes for ALL celestial bodies
-        const isPulse = isShockwaveActiveRef.current;
-        inst.mesh.getChildMeshes().forEach((child) => {
-          if (child.name === "planet_sphere" || child.name === "star_core" || child.name === "galaxy_core" || child.name === "planet_clouds") {
-            const spinBase = child.name === "star_core" ? 0.008 : (child.name === "planet_clouds" ? 0.0065 : 0.0042);
-            child.rotation.y += spinBase + musicBands.mid * 0.02 + musicBands.treble * 0.01;
-            if (child.name === "planet_clouds") {
-              child.rotation.x += 0.0003; // elegant independent cloud tilt drift
-            }
-          } else if (child.name.indexOf("galaxy_ellipsoid_bg") !== -1) {
-            child.rotation.z -= 0.0016 + (isPulse ? 0.012 : 0) + musicBands.bass * 0.006;
-          } else if (child.name.indexOf("galaxy_ellipsoid") !== -1) {
-            child.rotation.z += 0.0024 + (isPulse ? 0.016 : 0) + musicBands.mid * 0.008;
-          } else if (child.name.indexOf("accretion_layer_1") !== -1) {
-            child.rotation.z += 0.007 + musicBands.bass * 0.02;
-            const pulse = 1.0 + Math.sin(Date.now() * 0.0035) * 0.05 + musicAmp * 0.25;
-            child.scaling.set(pulse, pulse, pulse);
-          } else if (child.name.indexOf("accretion_layer_2") !== -1) {
-            child.rotation.z -= 0.011 + musicBands.mid * 0.02;
-            const pulse = 1.0 + Math.cos(Date.now() * 0.0025) * 0.04 + musicAmp * 0.2;
-            child.scaling.set(pulse, pulse, pulse);
-          } else if (child.name.indexOf("gravitational_lensing") !== -1) {
-            child.rotation.z += 0.003 + musicBands.bass * 0.01;
-            const pulse = 1.0 + Math.sin(Date.now() * 0.0015) * 0.06 + musicAmp * 0.3;
-            child.scaling.set(pulse, pulse, pulse);
-          } else if (child.name.indexOf("nebula_sphere_1") !== -1) {
-            child.rotation.y += 0.0008 + musicBands.mid * 0.003;
-            child.rotation.x += 0.0004 + musicBands.mid * 0.002;
-          } else if (child.name.indexOf("nebula_sphere_2") !== -1) {
-            child.rotation.y -= 0.0006 + musicBands.mid * 0.002;
-            child.rotation.z += 0.0005 + musicBands.mid * 0.001;
-          } else {
-            child.rotation.z += 0.003 + musicBands.mid * 0.005;
-          }
-
-          // Animate texture offsets dynamically for a living, flowing space look!
-          if (child.material) {
-            const mat = child.material;
-            let tex: BABYLON.Texture | null = null;
-            if (mat instanceof BABYLON.StandardMaterial && mat.diffuseTexture instanceof BABYLON.Texture) {
-              tex = mat.diffuseTexture;
-            } else if (mat instanceof BABYLON.PBRMaterial && mat.albedoTexture instanceof BABYLON.Texture) {
-              tex = mat.albedoTexture as BABYLON.Texture;
-            }
-
-            if (tex) {
-              if (child.name === "planet_sphere" || child.name === "planet_clouds") {
-                const shift = child.name === "planet_clouds" ? 0.0013 : 0.00075;
-                tex.uOffset += shift + musicBands.mid * 0.0015;
-                if (mat instanceof BABYLON.PBRMaterial && mat.bumpTexture instanceof BABYLON.Texture) {
-                  mat.bumpTexture.uOffset = tex.uOffset;
-                }
-              } else if (child.name.indexOf("nebula_sphere") !== -1) {
-                tex.uOffset += 0.0004 + musicBands.mid * 0.001;
-                tex.vOffset += 0.0002 + musicBands.mid * 0.0005;
-              } else if (child.name === "star_aura") {
-                tex.uOffset += 0.002 + musicBands.bass * 0.008;
-                tex.vOffset -= 0.001 + musicBands.mid * 0.004;
-              } else if (child.name.indexOf("accretion_layer") !== -1 || child.name.indexOf("gravitational_lensing") !== -1) {
-                tex.uOffset += 0.004 + musicBands.bass * 0.01;
-              } else if (child.name.indexOf("galaxy_ellipsoid") !== -1) {
-                tex.wAng += 0.0015 + musicBands.mid * 0.005;
-              }
-
-              // Sync emissive/bump/cloud textures if applicable
-              if (mat.emissiveTexture && mat.emissiveTexture instanceof BABYLON.Texture) {
-                mat.emissiveTexture.uOffset = tex.uOffset;
-                mat.emissiveTexture.vOffset = tex.vOffset;
-                if (child.name.indexOf("galaxy_ellipsoid") !== -1) {
-                  mat.emissiveTexture.wAng = (tex as any).wAng || 0;
-                }
-              }
-            }
-          }
-        });
-      });
-
-    // 5. Dynamic Group Opacity Transition: Elegant background fade based on isInterstellar stage
-    let targetGroupOpacity = isInterstellarRef.current ? 1.0 : 0.32;
-    if (stageRef.current === 0 && !isInterstellarRef.current) {
-      targetGroupOpacity = 0.45 + (screensaverOpacityRef.current * 0.55);
-    } else {
-      const stageChangeElapsed = Date.now() - lastStageChangeRef.current;
-      if (!isInterstellarRef.current) {
-        if (stageChangeElapsed < 4000) {
-          if (stageChangeElapsed < 3000) {
-            targetGroupOpacity = 0.0;
-          } else {
-            const fadeProgress = (stageChangeElapsed - 3000) / 1000; // 0 to 1
-            targetGroupOpacity = 0.32 * fadeProgress;
-          }
-        }
-      }
-    }
-
-    if (celestialGroupRef.current) {
-      celestialGroupRef.current.getChildMeshes(false).forEach((child) => {
-        if (child.material && child.material instanceof BABYLON.StandardMaterial) {
-          const mat = child.material;
-          if (child.name === "event_horizon_core") {
-            mat.needDepthBufferWrite = true;
-            mat.alpha = isInterstellarRef.current ? 1.0 : targetGroupOpacity;
-            return;
-          }
-
-          if (!mat.metadata) {
-            mat.metadata = { baseOpacity: mat.alpha ?? 1.0, fadeIn: 0.01 };
-          }
-          if (mat.metadata.fadeIn < 1.0) {
-            mat.metadata.fadeIn += 0.06; // smoothly fade in over ~16 frames
-            if (mat.metadata.fadeIn > 1.0) mat.metadata.fadeIn = 1.0;
-          }
-          const baseOpacity = mat.metadata.baseOpacity * mat.metadata.fadeIn;
-          const musicPulseOpacity = 0.38 * musicAmp;
-          mat.alpha = baseOpacity * (targetGroupOpacity + musicPulseOpacity * (1 - targetGroupOpacity));
-        }
-      });
-    }
-    } catch (err) {
-      console.error("[DEBUG] Error in updateCelestial3DMeshes:", err);
-    }
-  };
-
-  // Dynamically calculate the spacetime fabric distortion based on gravity wells of active celestial bodies
-  const getSpacetimeFabricDistortion = (
-    wx: number, 
-    wy: number, 
-    ww: number, 
-    wh: number, 
-    activeRipples: { x: number; y: number; life: number; maxDist: number; bandWidth: number; minDistSq: number; maxDistBoundSq: number }[],
-    time: number,
-    disturbance: number
-  ) => {
-      let gravityZ = 0;
-      
-      celestialEntitiesRef.current.forEach((entity) => {
-        if (entity.isDestroyed) return;
-        const ex = entity.x - ww / 2;
-        const ey = -(entity.y - wh / 2);
-        
-        const dx = ex - wx;
-        const dy = ey - wy;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        
-        const range = entity.radius * (entity.type === "blackhole" ? 3.5 : 1.8);
-        if (dist < range) {
-          const intensity = (range - dist) / range;
-          // Sag deeper near massive objects, dynamically influenced by the disturbance level
-          const pullDepth = entity.type === "blackhole" ? 180 : 45;
-          gravityZ += Math.pow(intensity, 1.8) * pullDepth * (0.2 + disturbance * 0.8);
-        }
-      });
-
-      // Ripple effects warping the fabric dynamically
-      activeRipples.forEach((ripple) => {
-        const rx = ripple.x - ww / 2;
-        const ry = -(ripple.y - wh / 2);
-        const dx = rx - wx;
-        const dy = ry - wy;
-        const distSq = dx * dx + dy * dy;
-        
-        if (distSq > ripple.minDistSq && distSq < ripple.maxDistBoundSq) {
-          const dist = Math.sqrt(distSq);
-          const rForce = (1.0 - Math.abs(dist - ripple.maxDist) / ripple.bandWidth) * ripple.life;
-          gravityZ += rForce * 25; 
-        }
-      });
-
-      // Peaceful traveling electric waves of energy flowing smoothly across the spacetime fabric
-      if (disturbance > 0.01) {
-        const pulseWave = Math.sin((wx + wy) * 0.012 - time * 0.06) * 6 * Math.min(1.0, disturbance);
-        gravityZ += pulseWave;
-      }
-      
-      return gravityZ;
   };
 
   useEffect(() => {
@@ -5016,287 +3057,316 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       window.addEventListener("deviceorientation", handleDeviceOrientation);
     }
 
+
     // --- WORMHOLE TRANSIT LOGIC ---
     let tunnelMesh: BABYLON.Mesh | null = null;
     let tunnelMaterial: BABYLON.ShaderMaterial | null = null;
     let flyingObjects: BABYLON.Mesh[] = [];
     let pbrPlanets: BABYLON.Mesh[] = [];
+    let pbrStarLight: BABYLON.PointLight | null = null;
     let transitStartTime = 0;
-    let transitObserver: BABYLON.Observer<BABYLON.Scene> | null = null;
+    let transitCameraZ = 0;
 
     const startWormholeTransit = async (targetPos?: BABYLON.Vector3, viewDir?: BABYLON.Vector3) => {
       console.log("[DEBUG] startWormholeTransit triggered!");
+      console.log("[DEBUG] startWormholeTransit called", { targetPos, viewDir });
       if (isTransitActiveRef.current) return;
-
-      const engine = rendererRef.current;
-      const camera = cameraRef.current;
-      const scene = sceneRef.current;
-      if (!scene || scene.isDisposed || !camera || !engine) return;
-
       isTransitActiveRef.current = true;
       transitStartTime = Date.now();
 
-      try {
-        // Guarantee wormhole post-process exists
-        if (!wormholePostProcessRef.current && camera) {
-          const wormholePP = new BABYLON.PostProcess("WormholePP", "wormhole", ["time", "intensity"], null, 1.0, camera);
-          wormholePP.onApply = (effect) => {
-            wormholeTimeRef.current += 0.016;
-            effect.setFloat("time", wormholeTimeRef.current);
-            effect.setFloat("intensity", wormholeIntensityRef.current);
-          };
-          wormholePostProcessRef.current = wormholePP;
-        }
+      const engine = rendererRef.current;
+      if (!scene || !camera || !engine) return;
 
-        wormholeTimeRef.current = 0.0;
-        wormholeIntensityRef.current = 1.0;
+      // 1. Custom PostProcess: Radial blur & Chromatic Aberration
+      wormholeTimeRef.current = 0.0;
+      wormholeIntensityRef.current = 1.0;
 
-        // Animate FOV gently
-        BABYLON.Animation.CreateAndStartAnimation("fovAnim", camera, "fov", 60, 60, camera.fov, 1.6, 0, new BABYLON.QuadraticEase());
+      // Animate FOV to widen gently
+      BABYLON.Animation.CreateAndStartAnimation("fovAnim", camera, "fov", 60, 60, camera.fov, 1.6, 0 /* loop */, new BABYLON.QuadraticEase());
 
-        const origCameraPos = camera.position.clone();
-        const dir = viewDir ? viewDir.normalize() : new BABYLON.Vector3(0, 0, 1);
-        const lookAtPoint = origCameraPos.add(dir.scale(2000));
-        camera.setTarget(lookAtPoint);
+      const origCameraPos = camera.position.clone();
+      const dir = viewDir ? viewDir.normalize() : new BABYLON.Vector3(0, 0, 1);
+      
+      // Look straight ahead in the travel direction to avoid disorienting target-rotation snaps!
+      const lookAtPoint = origCameraPos.add(dir.scale(2000));
+      camera.setTarget(lookAtPoint);
 
-        const flyDestination = targetPos || origCameraPos.add(dir.scale(1200));
-        const easeInOut = new BABYLON.CubicEase();
-        easeInOut.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEINOUT);
-        BABYLON.Animation.CreateAndStartAnimation("camTransitAnim", camera, "position", 60, 180, origCameraPos, flyDestination, 0, easeInOut);
+      const flyDestination = targetPos || origCameraPos.add(dir.scale(1200));
+      
+      // EASE-IN-OUT: Camera gracefully accelerates and decelerates into and out of the wormhole
+      const easeInOut = new BABYLON.CubicEase();
+      easeInOut.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEINOUT);
+      BABYLON.Animation.CreateAndStartAnimation("camTransitAnim", camera, "position", 60, 180, origCameraPos, flyDestination, 0, easeInOut);
 
-        // Generate Transit Tunnel
-        const path = [];
-        const dirForPath = viewDir ? viewDir.normalize() : new BABYLON.Vector3(0, 0, 1);
-        for (let i = 0; i < 60; i++) {
+      // Generate Tube (Transit Tunnel) starting 400 units in front of camera
+      const path = [];
+      const dirForPath = viewDir ? viewDir.normalize() : new BABYLON.Vector3(0, 0, 1);
+      for (let i = 0; i < 60; i++) {
           path.push(origCameraPos.add(dirForPath.scale(400 + i * 45)));
+      }
+      tunnelMesh = BABYLON.MeshBuilder.CreateTube("wormhole_tunnel", { path: path, radius: 35, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
+      tunnelMesh.metadata = { dir: dirForPath };
+
+      // Build wormhole entrance portal meshes at tunnel start
+      const tunnelStartPos = origCameraPos.add(dirForPath.scale(400));
+
+      const mouthMesh = BABYLON.MeshBuilder.CreateTorus("wormhole_mouth", { diameter: 72, thickness: 3.5, tessellation: 64 }, scene);
+      mouthMesh.position = tunnelStartPos;
+      mouthMesh.lookAt(origCameraPos);
+      
+      const mouthMat = new BABYLON.PBRMaterial("mouthMat", scene);
+      mouthMat.emissiveColor = new BABYLON.Color3(0.0, 0.9, 1.0); // Neon blue glow
+      mouthMat.albedoColor = new BABYLON.Color3(0.05, 0.0, 0.2);
+      mouthMat.metallic = 0.9;
+      mouthMat.roughness = 0.1;
+      mouthMesh.material = mouthMat;
+      flyingObjects.push(mouthMesh);
+
+      const vortexDisc = BABYLON.MeshBuilder.CreateDisc("vortex_disc", { radius: 35, tessellation: 64 }, scene);
+      vortexDisc.position = tunnelStartPos.add(dirForPath.scale(0.5));
+      vortexDisc.lookAt(origCameraPos);
+      
+      BABYLON.Effect.ShadersStore["vortexVertexShader"] = `
+        precision highp float;
+        attribute vec3 position;
+        attribute vec2 uv;
+        uniform mat4 worldViewProjection;
+        varying vec2 vUV;
+        void main(void) {
+            vUV = uv;
+            gl_Position = worldViewProjection * vec4(position, 1.0);
         }
-        tunnelMesh = BABYLON.MeshBuilder.CreateTube("wormhole_tunnel", { path: path, radius: 35, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
-        tunnelMesh.metadata = { dir: dirForPath };
-
-        // Entrance mouth portal mesh
-        const tunnelStartPos = origCameraPos.add(dirForPath.scale(400));
-        const mouthMesh = BABYLON.MeshBuilder.CreateTorus("wormhole_mouth", { diameter: 72, thickness: 3.5, tessellation: 64 }, scene);
-        mouthMesh.position = tunnelStartPos;
-        mouthMesh.lookAt(origCameraPos);
-        const mouthMat = new BABYLON.PBRMaterial("mouthMat", scene);
-        mouthMat.emissiveColor = new BABYLON.Color3(0.0, 0.9, 1.0);
-        mouthMat.albedoColor = new BABYLON.Color3(0.05, 0.0, 0.2);
-        mouthMat.metallic = 0.9;
-        mouthMat.roughness = 0.1;
-        mouthMesh.material = mouthMat;
-        flyingObjects.push(mouthMesh);
-
-        // Vortex disc mesh
-        const vortexDisc = BABYLON.MeshBuilder.CreateDisc("vortex_disc", { radius: 35, tessellation: 64 }, scene);
-        vortexDisc.position = tunnelStartPos.add(dirForPath.scale(0.5));
-        vortexDisc.lookAt(origCameraPos);
-
-        BABYLON.Effect.ShadersStore["vortexVertexShader"] = `
-          precision highp float;
-          attribute vec3 position;
-          attribute vec2 uv;
-          uniform mat4 worldViewProjection;
-          varying vec2 vUV;
-          void main(void) {
-              vUV = uv;
-              gl_Position = worldViewProjection * vec4(position, 1.0);
-          }
-        `;
-        BABYLON.Effect.ShadersStore["vortexPixelShader"] = `
-          precision highp float;
-          varying vec2 vUV;
-          uniform float time;
-          void main(void) {
-              vec2 uv = vUV - vec2(0.5);
-              float dist = length(uv);
-              float angle = atan(uv.y, uv.x);
-              float spiral = sin(angle * 3.0 - dist * 6.5 + time * 1.8) * 0.5 + 0.5;
-              float fade = smoothstep(0.5, 0.0, dist);
-              vec3 deepViolet = vec3(0.42, 0.0, 0.85);
-              vec3 cosmicAzure = vec3(0.0, 0.72, 1.0);
-              vec3 color = mix(deepViolet, cosmicAzure, spiral);
-              gl_FragColor = vec4(color * 1.3, fade * 0.85);
-          }
-        `;
-
-        const vortexMaterial = new BABYLON.ShaderMaterial("vortexMat", scene, {
+      `;
+      BABYLON.Effect.ShadersStore["vortexPixelShader"] = `
+        precision highp float;
+        varying vec2 vUV;
+        uniform float time;
+        void main(void) {
+            vec2 uv = vUV - vec2(0.5);
+            float dist = length(uv);
+            float angle = atan(uv.y, uv.x);
+            
+            // Slow, majestic spinning cosmic vortex with low frequency spiral arms
+            float spiral = sin(angle * 3.0 - dist * 6.5 + time * 1.8) * 0.5 + 0.5;
+            float fade = smoothstep(0.5, 0.0, dist);
+            
+            // Blend beautiful nebulous colors: violet-magenta and electric azure
+            vec3 deepViolet = vec3(0.42, 0.0, 0.85);
+            vec3 cosmicAzure = vec3(0.0, 0.72, 1.0);
+            vec3 color = mix(deepViolet, cosmicAzure, spiral);
+            
+            // Soft ethereal glow rather than harsh overexposure
+            gl_FragColor = vec4(color * 1.3, fade * 0.85);
+        }
+      `;
+      
+      const vortexMaterial = new BABYLON.ShaderMaterial("vortexMat", scene, {
           vertex: "vortex",
           fragment: "vortex",
-        }, {
+      }, {
           attributes: ["position", "uv"],
           uniforms: ["worldViewProjection", "time"]
-        });
-        vortexMaterial.backFaceCulling = false;
-        vortexMaterial.needAlphaBlending = () => true;
-        vortexDisc.material = vortexMaterial;
-        flyingObjects.push(vortexDisc);
+      });
+      vortexMaterial.backFaceCulling = false;
+      vortexMaterial.needAlphaBlending = () => true;
+      vortexDisc.material = vortexMaterial;
+      flyingObjects.push(vortexDisc);
+      
+      BABYLON.Effect.ShadersStore["tunnelVertexShader"] = `
+        precision highp float;
+        attribute vec3 position;
+        attribute vec2 uv;
+        uniform mat4 worldViewProjection;
+        varying vec2 vUV;
+        void main(void) {
+            vUV = uv;
+            gl_Position = worldViewProjection * vec4(position, 1.0);
+        }
+      `;
+      BABYLON.Effect.ShadersStore["tunnelPixelShader"] = `
+        precision highp float;
+        varying vec2 vUV;
+        uniform float time;
+        void main(void) {
+            vec2 uv = vUV;
+            
+            // Gentle, slow-moving plasma wave flow
+            float slowWave1 = sin(uv.y * 8.0 - time * 1.5 + sin(uv.x * 3.0)) * 0.5 + 0.5;
+            float slowWave2 = cos(uv.y * 14.0 - time * 1.0 + cos(uv.x * 5.0)) * 0.5 + 0.5;
+            
+            // Soft neon fibers / glowing threads that glide rather than strobe
+            float fiberPattern = sin(uv.x * 12.0 + time * 0.5) * cos(uv.y * 22.0 - time * 1.2) * 0.5 + 0.5;
+            float softFiber = pow(fiberPattern, 3.0);
+            
+            vec3 spaceBlue = vec3(0.01, 0.04, 0.18);
+            vec3 purpleNeon = vec3(0.38, 0.0, 0.72);
+            vec3 electricCyan = vec3(0.0, 0.75, 0.95);
+            
+            vec3 baseColor = mix(spaceBlue, purpleNeon, slowWave1 * 0.6);
+            baseColor = mix(baseColor, electricCyan, slowWave2 * 0.35);
+            
+            vec3 finalColor = baseColor + electricCyan * softFiber * 1.4;
+            float alpha = 0.55 + slowWave1 * 0.2 + softFiber * 0.25;
+            
+            gl_FragColor = vec4(finalColor, alpha);
+        }
+      `;
 
-        BABYLON.Effect.ShadersStore["tunnelVertexShader"] = `
-          precision highp float;
-          attribute vec3 position;
-          attribute vec2 uv;
-          uniform mat4 worldViewProjection;
-          varying vec2 vUV;
-          void main(void) {
-              vUV = uv;
-              gl_Position = worldViewProjection * vec4(position, 1.0);
-          }
-        `;
-        BABYLON.Effect.ShadersStore["tunnelPixelShader"] = `
-          precision highp float;
-          varying vec2 vUV;
-          uniform float time;
-          void main(void) {
-              vec2 uv = vUV;
-              float slowWave1 = sin(uv.y * 8.0 - time * 1.5 + sin(uv.x * 3.0)) * 0.5 + 0.5;
-              float slowWave2 = cos(uv.y * 14.0 - time * 1.0 + cos(uv.x * 5.0)) * 0.5 + 0.5;
-              float fiberPattern = sin(uv.x * 12.0 + time * 0.5) * cos(uv.y * 22.0 - time * 1.2) * 0.5 + 0.5;
-              float softFiber = pow(fiberPattern, 3.0);
-              vec3 spaceBlue = vec3(0.01, 0.04, 0.18);
-              vec3 purpleNeon = vec3(0.38, 0.0, 0.72);
-              vec3 electricCyan = vec3(0.0, 0.75, 0.95);
-              vec3 baseColor = mix(spaceBlue, purpleNeon, slowWave1 * 0.6);
-              baseColor = mix(baseColor, electricCyan, slowWave2 * 0.35);
-              vec3 finalColor = baseColor + electricCyan * softFiber * 1.4;
-              float alpha = 0.55 + slowWave1 * 0.2 + softFiber * 0.25;
-              gl_FragColor = vec4(finalColor, alpha);
-          }
-        `;
-
-        tunnelMaterial = new BABYLON.ShaderMaterial("tunnelMat", scene, {
+      tunnelMaterial = new BABYLON.ShaderMaterial("tunnelMat", scene, {
           vertex: "tunnel",
           fragment: "tunnel",
-        }, {
+      }, {
           attributes: ["position", "uv"],
           uniforms: ["worldViewProjection", "time"]
-        });
-        tunnelMesh.material = tunnelMaterial;
+      });
+      tunnelMesh.material = tunnelMaterial;
 
-        // Abstract geometries
-        const dirForObjs = viewDir ? viewDir.normalize() : new BABYLON.Vector3(0, 0, 1);
-        for (let i = 0; i < 20; i++) {
+      // Populate with abstract geometries
+      
+      const dirForObjs = viewDir ? viewDir.normalize() : new BABYLON.Vector3(0, 0, 1);
+      for (let i = 0; i < 20; i++) {
           let mesh = i % 2 === 0 ? BABYLON.MeshBuilder.CreateTorusKnot("tk" + i, {radius: 2, tube: 0.5}, scene) : BABYLON.MeshBuilder.CreatePolyhedron("ph" + i, {type: 2, size: 3}, scene);
+          // Distribute along the tunnel direction
           const forwardOffset = Math.random() * 1000 + 100;
           const radialOffset = new BABYLON.Vector3((Math.random() - 0.5) * 60, (Math.random() - 0.5) * 60, 0);
           mesh.position = origCameraPos.add(dirForObjs.scale(forwardOffset)).add(radialOffset);
-
+          
           let mat = new BABYLON.StandardMaterial("std" + i, scene);
           mat.emissiveColor = new BABYLON.Color3(Math.random(), Math.random(), Math.random());
           mat.wireframe = true;
           mesh.material = mat;
           flyingObjects.push(mesh);
-        }
+      }
 
-        // Attach transit animation observer for the duration of transit
-        if (transitObserver) {
-          scene.onBeforeRenderObservable.remove(transitObserver);
-          transitObserver = null;
-        }
-
-        transitObserver = scene.onBeforeRenderObservable.add(() => {
-          if (isTransitActiveRef.current && tunnelMaterial) {
-            const elapsedSeconds = (Date.now() - transitStartTime) * 0.001;
-            tunnelMaterial.setFloat("time", elapsedSeconds * 5.0);
-
-            const vortex = scene.getMeshByName("vortex_disc");
-            if (vortex && vortex.material) {
-              (vortex.material as BABYLON.ShaderMaterial).setFloat("time", elapsedSeconds);
-            }
-
-            const moveDir = tunnelMesh && tunnelMesh.metadata && tunnelMesh.metadata.dir ? tunnelMesh.metadata.dir : new BABYLON.Vector3(0, 0, 1);
-            flyingObjects.forEach(m => {
-              if (m && !m.isDisposed) {
-                m.position.subtractInPlace(moveDir.scale(5));
-                m.rotation.x += 0.05;
-                m.rotation.y += 0.05;
-                if (camera && BABYLON.Vector3.Distance(m.position, camera.position) < 50) {
-                  m.position.addInPlace(moveDir.scale(1000));
-                }
-              }
-            });
-          }
-        });
-
-        // Completion timeout after 3 seconds
-        setTimeout(() => {
+      // 3. New Solar System (After 3 seconds)
+      setTimeout(() => {
           try {
-            if (!scene || scene.isDisposed) return;
+          if (!scene || scene.isDisposed) return;
+          const geminiData = nextGeminiSceneRef.current;
+          
+          scene.stopAnimation(camera);
+          camera.animations = [];
 
-            if (transitObserver) {
-              scene.onBeforeRenderObservable.remove(transitObserver);
-              transitObserver = null;
-            }
+          // Decelerate camera & restore FOV
+          BABYLON.Animation.CreateAndStartAnimation("fovAnimRest", camera, "fov", 60, 60, camera.fov, fovRef.current * Math.PI / 180 || 1.0, 0, new BABYLON.QuadraticEase());
 
-            scene.stopAnimation(camera);
-            camera.animations = [];
-
-            // Restore camera FOV and reset camera directly to standard framing position facing target Zero
-            const cameraZ = cameraZRef.current;
-            camera.fov = (fovRef.current * Math.PI) / 180 || 1.0;
-            camera.position.set(0, 0, -cameraZ);
-            camera.setTarget(BABYLON.Vector3.Zero());
-
-            wormholeIntensityRef.current = 0.0;
-
-            if (tunnelMesh) {
+          // Warp camera to give the illusion of exiting the wormhole, then glide to rest position
+          camera.position = new BABYLON.Vector3(0, 0, -cameraZRef.current - 1500);
+          camera.setTarget(BABYLON.Vector3.Zero());
+          
+          const restStartPos = camera.position.clone();
+          BABYLON.Animation.CreateAndStartAnimation(
+              "camRestAnim", 
+              camera, 
+              "position", 
+              60, 
+              90, 
+              restStartPos, 
+              new BABYLON.Vector3(0, 0, -cameraZRef.current), 
+              0, 
+              new BABYLON.CubicEase(),
+              () => {
+                  isTransitActiveRef.current = false;
+                  if (cameraRef.current) {
+                      transitionStartTimeRef.current = Date.now();
+                      transitionActiveRef.current = true;
+                      transitionStartPosRef.current = cameraRef.current.position.clone();
+                  }
+                  if (animationComplete) {
+                      animationComplete();
+                  }
+              }
+          );
+          
+          console.log("[DEBUG] Turning off wormholePostProcess intensity");
+          wormholeIntensityRef.current = 0.0;
+          if (wormholePostProcessRef.current) {
+              wormholePostProcessRef.current.dispose();
+              wormholePostProcessRef.current = null;
+          }
+                    
+          if (tunnelMesh) {
               tunnelMesh.dispose();
-              tunnelMesh = null;
-            }
-            if (tunnelMaterial) {
+          }
+          if (tunnelMaterial) {
               tunnelMaterial.dispose();
               tunnelMaterial = null;
-            }
-            flyingObjects.forEach(m => {
-              if (m) {
-                if (m.material) m.material.dispose();
-                m.dispose();
-              }
-            });
-            flyingObjects = [];
-
-            const ww = window.innerWidth;
-            const wh = window.innerHeight;
-
-            isInterstellarRef.current = true;
-
-            const geminiData = nextGeminiSceneRef.current;
-            if (geminiData) {
-              nextGeminiSceneRef.current = geminiData;
-            }
-            generateInterstellarScene(ww, wh, true);
-            mapParticlesToInterstellar(ww, wh);
-
-            isTransitActiveRef.current = false;
-
-            if (animationComplete) {
-              animationComplete();
-            }
-          } catch (e) {
-            console.error("[DEBUG] Error inside transit setTimeout:", e);
-            wormholeIntensityRef.current = 0.0;
-            isTransitActiveRef.current = false;
           }
-        }, 3000);
+          flyingObjects.forEach(m => {
+              if (m) {
+                  if (m.material) m.material.dispose();
+                  m.dispose();
+              }
+          });
+          
+          flyingObjects = [];
+          tunnelMesh = null;
 
-      } catch (err) {
-        console.error("[DEBUG] Error starting wormhole transit:", err);
-        wormholeIntensityRef.current = 0.0;
-        isTransitActiveRef.current = false;
-      }
+          const ww = window.innerWidth;
+          const wh = window.innerHeight;
+
+
+          isInterstellarRef.current = true;
+
+          // Generate Pristine Solar System using high-fidelity engine and our fetched Gemini scene data
+          if (geminiData) {
+              nextGeminiSceneRef.current = geminiData; 
+          }
+          generateInterstellarScene(ww, wh, true);
+          mapParticlesToInterstellar(ww, wh);
+          } catch (e) {
+              console.error("[DEBUG] Error inside transit setTimeout:", e);
+              isTransitActiveRef.current = false;
+          }
+      }, 3000);
     };
 
     const triggerPlanetaryFlyby = (targetNode: any) => {
         if (!camera || isTransitActiveRef.current) return;
         isTransitActiveRef.current = true;
         const targetPos = targetNode.getAbsolutePosition().clone();
+        // Cinematic flyby: animate camera to a point near the planet
         const offset = new BABYLON.Vector3(250, 150, 350);
         const flyToPos = targetPos.add(offset);
-
+        
         BABYLON.Animation.CreateAndStartAnimation("camFly", camera, "position", 60, 120, camera.position, flyToPos, 0, new BABYLON.CubicEase(), () => {
             isTransitActiveRef.current = false;
         });
         BABYLON.Animation.CreateAndStartAnimation("camTarget", camera, "target", 60, 120, camera.getTarget(), targetPos, 0, new BABYLON.CubicEase());
     };
+
+    let transitObserver: BABYLON.Observer<BABYLON.Scene> | null = null;
+    transitObserver = scene.onBeforeRenderObservable.add(() => {
+        if (isTransitActiveRef.current && tunnelMaterial) {
+            const elapsedSeconds = (Date.now() - transitStartTime) * 0.001;
+            tunnelMaterial.setFloat("time", elapsedSeconds * 5.0);
+            
+            const vortex = scene.getMeshByName("vortex_disc");
+            if (vortex && vortex.material) {
+                (vortex.material as BABYLON.ShaderMaterial).setFloat("time", elapsedSeconds);
+            }
+            
+            const moveDir = tunnelMesh && tunnelMesh.metadata && tunnelMesh.metadata.dir ? tunnelMesh.metadata.dir : new BABYLON.Vector3(0, 0, 1);
+            flyingObjects.forEach(m => {
+                m.position.subtractInPlace(moveDir.scale(5));
+                m.rotation.x += 0.05;
+                m.rotation.y += 0.05;
+                // If it goes behind the camera, wrap it to the front
+                if (camera && BABYLON.Vector3.Distance(m.position, camera.position) < 50) {
+                     m.position.addInPlace(moveDir.scale(1000));
+                }
+            });
+        } else if (!isTransitActiveRef.current) { if (transitObserver) { scene.onBeforeRenderObservable.remove(transitObserver); transitObserver = null; } }
+        // Very basic rotation for PBR planets
+        if (!isTransitActiveRef.current && pbrPlanets.length > 1) {
+            for (let i = 1; i < pbrPlanets.length; i++) {
+                const p = pbrPlanets[i];
+                p.position.x = p.position.x * Math.cos(0.001) - p.position.z * Math.sin(0.001);
+                p.position.z = p.position.x * Math.sin(0.001) + p.position.z * Math.cos(0.001);
+                p.rotation.y += 0.01;
+            }
+        }
+    });
 
     scene.onPointerObservable.add((pointerInfo) => {
         if (pointerInfo.type === BABYLON.PointerEventTypes.POINTERDOWN) {

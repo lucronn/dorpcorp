@@ -1,26 +1,35 @@
 const fs = require('fs');
-let code = fs.readFileSync('src/components/ParticleCanvas.tsx', 'utf8');
+let code = fs.readFileSync('src/components/ParticleCanvas.tsx', 'utf-8');
 
+// Replace standard console.log with one that also posts to our error endpoint for critical stuff, 
+// or just wrap the setTimeout body in a try/catch.
 code = code.replace(
-`    const generateInterstellarScene = (width: number, height: number) => {`,
-`    const generateInterstellarScene = (width: number, height: number) => {
-      console.log("[DEBUG] generateInterstellarScene called. Current stage:", stageRef.current, "isInterstellarRef:", isInterstellarRef.current);`
+  /setTimeout\(\(\) => \{\n\s*if \(\!scene \|\| scene\.isDisposed\) return;/g,
+  `setTimeout(() => {
+          try {
+          if (!scene || scene.isDisposed) return;`
 );
 
 code = code.replace(
-`    transitionToNewEntities(entities);
-    interstellarSceneGeneratedTimeRef.current = Date.now();
-    registerAndSaveSequence(systemName, systemDesc, systemTags, entities);`,
-`    console.log("[DEBUG] Entities generated: ", entities.length, "bh:", entities.filter(e => e.type === 'blackhole').length, "planets:", entities.filter(e => e.type === 'planet').length);
-    transitionToNewEntities(entities);
-    interstellarSceneGeneratedTimeRef.current = Date.now();
-    registerAndSaveSequence(systemName, systemDesc, systemTags, entities);`
-);
+  /flyingObjects = \[\];\n\s*tunnelMesh = null;\n\n\s*const ww = window\.innerWidth;\n\s*const wh = window\.innerHeight;\n\n\s*isInterstellarRef\.current = true;\n\n\s*if \(geminiData\) \{\n\s*nextGeminiSceneRef\.current = geminiData; \n\s*\}\n\s*generateInterstellarScene\(ww, wh, true\);\n\s*mapParticlesToInterstellar\(ww, wh\);\n\s*\}, 3000\);/g,
+  `flyingObjects = [];
+          tunnelMesh = null;
 
-code = code.replace(
-`    const startWormholeTransit = async (targetPos?: BABYLON.Vector3, viewDir?: BABYLON.Vector3) => {`,
-`    const startWormholeTransit = async (targetPos?: BABYLON.Vector3, viewDir?: BABYLON.Vector3) => {
-      console.log("[DEBUG] startWormholeTransit triggered!");`
+          const ww = window.innerWidth;
+          const wh = window.innerHeight;
+
+          isInterstellarRef.current = true;
+
+          if (geminiData) {
+              nextGeminiSceneRef.current = geminiData; 
+          }
+          generateInterstellarScene(ww, wh, true);
+          mapParticlesToInterstellar(ww, wh);
+          } catch(err) {
+             console.error(err);
+             fetch('/api/log-error', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: err.stack || err.message }) });
+          }
+      }, 3000);`
 );
 
 fs.writeFileSync('src/components/ParticleCanvas.tsx', code);

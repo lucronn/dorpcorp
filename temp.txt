@@ -1,0 +1,121 @@
+        targetRadius: isMobile ? 80 : 140,
+        isPhysicsEnabled: false,
+        isDestroyed: false,
+      });
+
+      // 2. Companion spiral galaxy
+      entities.push({
+        type: "galaxy",
+        x: cx + (isMobile ? 80 : 260),
+        y: cy - (isMobile ? 120 : 160),
+        radius: isMobile ? 55 : 90,
+        color: "#ff007f", // Neon Pink/Magenta
+        secondaryColor: "#7f00ff", // Cosmic Purple
+        orbitSpeed: -0.0008,
+        orbitRadius: 0,
+        orbitAngle: 0,
+        centerX: cx,
+        centerY: cy,
+        vx: 0,
+        vy: 0,
+        mass: 6000,
+        initialMass: 6000,
+        scale: 0.7,
+        currentRadius: isMobile ? 55 : 90,
+        originalRadius: isMobile ? 55 : 90,
+        targetRadius: isMobile ? 55 : 90,
+        isPhysicsEnabled: false,
+        isDestroyed: false,
+      });
+
+      // 3. Small dwarf star cluster / galaxy
+      entities.push({
+        type: "galaxy",
+        x: cx - (isMobile ? 100 : 320),
+        y: cy - (isMobile ? 100 : 180),
+        radius: isMobile ? 40 : 60,
+        color: "#ffd778", // Glowing Gold
+        secondaryColor: "#ff3c00", // Crimson/Orange
+        orbitSpeed: 0.0004,
+        orbitRadius: 0,
+        orbitAngle: 0,
+        centerX: cx,
+        centerY: cy,
+        vx: 0,
+        vy: 0,
+        mass: 3000,
+        initialMass: 3000,
+        scale: 0.6,
+        currentRadius: isMobile ? 40 : 60,
+        originalRadius: isMobile ? 40 : 60,
+        targetRadius: isMobile ? 40 : 60,
+        isPhysicsEnabled: false,
+        isDestroyed: false,
+      });
+
+      // 4. Colorful background backdrop nebulae (gives volumetric depth)
+      entities.push({
+        type: "nebula",
+        x: cx + 100,
+        y: cy + 50,
+        radius: isMobile ? 160 : 280,
+        color: "#3a007d", // Violet gas
+        secondaryColor: "#053d3e", // Deep teal gas
+        orbitSpeed: 0.0001,
+        orbitRadius: 0,
+        orbitAngle: 0,
+        centerX: cx,
+        centerY: cy,
+        vx: 0,
+        vy: 0,
+        mass: 1,
+        initialMass: 1,
+        scale: 0.5,
+        currentRadius: isMobile ? 160 : 280,
+        originalRadius: isMobile ? 160 : 280,
+        targetRadius: isMobile ? 160 : 280,
+        isPhysicsEnabled: false,
+        isDestroyed: false,
+      });
+
+      transitionToNewEntities(entities);
+      interstellarSceneGeneratedTimeRef.current = Date.now();
+
+      registerAndSaveSequence(systemName, systemDesc, systemTags, entities);
+      return;
+    }
+
+    // Try to consume pre-fetched Gemini scene first
+    const geminiData = nextGeminiSceneRef.current;
+    if (geminiData && Array.isArray(geminiData.entities) && geminiData.entities.length > 0) {
+      console.log(`[DEBUG] generateInterstellarScene: Found buffered Gemini scene "${geminiData.systemName}" (Archetype: ${geminiData.archetype}) with ${geminiData.entities.length} entities.`);
+      // Clear it from buffer so we don't repeat
+      nextGeminiSceneRef.current = null;
+      // Pre-fetch the *next* one immediately for the subsequent collapse
+      fetchNextGeminiScene();
+
+      archetypeRef.current = geminiData.archetype;
+      const systemName = geminiData.systemName;
+      const systemDesc = geminiData.systemDesc;
+      const systemTags = geminiData.systemTags;
+
+      const cx = width / 2;
+      const cy = height / 2;
+
+      // If the saved scene contains exact coordinates, restore them directly!
+      const hasStoredCoordinates = Array.isArray(geminiData.entities) && geminiData.entities.some((e: any) => e.x !== undefined && e.y !== undefined);
+
+      if (hasStoredCoordinates) {
+        geminiData.entities.forEach((entity: any) => {
+          entities.push({
+            type: entity.type,
+            x: entity.x,
+            y: entity.y,
+            z: entity.z !== undefined ? entity.z : 0,
+            radius: Math.min(entity.radius || 20, 120),
+            color: entity.color,
+            secondaryColor: entity.secondaryColor || entity.color,
+            hasRings: entity.hasRings || false,
+            ringColor: entity.ringColor || "",
+            orbitRadius: entity.orbitRadius || 0,
+            orbitAngle: entity.orbitAngle || 0,

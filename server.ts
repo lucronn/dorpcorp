@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
@@ -182,7 +183,12 @@ async function startServer() {
 
   // API endpoint to generate cosmic scene
   app.post("/api/log-error", express.json(), (req, res) => {
-    console.log("CLIENT ERROR:", req.body.error);
+    console.log("CLIENT ERROR:", req.body?.error);
+    try {
+      fs.appendFileSync('client_errors.log', new Date().toISOString() + ': ' + (req.body?.error || 'Unknown error') + '\n');
+    } catch (e) {
+      console.error("Failed to append to client_errors.log:", e);
+    }
     res.json({ ok: true });
   });
 
