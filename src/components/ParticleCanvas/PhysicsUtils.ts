@@ -216,12 +216,25 @@ export const createShatterDebris = (
   count: number,
   spawnP: SpawnParticleFn
 ) => {
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < count * 2; i++) { // Double the debris for a dramatic explosion
     const angle = Math.random() * Math.PI * 2;
-    const speed = 0.5 + Math.random() * 2.0;
-    const vx = Math.cos(angle) * speed * 0.5;
-    const vy = Math.sin(angle) * speed * 0.5;
-    spawnP(x, y, (Math.random() - 0.5) * 120, vx, vy, color);
+    // Simulate explosion core (fast) and outer debris (slow)
+    const speedMultiplier = Math.random(); 
+    const speed = (2.0 + speedMultiplier * 15.0); 
+    const vx = Math.cos(angle) * speed;
+    const vy = Math.sin(angle) * speed;
+    
+    // Super-heated colors for core debris
+    let pColor = color;
+    if (speedMultiplier > 0.8) {
+        pColor = "#ffffff"; // White hot
+    } else if (speedMultiplier > 0.6) {
+        pColor = "#ffaa00"; // Yellow hot
+    }
+    
+    // Faster decay for faster particles (simulate cooling/fading)
+    const decayRate = 0.01 + (speedMultiplier * 0.04);
+    spawnP(x, y, (Math.random() - 0.5) * 200, vx, vy, pColor, decayRate);
   }
 };
 
@@ -269,64 +282,4 @@ export const swallowEntity = (
   // Blackhole target radius swells from ingested mass!
   const targetRadius = Math.min(bh.radius * 1.5, Math.sqrt(newMass / 15));
   bh.targetRadius = targetRadius;
-};
-
-export const getSpacetimeFabricDistortion = (
-  wx: number, 
-  wy: number, 
-  ww: number, 
-  wh: number, 
-  celestialEntities: CelestialEntity[],
-  activeRipples: { x: number; y: number; life: number; maxDist: number; bandWidth: number; minDistSq: number; maxDistBoundSq: number }[],
-  time: number,
-  disturbance: number
-): number => {
-  let gravityZ = 0;
-  
-  celestialEntities.forEach((entity) => {
-    if (entity.isDestroyed) return;
-    const ex = entity.x - ww / 2;
-    const ey = -(entity.y - wh / 2);
-    
-    const dx = ex - wx;
-    const dy = ey - wy;
-    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-    
-    const range = entity.radius * (entity.type === "blackhole" ? 3.5 : 1.8);
-    if (dist < range) {
-      const intensity = (range - dist) / range;
-      const pullDepth = entity.type === "blackhole" ? 180 : 45;
-      gravityZ += Math.pow(intensity, 1.8) * pullDepth * (0.2 + disturbance * 0.8);
-    }
-  });
-
-  activeRipples.forEach((ripple) => {
-    const rx = ripple.x - ww / 2;
-    const ry = -(ripple.y - wh / 2);
-    const dx = rx - wx;
-    const dy = ry - wy;
-    const distSq = dx * dx + dy * dy;
-    
-    if (distSq > ripple.minDistSq && distSq < ripple.maxDistBoundSq) {
-      const dist = Math.sqrt(distSq);
-      const rForce = (1.0 - Math.abs(dist - ripple.maxDist) / ripple.bandWidth) * ripple.life;
-      gravityZ += rForce * 25; 
-    }
-  });
-
-  if (disturbance > 0.01) {
-    const pulseWave = Math.sin((wx + wy) * 0.012 - time * 0.06) * 6 * Math.min(1.0, disturbance);
-    gravityZ += pulseWave;
-  }
-  
-  return gravityZ;
-};
-
-export const hexToRgba = (hex: string, alpha: number): string => {
-  if (!hex || !hex.startsWith('#')) return 'rgba(255, 255, 255, ' + alpha + ')';
-  const cleanHex = hex.replace('#', '');
-  const r = parseInt(cleanHex.substring(0, 2), 16) || 255;
-  const g = parseInt(cleanHex.substring(2, 4), 16) || 255;
-  const b = parseInt(cleanHex.substring(4, 6), 16) || 255;
-  return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + alpha + ')';
 };

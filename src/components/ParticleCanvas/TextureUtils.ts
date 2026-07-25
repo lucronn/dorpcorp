@@ -263,30 +263,33 @@ export const generateConcentricRingTexture = (ringColor: string, scene: BABYLON.
 
 export const generateDistortedLightwaveTexture = (baseColor: string, scene: BABYLON.Scene) => {
   const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 512;
+  canvas.width = 1024;
+  canvas.height = 1024;
   const ctx = canvas.getContext("2d");
   if (!ctx) return new BABYLON.DynamicTexture("lensing_empty", canvas, scene, true);
 
-  ctx.clearRect(0, 0, 512, 512);
+  ctx.clearRect(0, 0, 1024, 1024);
 
-  const cx = 256;
-  const cy = 256;
+  const cx = 512;
+  const cy = 512;
   const col = parseColorToRgb(baseColor);
 
-  for (let ring = 0; ring < 32; ring++) {
-    const baseRadius = 65 + ring * 5.5;
-    const progress = ring / 32;
-    const alpha = Math.sin(progress * Math.PI) * 0.75 * Math.max(0.1, 1.0 - progress);
+  // Doppler beaming effect (brighter on one side representing material moving toward observer)
+  const dopplerAngle = Math.PI / 4; 
 
+  for (let ring = 0; ring < 64; ring++) {
+    const baseRadius = 120 + ring * 5.5;
+    const progress = ring / 64;
+    
     ctx.beginPath();
-    const steps = 180;
+    const steps = 360;
     for (let i = 0; i <= steps; i++) {
       const theta = (i / steps) * Math.PI * 2;
       
-      const wave1 = Math.sin(theta * 3.0 + ring * 0.15) * 8.0;
-      const wave2 = Math.cos(theta * 5.0 - ring * 0.25) * 5.0;
-      const wave3 = Math.sin(theta * 8.0) * 3.0;
+      // Complex gravitational distortion waves
+      const wave1 = Math.sin(theta * 2.0 + ring * 0.1) * 15.0;
+      const wave2 = Math.cos(theta * 7.0 - ring * 0.3) * 6.0;
+      const wave3 = Math.sin(theta * 13.0) * 2.5;
       
       const r = baseRadius + wave1 + wave2 + wave3;
       const x = cx + Math.cos(theta) * r;
@@ -300,24 +303,64 @@ export const generateDistortedLightwaveTexture = (baseColor: string, scene: BABY
     }
     ctx.closePath();
 
-    const ringColor = `rgba(${Math.min(255, col.r + ring * 2)}, ${Math.min(255, col.g + 20 + ring * 1.5)}, ${col.b}, ${alpha})`;
-    ctx.strokeStyle = ringColor;
-    ctx.lineWidth = 1.4 + Math.random() * 1.6;
-    ctx.shadowColor = `rgba(255, 170, 0, ${alpha * 0.8})`;
-    ctx.shadowBlur = 12;
-    ctx.stroke();
+    ctx.lineWidth = 1.0 + Math.random() * 3.0;
+    
+    // Calculate color per ring, but we'll also apply a gradient mask for doppler shift later
+    const tempCanvas = document.createElement("canvas");
+    tempCanvas.width = 1024;
+    tempCanvas.height = 1024;
+    const tCtx = tempCanvas.getContext("2d");
+    if (tCtx) {
+      tCtx.beginPath();
+      for (let i = 0; i <= steps; i++) {
+        const theta = (i / steps) * Math.PI * 2;
+        const wave1 = Math.sin(theta * 2.0 + ring * 0.1) * 15.0;
+        const wave2 = Math.cos(theta * 7.0 - ring * 0.3) * 6.0;
+        const wave3 = Math.sin(theta * 13.0) * 2.5;
+        const r = baseRadius + wave1 + wave2 + wave3;
+        const x = cx + Math.cos(theta) * r;
+        const y = cy + Math.sin(theta) * r;
+        if (i === 0) tCtx.moveTo(x, y);
+        else tCtx.lineTo(x, y);
+      }
+      tCtx.closePath();
+      
+      tCtx.lineWidth = ctx.lineWidth;
+      // White hot inner, cooling down outer
+      const heat = 1.0 - progress;
+      const rVal = Math.min(255, col.r + heat * 100);
+      const gVal = Math.min(255, col.g + heat * 50);
+      const bVal = Math.min(255, col.b + heat * 20);
+      
+      const grad = tCtx.createLinearGradient(
+        cx + Math.cos(dopplerAngle - Math.PI) * 512, cy + Math.sin(dopplerAngle - Math.PI) * 512,
+        cx + Math.cos(dopplerAngle) * 512, cy + Math.sin(dopplerAngle) * 512
+      );
+      
+      // Doppler beaming: redshift (dimmer, redder) receding, blueshift (brighter, whiter) approaching
+      const alphaBase = Math.sin(progress * Math.PI) * Math.max(0.2, 1.0 - progress);
+      grad.addColorStop(0, `rgba(${rVal}, ${Math.max(0, gVal-50)}, ${Math.max(0, bVal-100)}, ${alphaBase * 0.3})`); // receding
+      grad.addColorStop(0.5, `rgba(${rVal}, ${gVal}, ${col.b}, ${alphaBase * 0.8})`); 
+      grad.addColorStop(1, `rgba(255, 255, 255, ${alphaBase * 1.5})`); // approaching
+      
+      tCtx.strokeStyle = grad;
+      tCtx.shadowColor = `rgba(${rVal}, ${gVal}, ${col.b}, ${alphaBase})`;
+      tCtx.shadowBlur = 8 + heat * 12;
+      tCtx.stroke();
+      
+      ctx.drawImage(tempCanvas, 0, 0);
+    }
   }
 
-  const grad = ctx.createRadialGradient(cx, cy, 48, cx, cy, 240);
-  grad.addColorStop(0, "rgba(0,0,0,1.0)");
-  grad.addColorStop(0.1, "rgba(0,0,0,1.0)");
-  grad.addColorStop(0.12, `rgba(${col.r}, ${col.g}, ${col.b}, 0.95)`);
-  grad.addColorStop(0.35, `rgba(235, 100, 0, 0.45)`);
-  grad.addColorStop(0.75, `rgba(180, 50, 0, 0.12)`);
-  grad.addColorStop(1.0, "rgba(0,0,0,0)");
-  ctx.fillStyle = grad;
+  // Photon ring (ultra-bright inner boundary)
+  const photonGrad = ctx.createRadialGradient(cx, cy, 90, cx, cy, 140);
+  photonGrad.addColorStop(0, "rgba(0,0,0,0)");
+  photonGrad.addColorStop(0.2, `rgba(255, 255, 255, 0.95)`);
+  photonGrad.addColorStop(0.4, `rgba(${col.r}, ${col.g}, ${col.b}, 0.8)`);
+  photonGrad.addColorStop(1.0, "rgba(0,0,0,0)");
+  ctx.fillStyle = photonGrad;
   ctx.beginPath();
-  ctx.arc(cx, cy, 240, 0, Math.PI * 2);
+  ctx.arc(cx, cy, 140, 0, Math.PI * 2);
   ctx.fill();
 
   const texture = new BABYLON.DynamicTexture("lensing_tex", canvas, scene, true);
@@ -347,39 +390,41 @@ export const createCircularGlowTexture = (colorStr: string, scene: BABYLON.Scene
 
 export const generateGalaxyTexture = (baseColor: string, secondaryColor: string, scene: BABYLON.Scene) => {
   const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 512;
+  canvas.width = 1024;
+  canvas.height = 1024;
   const ctx = canvas.getContext("2d");
   if (!ctx) return new BABYLON.DynamicTexture("galaxy_empty", canvas, scene, true);
 
-  ctx.clearRect(0, 0, 512, 512);
+  ctx.clearRect(0, 0, 1024, 1024);
 
-  const cx = 256;
-  const cy = 256;
+  const cx = 512;
+  const cy = 512;
   const c1 = parseColorToRgb(baseColor);
   const c2 = parseColorToRgb(secondaryColor || baseColor);
 
-  // 1. Core glow (supermassive star cluster/blackhole core)
-  const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 80);
+  // 1. Core glow (supermassive star cluster/blackhole core) - Brighter and denser
+  const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 140);
   coreGrad.addColorStop(0, "rgba(255, 255, 255, 1.0)");
-  coreGrad.addColorStop(0.2, `rgba(${c1.r}, ${Math.min(255, c1.g + 40)}, ${Math.min(255, c1.b + 60)}, 0.85)`);
-  coreGrad.addColorStop(0.55, `rgba(${c2.r}, ${c2.g}, ${c2.b}, 0.38)`);
+  coreGrad.addColorStop(0.1, "rgba(255, 250, 240, 0.95)");
+  coreGrad.addColorStop(0.3, `rgba(${c1.r}, ${Math.min(255, c1.g + 50)}, ${Math.min(255, c1.b + 80)}, 0.8)`);
+  coreGrad.addColorStop(0.6, `rgba(${c2.r}, ${c2.g}, ${c2.b}, 0.4)`);
   coreGrad.addColorStop(1, "rgba(0,0,0,0)");
   ctx.fillStyle = coreGrad;
   ctx.beginPath();
-  ctx.arc(cx, cy, 80, 0, Math.PI * 2);
+  ctx.arc(cx, cy, 140, 0, Math.PI * 2);
   ctx.fill();
 
   // 2. Swirling spiral arms (using logarithmic spiral: r = a * e^(b * theta))
-  const numArms = 2 + Math.floor(Math.random() * 2); // 2 to 3 arms
-  const maxR = 248;
+  const numArms = 2 + Math.floor(Math.random() * 3); // 2 to 4 arms for more complex galaxies
+  const maxR = 480;
 
   for (let arm = 0; arm < numArms; arm++) {
     const armOffset = (arm / numArms) * Math.PI * 2;
+    const twist = 5.5 + Math.random(); // How tightly wound the arms are
 
-    for (let step = 0; step < 400; step++) {
-      const theta = (step / 400) * Math.PI * 4.5; // spiral rotation length
-      const r = 24 + Math.pow(theta, 1.25) * 11; // outward expansion
+    for (let step = 0; step < 800; step++) {
+      const theta = (step / 800) * Math.PI * twist; 
+      const r = 30 + Math.pow(theta, 1.35) * 16; 
       if (r > maxR) break;
 
       const angle = theta + armOffset;
@@ -387,13 +432,21 @@ export const generateGalaxyTexture = (baseColor: string, secondaryColor: string,
       const y = cy + Math.sin(angle) * r;
 
       // Draw wispy gas cloud particle
-      const size = 5.0 + Math.random() * 9.0;
+      const size = 10.0 + Math.random() * 20.0;
       const progress = r / maxR;
-      const alpha = (1.0 - progress) * 0.28 * (0.35 + Math.random() * 0.65);
+      const alpha = (1.0 - progress) * 0.15 * (0.3 + Math.random() * 0.7);
       
-      const col = Math.random() > 0.45 ? c1 : c2;
+      const col = Math.random() > 0.4 ? c1 : c2;
+      
+      // Some HII regions (pink/red star-forming regions) along the arms
+      const isHII = Math.random() > 0.95 && progress > 0.2 && progress < 0.8;
+      let rCol = col.r, gCol = col.g, bCol = col.b;
+      if (isHII) {
+        rCol = 255; gCol = 50; bCol = 100;
+      }
+      
       const grad = ctx.createRadialGradient(x, y, 0, x, y, size);
-      grad.addColorStop(0, `rgba(${col.r}, ${col.g}, ${col.b}, ${alpha})`);
+      grad.addColorStop(0, `rgba(${rCol}, ${gCol}, ${bCol}, ${alpha})`);
       grad.addColorStop(1, "rgba(0,0,0,0)");
       
       ctx.fillStyle = grad;
@@ -402,39 +455,55 @@ export const generateGalaxyTexture = (baseColor: string, secondaryColor: string,
       ctx.fill();
 
       // Sprinkle actual bright star clusters on arms
-      if (step % 4 === 0) {
-        const starX = x + (Math.random() - 0.5) * 16 * (1.0 + progress * 2.0);
-        const starY = y + (Math.random() - 0.5) * 16 * (1.0 + progress * 2.0);
-        const starR = 0.5 + Math.random() * 1.5;
-        ctx.fillStyle = Math.random() > 0.4 ? "rgba(255, 255, 255, 0.95)" : "rgba(160, 235, 255, 0.9)";
+      if (step % 3 === 0) {
+        // Closer to core = tighter spread, further out = looser spread
+        const spread = 20 * (1.0 + progress * 3.0);
+        const starX = x + (Math.random() - 0.5) * spread;
+        const starY = y + (Math.random() - 0.5) * spread;
+        const starR = 0.8 + Math.random() * 2.2;
+        
+        // Young blue stars in arms
+        ctx.fillStyle = Math.random() > 0.3 ? "rgba(200, 240, 255, 0.9)" : "rgba(255, 255, 255, 0.95)";
         ctx.beginPath();
         ctx.arc(starX, starY, starR, 0, Math.PI * 2);
         ctx.fill();
+        
+        // Soft glow for bigger stars
+        if (starR > 1.8) {
+          const glowGrad = ctx.createRadialGradient(starX, starY, 0, starX, starY, starR * 4);
+          glowGrad.addColorStop(0, "rgba(200, 240, 255, 0.4)");
+          glowGrad.addColorStop(1, "rgba(0,0,0,0)");
+          ctx.fillStyle = glowGrad;
+          ctx.beginPath();
+          ctx.arc(starX, starY, starR * 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
   }
 
-  // 3. Sprinkle background random field stars
-  for (let i = 0; i < 150; i++) {
-    const rx = Math.random() * 512;
-    const ry = Math.random() * 512;
+  // 3. Sprinkle background random field stars (Halo stars, older, redder/yellower)
+  for (let i = 0; i < 400; i++) {
+    const rx = Math.random() * 1024;
+    const ry = Math.random() * 1024;
     const dist = Math.sqrt((rx - cx)*(rx - cx) + (ry - cy)*(ry - cy));
-    if (dist > maxR) continue;
+    if (dist > maxR + 50) continue;
 
-    const starR = 0.4 + Math.random() * 1.4;
-    const alpha = (1.0 - dist / maxR) * 0.85;
-    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+    const starR = 0.5 + Math.random() * 1.5;
+    const alpha = (1.0 - dist / (maxR + 50)) * 0.7;
+    // Halo stars are typically older (yellow/orange/red)
+    ctx.fillStyle = `rgba(${255}, ${220 + Math.random() * 35}, ${180 + Math.random() * 75}, ${alpha})`;
     ctx.beginPath();
     ctx.arc(rx, ry, starR, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // 4. Modulate with absorption fBm dust lanes
-  const imgData = ctx.getImageData(0, 0, 512, 512);
+  // 4. Modulate with absorption fBm dust lanes (Dark matter/dust)
+  const imgData = ctx.getImageData(0, 0, 1024, 1024);
   const data = imgData.data;
-  for (let y = 0; y < 512; y++) {
-    for (let x = 0; x < 512; x++) {
-      const idx = (y * 512 + x) * 4;
+  for (let y = 0; y < 1024; y++) {
+    for (let x = 0; x < 1024; x++) {
+      const idx = (y * 1024 + x) * 4;
       if (data[idx+3] === 0) continue;
       
       const dx = x - cx;
@@ -443,13 +512,17 @@ export const generateGalaxyTexture = (baseColor: string, secondaryColor: string,
       const angle = Math.atan2(dy, dx);
       
       // Logarithmic spiral dust lane mapping
-      const spiralVal = Math.sin(Math.log(dist || 1) * 3.5 - angle * 2.0);
-      if (spiralVal > 0.4) {
-        const noise = fBmNoise2D(x * 0.03, y * 0.03, 3);
-        const absorption = 0.45 * noise * (dist / 256);
-        data[idx] = Math.round(data[idx] * (1.0 - absorption));
-        data[idx+1] = Math.round(data[idx+1] * (1.0 - absorption * 1.2));
-        data[idx+2] = Math.round(data[idx+2] * (1.0 - absorption * 1.5));
+      // Match the dust lanes to the inner edges of the spiral arms
+      const spiralVal = Math.sin(Math.log(dist || 1) * (numArms * 1.5) - angle * numArms);
+      if (spiralVal > 0.2) {
+        // High frequency noise for clumpy dust
+        const noise = fBmNoise2D(x * 0.015, y * 0.015, 4);
+        // More absorption in the dense lanes
+        const absorption = 0.65 * noise * Math.min(1.0, (dist / 150)); 
+        
+        data[idx] = Math.round(data[idx] * Math.max(0, 1.0 - absorption));
+        data[idx+1] = Math.round(data[idx+1] * Math.max(0, 1.0 - absorption * 1.3)); // Absorbs blue/green more
+        data[idx+2] = Math.round(data[idx+2] * Math.max(0, 1.0 - absorption * 1.8)); // Leaving reddish dust
       }
     }
   }
@@ -463,71 +536,115 @@ export const generateGalaxyTexture = (baseColor: string, secondaryColor: string,
 
 export const generateNebulaTexture = (baseColor: string, secondaryColor: string, scene: BABYLON.Scene) => {
   const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 512;
+  canvas.width = 1024;
+  canvas.height = 1024;
   const ctx = canvas.getContext("2d");
   if (!ctx) return new BABYLON.DynamicTexture("nebula_empty", canvas, scene, true);
 
-  ctx.clearRect(0, 0, 512, 512);
+  ctx.clearRect(0, 0, 1024, 1024);
 
-  const cx = 256;
-  const cy = 256;
+  const cx = 512;
+  const cy = 512;
   const c1 = parseColorToRgb(baseColor);
   const c2 = parseColorToRgb(secondaryColor || baseColor);
 
   // Volumetric procedural gas mapping using fractional Brownian Motion (fBm)
-  const imgData = ctx.createImageData(512, 512);
+  const imgData = ctx.createImageData(1024, 1024);
   const data = imgData.data;
 
-  for (let y = 0; y < 512; y++) {
-    for (let x = 0; x < 512; x++) {
-      const idx = (y * 512 + x) * 4;
+  // Additional 3rd color for more dynamic nebulae
+  const c3 = {
+    r: Math.min(255, c2.r + 50),
+    g: Math.max(0, c2.g - 50),
+    b: Math.min(255, c1.b + 50)
+  };
+
+  for (let y = 0; y < 1024; y++) {
+    for (let x = 0; x < 1024; x++) {
+      const idx = (y * 1024 + x) * 4;
       const dx = x - cx;
       const dy = y - cy;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      if (dist > 256) {
+      if (dist > 512) {
         data[idx+3] = 0;
         continue;
       }
 
       // Generate multi-octave turbulent noise density map
-      const nVal = fBmNoise2D(x * 0.007, y * 0.007, 5);
-      const normDist = dist / 256;
+      const nVal = fBmNoise2D(x * 0.004, y * 0.004, 6);
+      const normDist = dist / 512;
       
       // Gaseous envelope profile (smoother falloff at outer margins)
-      const envelope = Math.pow(1.0 - normDist, 1.8);
+      const envelope = Math.pow(1.0 - normDist, 1.5);
       const density = Math.max(0.0, nVal * envelope);
 
-      // Color interpolation of gas filaments
-      const t = Math.sin(nVal * Math.PI);
-      const r = Math.round(c1.r * (1 - t) + c2.r * t);
-      const g = Math.round(c1.g * (1 - t) + c2.g * t);
-      const b = Math.round(c1.b * (1 - t) + c2.b * t);
+      // Color interpolation of gas filaments (3-way)
+      let r, g, b;
+      if (nVal < 0.33) {
+        const t = nVal / 0.33;
+        r = c1.r * (1 - t) + c2.r * t;
+        g = c1.g * (1 - t) + c2.g * t;
+        b = c1.b * (1 - t) + c2.b * t;
+      } else if (nVal < 0.66) {
+        const t = (nVal - 0.33) / 0.33;
+        r = c2.r * (1 - t) + c3.r * t;
+        g = c2.g * (1 - t) + c3.g * t;
+        b = c2.b * (1 - t) + c3.b * t;
+      } else {
+        const t = (nVal - 0.66) / 0.34;
+        r = c3.r * (1 - t) + c1.r * t;
+        g = c3.g * (1 - t) + c1.g * t;
+        b = c3.b * (1 - t) + c1.b * t;
+      }
 
-      data[idx] = r;
-      data[idx+1] = g;
-      data[idx+2] = b;
-      data[idx+3] = Math.round(density * 255 * 0.9);
+      // Add a bit of dark matter absorption (dark clouds inside the nebula)
+      const darkNoise = fBmNoise2D(x * 0.01 + 50, y * 0.01 + 50, 4);
+      let finalDensity = density;
+      if (darkNoise > 0.6) {
+        finalDensity *= 1.0 - ((darkNoise - 0.6) * 2.5); // Sharp dropoff for dark pillars
+      }
+
+      data[idx] = Math.round(r);
+      data[idx+1] = Math.round(g);
+      data[idx+2] = Math.round(b);
+      data[idx+3] = Math.round(Math.max(0, finalDensity) * 255 * 0.95);
     }
   }
   ctx.putImageData(imgData, 0, 0);
 
-  // Filamentary strands layer (dynamic Bézier filaments for high contrast depth)
-  ctx.shadowColor = `rgba(${c1.r}, ${c1.g}, ${c1.b}, 0.2)`;
-  ctx.shadowBlur = 15;
-  for (let i = 0; i < 6; i++) {
-    const col = Math.random() > 0.5 ? c1 : c2;
-    ctx.strokeStyle = `rgba(${col.r}, ${col.g}, ${col.b}, 0.14)`;
-    ctx.lineWidth = 1.5 + Math.random() * 2.0;
-    ctx.beginPath();
-    ctx.moveTo(cx + (Math.random() - 0.5) * 240, cy + (Math.random() - 0.5) * 240);
-    ctx.bezierCurveTo(
-      cx + (Math.random() - 0.5) * 220, cy + (Math.random() - 0.5) * 220,
-      cx + (Math.random() - 0.5) * 220, cy + (Math.random() - 0.5) * 220,
-      cx + (Math.random() - 0.5) * 240, cy + (Math.random() - 0.5) * 240
-    );
-    ctx.stroke();
+  // Scattered newborn stars embedded in gas (Open clusters)
+  const numClusters = 2 + Math.floor(Math.random() * 3);
+  for (let c = 0; c < numClusters; c++) {
+    const clusterX = cx + (Math.random() - 0.5) * 500;
+    const clusterY = cy + (Math.random() - 0.5) * 500;
+    
+    for (let i = 0; i < 40; i++) {
+      const starX = clusterX + (Math.random() - 0.5) * 150;
+      const starY = clusterY + (Math.random() - 0.5) * 150;
+      const dist = Math.sqrt((starX - cx)**2 + (starY - cy)**2);
+      if (dist > 450) continue;
+      
+      const size = 0.5 + Math.random() * 2.5;
+      const alpha = (1.0 - dist / 512) * Math.random();
+      
+      // Extremely hot, bright blue/white stars typical of emission nebulae
+      ctx.fillStyle = Math.random() > 0.3 ? `rgba(220, 245, 255, ${alpha})` : `rgba(255, 255, 255, ${alpha * 0.9})`;
+      ctx.beginPath();
+      ctx.arc(starX, starY, size, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Star glow
+      if (size > 2.0) {
+        const glowGrad = ctx.createRadialGradient(starX, starY, 0, starX, starY, size * 5);
+        glowGrad.addColorStop(0, `rgba(200, 240, 255, ${alpha * 0.4})`);
+        glowGrad.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = glowGrad;
+        ctx.beginPath();
+        ctx.arc(starX, starY, size * 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
 
   const texture = new BABYLON.DynamicTexture("nebula_tex", canvas, scene, true);

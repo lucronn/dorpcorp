@@ -1,9 +1,23 @@
 import React, { useEffect, useRef } from 'react';
 
-export const WavelengthBackground: React.FC = () => {
+interface Props {
+  stage?: number;
+}
+
+export const WavelengthBackground: React.FC<Props> = ({ stage = 0 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mouseRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   const scrollRef = useRef(0);
+  
+  const stageRef = useRef(stage);
+  const swellIntensityRef = useRef(0);
+
+  useEffect(() => {
+    if (stageRef.current !== stage) {
+      stageRef.current = stage;
+      swellIntensityRef.current = 1.0; // Trigger swell
+    }
+  }, [stage]);
   
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -62,6 +76,17 @@ export const WavelengthBackground: React.FC = () => {
       const normalizedY = currentY / height;
       const baseAmplitude = (30 + normalizedY * 100) * (1.0 - scrollFactor * 0.4); // Waves get calmer as you descend deeper
       
+      // Decay swell
+      swellIntensityRef.current *= 0.985; // Gradual decay over a few seconds
+
+      // Breathing animation (baseline sine wave pulse)
+      const breathing = (Math.sin(time * 0.05) * 0.5 + 0.5); // 0.0 to 1.0
+      
+      const swell = swellIntensityRef.current;
+      
+      // Combine base amplitude with breathing and swell
+      const dynamicAmplitude = baseAmplitude * (1.0 + breathing * 0.15 + swell * 0.6);
+
       ctx.lineWidth = 1;
       
       // Incorporate scroll depth into the phase to make waves shift vertically with scroll
@@ -71,15 +96,18 @@ export const WavelengthBackground: React.FC = () => {
         ctx.beginPath();
         
         // Highly visible, stunning multi-color layered glowing waves
-        const alpha = 0.07 + (i / lines) * 0.14;
-        let strokeStyle = `rgba(245, 242, 235, ${alpha})`; // Elegant soft white/ivory base
+        // Apply breathing and swell to alpha as well
+        const baseAlpha = 0.03 + (i / lines) * 0.07; 
+        const dynamicAlpha = baseAlpha * (1.0 + breathing * 0.4 + swell * 1.5);
+        
+        let strokeStyle = `rgba(245, 242, 235, ${dynamicAlpha})`; // Elegant soft white/ivory base
         
         if (i % 4 === 0) {
           // Captivating terracotta accent wave
-          strokeStyle = `rgba(193, 75, 42, ${alpha * 1.4})`;
+          strokeStyle = `rgba(193, 75, 42, ${dynamicAlpha * 1.1})`;
         } else if (i % 3 === 1) {
           // Celestial neon cyan-blue accent wave
-          strokeStyle = `rgba(77, 238, 234, ${alpha * 1.2})`;
+          strokeStyle = `rgba(77, 238, 234, ${dynamicAlpha * 0.9})`;
         }
         ctx.strokeStyle = strokeStyle;
         ctx.lineWidth = i % 3 === 0 ? 1.5 : 1.0; // Variable thickness for amazing physical depth!
@@ -92,9 +120,9 @@ export const WavelengthBackground: React.FC = () => {
           const freq2 = 0.003 - (i * 0.0002);
           
           const yOffset = (height / 2) 
-            + Math.sin(x * freq1 + time * 0.01 + i + scrollPhase) * baseAmplitude
-            + Math.cos(x * freq2 - time * 0.01 - i + scrollPhase * 1.5) * (baseAmplitude * 0.4)
-            + Math.sin(x * 0.005 + time * 0.02) * (influence * 80);
+            + Math.sin(x * freq1 + time * 0.01 + i + scrollPhase) * dynamicAmplitude
+            + Math.cos(x * freq2 - time * 0.01 - i + scrollPhase * 1.5) * (dynamicAmplitude * 0.4)
+            + Math.sin(x * 0.005 + time * 0.02) * (influence * 40 * (1.0 + swell * 0.5)); // Toned down influence, slightly boosted during swells
             
           if (x === 0) {
             ctx.moveTo(x, yOffset);
@@ -106,7 +134,7 @@ export const WavelengthBackground: React.FC = () => {
         ctx.stroke();
       }
       
-      time += 0.5; // Slower, more deliberate motion
+      time += 0.08; // Slower, more deliberate motion for a calm realistic wave
       animationId = requestAnimationFrame(render);
     };
     

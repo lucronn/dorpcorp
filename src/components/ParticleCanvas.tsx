@@ -494,7 +494,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         // Filter and place non-blackhole entities
         const otherEntities = geminiData.entities.filter((e: any) => e.type !== "blackhole");
         otherEntities.forEach((entity: any, idx: number) => {
-          const orbitRad = (isMobile ? 140 : 220) + idx * (isMobile ? 70 : 110);
+          const orbitRad = (isMobile ? 350 : 600) + idx * (isMobile ? 180 : 320);
           const angle = Math.random() * Math.PI * 2;
           // Slow down orbit speed by half to meet "slow it down" request
           const orbitSpeed = (0.0012 + Math.random() * 0.0012);
@@ -583,7 +583,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
       const pCount = isMobile ? 1 : 2;
       for (let p = 0; p < pCount; p++) {
-        const orbitRad = (isMobile ? 180 : 280) + p * (isMobile ? 80 : 130);
+        const orbitRad = (isMobile ? 500 : 850) + p * (isMobile ? 250 : 400);
         const angle = Math.random() * Math.PI * 2;
         const pRadius = (isMobile ? 12 : 22) + Math.random() * 12;
         const orbitSpeed = 0.003 + Math.random() * 0.003;
@@ -625,7 +625,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         "☁ NEBULA SHIELD",
       ];
 
-      const separation = isMobile ? 120 : 220;
+      const separation = isMobile ? 350 : 650;
       const p1Radius = isMobile ? 25 : 45;
       const p2Radius = isMobile ? 22 : 38;
 
@@ -779,7 +779,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         "Three pristine crystal exoplanets clustered in a highly dynamic, co-orbital gravitational field, woven together by a network of glowing particle highways.";
       systemTags = ["🪐 ORBITAL TRIAD", "⚡ CONNECTOR HIGHS", "★ DEEP VOID"];
 
-      const r = isMobile ? 120 : 200;
+      const r = isMobile ? 350 : 600;
 
       for (let i = 0; i < 3; i++) {
         const angle = (i * Math.PI * 2) / 3;
@@ -948,10 +948,12 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
     for (let g = 0; g < numBackgroundGalaxies; g++) {
       const angle = Math.random() * Math.PI * 2;
-      const dist = 700 + Math.random() * 2000;
-      const gx = Math.cos(angle) * dist;
-      const gy = Math.sin(angle) * dist;
-      const gz = 1400 + Math.random() * 3200; // Far off in the distance
+      const rRadius = 4000 + Math.random() * 7000;
+      const rPhi = Math.acos((Math.random() * 2) - 1);
+      const rTheta = Math.random() * Math.PI * 2;
+      const gx = rRadius * Math.sin(rPhi) * Math.cos(rTheta);
+      const gy = rRadius * Math.sin(rPhi) * Math.sin(rTheta);
+      const gz = rRadius * Math.cos(rPhi); // Far off in the distance
       
       galaxyCenters.push({
         x: gx,
@@ -967,8 +969,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     nonAmbientParticles.forEach((p, idx) => {
       const rand = Math.random();
 
-      // Map 40% of the active particles to the background galaxies
-      if (idx % 10 < 4) {
+      // Map 5% of the active particles to the background galaxies
+      if (idx % 100 < 5) {
         const gal = galaxyCenters[idx % numBackgroundGalaxies];
         p.interstellarType = "background_galaxy";
         p.galaxyX = gal.x + width / 2;
@@ -1014,8 +1016,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           p.interstellarType = "blackhole";
           p.interstellarEntityIndex = entities.indexOf(bh);
           p.interstellarEntity = bh;
-          const minR = bh.radius * 1.3;
-          const maxR = bh.radius * 5.0;
+          const minR = bh.radius * 1.5;
+          const maxR = bh.radius * 24.0;
           p.orbitRadius = minR + Math.random() * (maxR - minR);
           p.orbitAngle = Math.random() * Math.PI * 2;
           
@@ -1071,8 +1073,12 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           p.color = p.baseColor;
         } else {
           p.interstellarType = "star";
-          p.targetX = Math.random() * width;
-          p.targetY = Math.random() * height;
+          const rRadius = Math.random() * (width * 6);
+          const rTheta = Math.random() * Math.PI * 2;
+          const rPhi = Math.acos((Math.random() * 2) - 1);
+          p.targetX = width / 2 + rRadius * Math.sin(rPhi) * Math.cos(rTheta);
+          p.targetY = height / 2 + rRadius * Math.sin(rPhi) * Math.sin(rTheta);
+          p.z = rRadius * Math.cos(rPhi);
           p.baseColor = Math.random() > 0.8 ? "#88ffff" : "#ffffff";
           p.color = p.baseColor;
           p.isPlanetRing = false;
@@ -1152,8 +1158,12 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           p.isPlanetRing = false;
         } else {
           p.interstellarType = "star";
-          p.targetX = Math.random() * width;
-          p.targetY = Math.random() * height;
+          const rRadius = Math.random() * (width * 6);
+          const rTheta = Math.random() * Math.PI * 2;
+          const rPhi = Math.acos((Math.random() * 2) - 1);
+          p.targetX = width / 2 + rRadius * Math.sin(rPhi) * Math.cos(rTheta);
+          p.targetY = height / 2 + rRadius * Math.sin(rPhi) * Math.sin(rTheta);
+          p.z = rRadius * Math.cos(rPhi);
           p.baseColor = "#ffffff";
           p.color = p.baseColor;
           p.isPlanetRing = false;
@@ -1213,8 +1223,12 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           p.color = p.baseColor;
         } else {
           p.interstellarType = "star";
-          p.targetX = Math.random() * width;
-          p.targetY = Math.random() * height;
+          const rRadius = Math.random() * (width * 6);
+          const rTheta = Math.random() * Math.PI * 2;
+          const rPhi = Math.acos((Math.random() * 2) - 1);
+          p.targetX = width / 2 + rRadius * Math.sin(rPhi) * Math.cos(rTheta);
+          p.targetY = height / 2 + rRadius * Math.sin(rPhi) * Math.sin(rTheta);
+          p.z = rRadius * Math.cos(rPhi);
           p.baseColor = "#ffffff";
           p.color = p.baseColor;
           p.isPlanetRing = false;
@@ -1313,8 +1327,12 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           p.color = p.baseColor;
         } else {
           p.interstellarType = "star";
-          p.targetX = Math.random() * width;
-          p.targetY = Math.random() * height;
+          const rRadius = Math.random() * (width * 6);
+          const rTheta = Math.random() * Math.PI * 2;
+          const rPhi = Math.acos((Math.random() * 2) - 1);
+          p.targetX = width / 2 + rRadius * Math.sin(rPhi) * Math.cos(rTheta);
+          p.targetY = height / 2 + rRadius * Math.sin(rPhi) * Math.sin(rTheta);
+          p.z = rRadius * Math.cos(rPhi);
           p.baseColor = "#ffffff";
           p.color = p.baseColor;
           p.isPlanetRing = false;
@@ -1365,16 +1383,24 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         } else {
           // Background galactic stars
           p.interstellarType = "star";
-          p.targetX = Math.random() * width;
-          p.targetY = Math.random() * height;
+          const rRadius = Math.random() * (width * 6);
+          const rTheta = Math.random() * Math.PI * 2;
+          const rPhi = Math.acos((Math.random() * 2) - 1);
+          p.targetX = width / 2 + rRadius * Math.sin(rPhi) * Math.cos(rTheta);
+          p.targetY = height / 2 + rRadius * Math.sin(rPhi) * Math.sin(rTheta);
+          p.z = rRadius * Math.cos(rPhi);
           p.baseColor = Math.random() > 0.82 ? "#88ffff" : "#ffffff";
           p.color = p.baseColor;
           p.isPlanetRing = false;
         }
       } else {
         p.interstellarType = "star";
-        p.targetX = Math.random() * width;
-        p.targetY = Math.random() * height;
+          const rRadius = Math.random() * (width * 6);
+          const rTheta = Math.random() * Math.PI * 2;
+          const rPhi = Math.acos((Math.random() * 2) - 1);
+          p.targetX = width / 2 + rRadius * Math.sin(rPhi) * Math.cos(rTheta);
+          p.targetY = height / 2 + rRadius * Math.sin(rPhi) * Math.sin(rTheta);
+          p.z = rRadius * Math.cos(rPhi);
         p.baseColor = "#ffffff";
         p.color = p.baseColor;
         p.isPlanetRing = false;
@@ -2369,14 +2395,14 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           sphereMat.bumpTexture = planetTexture;
           sphereMat.emissiveTexture = planetTexture;
           // Subtly light up the dark side of the planet with a soft bioluminescent gas glow
-          sphereMat.emissiveColor = new BABYLON.Color3(0.08, 0.08, 0.12);
+          sphereMat.emissiveColor = new BABYLON.Color3(0.04, 0.04, 0.08); // Less artificial glow
           
-          sphereMat.roughness = 0.55;
-          sphereMat.metallic = 0.12;
-          sphereMat.directIntensity = 1.35;
-          sphereMat.specularIntensity = 1.0;
+          sphereMat.roughness = 0.85; // More matte for realistic earth/gas-giant look
+          sphereMat.metallic = 0.05; // Less metallic
+          sphereMat.directIntensity = 1.1; // Softer directional lighting
+          sphereMat.specularIntensity = 0.4; // Less shiny
           if (sphereMat.bumpTexture) {
-            sphereMat.bumpTexture.level = 0.52; // physically based bump scale
+            sphereMat.bumpTexture.level = 0.8; // Stronger normal map depth
           }
 
           const sphereMesh = BABYLON.MeshBuilder.CreateSphere("planet_sphere", {
@@ -2761,7 +2787,13 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           });
           meshZ += meshGravityZ;
 
-          inst.mesh.position.set(wx, wy, meshZ);
+          const mouseNormX = (mouseRef.current.x - ww / 2) / (ww / 2 || 1);
+          const mouseNormY = (mouseRef.current.y - wh / 2) / (wh / 2 || 1);
+          const parallaxFactor = 0.15;
+          const parallaxX = mouseNormX * meshZ * parallaxFactor;
+          const parallaxY = mouseNormY * meshZ * parallaxFactor;
+
+          inst.mesh.position.set(wx + parallaxX, wy + parallaxY, meshZ);
         } else {
           inst.mesh.position.set(wx, wy, -30);
           if (cameraRef.current) {
@@ -2982,8 +3014,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
     // 1. Initialize Babylon.js Engine & Scene
     fovRef.current = 60;
-    cameraZRef.current = Math.max(10.0, wh / (2 * Math.tan((fovRef.current * Math.PI) / 360)));
-    
+    cameraZRef.current = Math.max(10.0, wh / (2 * Math.tan((fovRef.current * Math.PI) / 360))) * 2.5; // Multiply base cameraZ for vastness
+
     const { scene, camera } = initializeScene(
       canvas,
       sceneRef,
@@ -3266,43 +3298,80 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       uniform sampler2D textureSampler;
       uniform float time;
       uniform float intensity;
+      
+      // Noise function for relativistic distortion
+      float hash(float n) { return fract(sin(n) * 1e4); }
+      float hash(vec2 p) { return fract(1e4 * sin(17.0 * p.x + p.y * 0.1) * (0.1 + abs(sin(p.y * 13.0 + p.x)))); }
+      float noise(vec2 x) {
+          vec2 i = floor(x);
+          vec2 f = fract(x);
+          float a = hash(i);
+          float b = hash(i + vec2(1.0, 0.0));
+          float c = hash(i + vec2(0.0, 1.0));
+          float d = hash(i + vec2(1.0, 1.0));
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+      }
+      
       void main(void) {
           vec2 uv = vUV;
-          vec4 baseColor = texture2D(textureSampler, uv);
+          vec2 center = vec2(0.5);
+          vec2 dir = center - uv;
+          float dist = length(dir);
+          
           if (intensity <= 0.0) {
-              gl_FragColor = baseColor;
+              gl_FragColor = texture2D(textureSampler, uv);
               return;
           }
           
-          vec2 dir = vec2(0.5) - uv;
-          float dist = length(dir);
+          // Wormhole tunnel effect: space bends inward drastically
+          // dist = max(dist, 0.001); // prevent division by zero
+          
+          // The tunnel gets deeper as intensity increases
+          float pull = (1.0 - smoothstep(0.0, 0.5, dist)) * intensity * 2.0;
+          
+          // Rotate UVs around center (swirling effect)
+          float angle = pull * time * 2.0;
+          float s = sin(angle);
+          float c = cos(angle);
+          mat2 rot = mat2(c, -s, s, c);
+          
+          vec2 swirledUV = center + rot * (uv - center) * (1.0 - pull * 0.4);
+          
+          // Add some relativistic quantum noise
+          float n = noise(swirledUV * 20.0 - time * 5.0) * pull * 0.05;
+          swirledUV += vec2(n);
+          
           if (dist > 0.0001) {
               dir = dir / dist;
           } else {
               dir = vec2(0.0);
           }
           
-          // Smoothly building radial blur
-          float blurAmount = min(time * 0.015, 0.04) * intensity;
+          // Smoothly building radial blur (motion blur falling into the singularity)
+          float blurAmount = min(time * 0.015, 0.06) * intensity + pull * 0.05;
           
           vec4 sum = vec4(0.0);
-          sum += texture2D(textureSampler, uv + dir * 0.0 * blurAmount);
-          sum += texture2D(textureSampler, uv + dir * 0.1 * blurAmount);
-          sum += texture2D(textureSampler, uv + dir * 0.2 * blurAmount);
-          sum += texture2D(textureSampler, uv + dir * 0.3 * blurAmount);
-          sum += texture2D(textureSampler, uv + dir * 0.4 * blurAmount);
-          sum += texture2D(textureSampler, uv + dir * 0.5 * blurAmount);
-          sum += texture2D(textureSampler, uv + dir * 0.6 * blurAmount);
-          sum += texture2D(textureSampler, uv + dir * 0.7 * blurAmount);
-          sum += texture2D(textureSampler, uv + dir * 0.8 * blurAmount);
-          sum += texture2D(textureSampler, uv + dir * 0.9 * blurAmount);
-          sum /= 10.0;
+          float samples = 12.0;
+          for(float i=0.0; i<12.0; i++) {
+              sum += texture2D(textureSampler, swirledUV + dir * (i / samples) * blurAmount);
+          }
+          sum /= samples;
           
-          // Subtle, elegant chromatic aberration
-          float ca = blurAmount * 0.35;
-          sum.r = texture2D(textureSampler, uv + dir * ca).r;
-          sum.b = texture2D(textureSampler, uv - dir * ca).b;
-          gl_FragColor = mix(baseColor, sum, intensity);
+          // Relativistic Chromatic Aberration & Blueshift
+          // Light getting pulled into the wormhole blueshifts (gets brighter and bluer/whiter)
+          float ca = blurAmount * 0.6;
+          sum.r = texture2D(textureSampler, swirledUV + dir * ca * 1.5).r;
+          sum.g = texture2D(textureSampler, swirledUV + dir * ca * 0.5).g;
+          sum.b = texture2D(textureSampler, swirledUV - dir * ca * 0.5).b;
+          
+          // Extreme brightness at the singularity edge
+          vec3 eventHorizonGlow = vec3(0.1, 0.5, 1.0) * pow(pull, 3.0) * 2.0;
+          
+          vec4 finalColor = mix(texture2D(textureSampler, uv), sum, intensity);
+          finalColor.rgb += eventHorizonGlow;
+          
+          gl_FragColor = finalColor;
       }
     `;
 
@@ -3390,9 +3459,9 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     for (let s = 0; s < numStars; s++) {
       const starColor = Math.random() > 0.65 ? "#ffcc99" : "#ffffff";
       tempParticles.push({
-        x: Math.random() * ww,
-        y: Math.random() * wh,
-        z: (Math.random() - 0.5) * 800 - 300,
+        x: ww / 2 + (Math.random() - 0.5) * (ww * 8),
+        y: wh / 2 + (Math.random() - 0.5) * (wh * 8),
+        z: (Math.random() - 0.5) * (ww * 8),
         targetX: 0,
         targetY: 0,
         vx: (Math.random() - 0.5) * 0.4,
@@ -3422,9 +3491,9 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       };
       const col = t.color || fallbackColor;
       tempParticles.push({
-        x: ww / 2 + (Math.random() - 0.5) * ww,
-        y: wh / 2 + (Math.random() - 0.5) * wh,
-        z: (Math.random() - 0.5) * 500,
+        x: ww / 2 + (Math.random() - 0.5) * (ww * 6),
+        y: wh / 2 + (Math.random() - 0.5) * (wh * 6),
+        z: (Math.random() - 0.5) * (ww * 6),
         targetX: t.x,
         targetY: t.y,
         vx: 0,
@@ -3548,7 +3617,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           float crossY = smoothstep(0.5, 0.0, abs(coord.y)) * exp(-abs(coord.x) * 20.0);
           float starCore = gaussian * 0.7;
           
-          float twinkle = 0.7 + 0.3 * sin(vPos.x * 12.0 + vPos.y * 12.0);
+          float twinkle = 0.9 + 0.1 * sin(vPos.x * 2.0 + vPos.y * 2.0);
           
           alpha = (starCore + crossX * 0.5 + crossY * 0.5) * twinkle;
         }
@@ -3993,10 +4062,12 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           p.y -= scrollVelocityRef.current * (p.driftSpeed || 0.2);
           p.x += Math.sin(time * 0.005 + i) * 0.15;
 
-          if (p.y < 0) p.y = currentH;
-          if (p.y > currentH) p.y = 0;
-          if (p.x < 0) p.x = currentW;
-          if (p.x > currentW) p.x = 0;
+          if (p.y < currentH / 2 - currentH * 4) p.y = currentH / 2 + currentH * 4;
+          if (p.y > currentH / 2 + currentH * 4) p.y = currentH / 2 - currentH * 4;
+          if (p.x < currentW / 2 - currentW * 4) p.x = currentW / 2 + currentW * 4;
+          if (p.x > currentW / 2 + currentW * 4) p.x = currentW / 2 - currentW * 4;
+          if (p.z < currentW / 2 - currentW * 4) p.z = currentW / 2 + currentW * 4;
+          if (p.z > currentW / 2 + currentW * 4) p.z = currentW / 2 - currentW * 4;
 
           const mdx = mouseRef.current.x - p.x;
           const mdy = mouseRef.current.y - p.y;
@@ -4038,8 +4109,16 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           });
 
           // Map ambient particles to Babylon.js positions with gravitational lensing
-          positions[i * 3] = drawAmbX - currentW / 2;
-          positions[i * 3 + 1] = -(drawAmbY - currentH / 2);
+          // Add mouse-responsive parallax effect to background particles relative to cursor
+          const mouseNormX = (mouseRef.current.x - currentW / 2) / (currentW / 2 || 1);
+          const mouseNormY = (mouseRef.current.y - currentH / 2) / (currentH / 2 || 1);
+          // Deeper particles (p.z is negative) move more to emphasize vastness
+          const parallaxFactor = 0.15;
+          const parallaxX = mouseNormX * p.z * parallaxFactor;
+          const parallaxY = mouseNormY * p.z * parallaxFactor;
+
+          positions[i * 3] = drawAmbX - currentW / 2 + parallaxX;
+          positions[i * 3 + 1] = -(drawAmbY - currentH / 2 + parallaxY);
           positions[i * 3 + 2] = p.z;
 
           // Simple white or dim ambient color pulsing with music
@@ -4478,9 +4557,16 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           }
         });
 
+        // Enhanced parallax offset based on depth (p.z) and mouse cursor
+        const mouseNormX = (mouseRef.current.x - currentW / 2) / (currentW / 2 || 1);
+        const mouseNormY = (mouseRef.current.y - currentH / 2) / (currentH / 2 || 1);
+        const parallaxFactor = 0.15;
+        const parallaxX = mouseNormX * p.z * parallaxFactor;
+        const parallaxY = mouseNormY * p.z * parallaxFactor;
+
         // Map points to positions
-        positions[i * 3] = drawX - currentW / 2;
-        positions[i * 3 + 1] = -(drawY - currentH / 2);
+        positions[i * 3] = drawX - currentW / 2 + parallaxX;
+        positions[i * 3 + 1] = -(drawY - currentH / 2 + parallaxY);
         positions[i * 3 + 2] = p.z + particleGravityZ;
 
         // Map colors
@@ -4608,21 +4694,21 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         if (snElapsed >= 2200 && snElapsed < 4200) {
           // Blinding detonation shockwave: intense shake
           const factor = Math.max(0, 1.0 - (snElapsed - 2200) / 2000);
-          shakeIntensity += factor * 16.0;
+          shakeIntensity += factor * 6.0; // Toned down from 16.0
         } else if (snElapsed >= 1200 && snElapsed < 2200) {
           // Pre-explosion gravitational collapse: subtle low-frequency rumbling
           const factor = (snElapsed - 1200) / 1000;
-          shakeIntensity += factor * 2.5;
+          shakeIntensity += factor * 1.5; // Toned down from 2.5
         }
       }
 
       // Shaking from high-intensity ripples and galactic shockwaves
       ripplesRef.current.forEach((r) => {
-        shakeIntensity += r.life * 4.5;
+        shakeIntensity += r.life * 2.0; // Toned down from 4.5
       });
 
       if (shockwaveIntensity > 0.01) {
-        shakeIntensity += shockwaveIntensity * 14.5;
+        shakeIntensity += shockwaveIntensity * 6.0; // Toned down from 14.5
       }
 
       if (shakeIntensity > 0.05) {
@@ -4653,7 +4739,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       }
 
       // Gentle 3D camera mouse/gyro tilt or smooth cinematic 3D orbiting
-      const cameraZ = Math.max(10.0, currentH / (2 * Math.tan((fovRef.current * Math.PI) / 360)));
+      const cameraZ = Math.max(10.0, currentH / (2 * Math.tan((fovRef.current * Math.PI) / 360))) * 2.5; // Update multiplier here too
       
       // Calculate baseline target coordinates including parallax and scroll Z depth offset
       let finalTargetX = inputs.currentCameraParallaxX;
@@ -4664,7 +4750,31 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         // High-fidelity 3D orbital flyby path for cinematic 360-degree showcase
         const orbitAngle = time * 0.0022; // smooth 360 rotation speed
         const pitchAngle = Math.sin(time * 0.0006) * 0.28 + 0.18; // vertical slow-wave tilt
-        const currentRadius = cameraZ * (1.6 + Math.sin(time * 0.0012) * 0.15); // increased distance so objects are not too close
+        
+        // Intelligent Zooming: Calculate the maximum spread of active celestial entities
+        let maxSpread = 50; // Minimum fallback
+        if (celestialEntitiesRef.current && celestialEntitiesRef.current.length > 0) {
+          let maxDistSq = 0;
+          celestialEntitiesRef.current.forEach(entity => {
+            if (!entity.isDestroyed) {
+              const wx = entity.x - currentW / 2;
+              const wy = -(entity.y - currentH / 2);
+              const wz = entity.z || 0;
+              // include radius in the distance
+              const dist = Math.sqrt(wx*wx + wy*wy + wz*wz) + entity.radius * 2;
+              if (dist * dist > maxDistSq) {
+                maxDistSq = dist * dist;
+              }
+            }
+          });
+          if (maxDistSq > 0) {
+             maxSpread = Math.sqrt(maxDistSq);
+          }
+        }
+        
+        // Dynamically adjust radius based on spread, ensuring we stay close enough to see events but far enough to see everything
+        const dynamicRadius = Math.max(cameraZ * 0.5, maxSpread * 1.25) + cameraZ * Math.sin(time * 0.0012) * 0.15;
+        const currentRadius = dynamicRadius;
 
         // 3D spherical coordinates relative to center (0,0,0)
         const ox = currentRadius * Math.sin(orbitAngle) * Math.cos(pitchAngle);
@@ -4681,7 +4791,24 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         const ssTime = now * 0.00014;
         const orbitAngle = ssTime;
         const pitchAngle = Math.sin(ssTime * 0.6) * 0.14 + 0.06;
-        const currentRadius = cameraZ * (1.3 + Math.sin(ssTime * 1.2) * 0.05);
+        
+        let maxSpread = 50;
+        if (celestialEntitiesRef.current && celestialEntitiesRef.current.length > 0) {
+          let maxDistSq = 0;
+          celestialEntitiesRef.current.forEach(entity => {
+            if (!entity.isDestroyed) {
+              const wx = entity.x - currentW / 2;
+              const wy = -(entity.y - currentH / 2);
+              const wz = entity.z || 0;
+              const dist = Math.sqrt(wx*wx + wy*wy + wz*wz) + entity.radius * 2;
+              if (dist * dist > maxDistSq) maxDistSq = dist * dist;
+            }
+          });
+          if (maxDistSq > 0) maxSpread = Math.sqrt(maxDistSq);
+        }
+        
+        const dynamicRadius = Math.max(cameraZ * 0.5, maxSpread * 1.25) + cameraZ * Math.sin(ssTime * 1.2) * 0.15;
+        const currentRadius = dynamicRadius;
 
         const ox = currentRadius * Math.sin(orbitAngle) * Math.cos(pitchAngle);
         const oy = currentRadius * Math.sin(pitchAngle);
@@ -4785,20 +4912,20 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           if (snElapsed >= 1200 && snElapsed < 2200) {
             // Gravitational collapse phase: build intensity
             const progress = (snElapsed - 1200) / 1000;
-            pipeline.bloomWeight = baseBloom + progress * 0.6; // build up
+            pipeline.bloomWeight = baseBloom + progress * 0.2; // build up (toned down)
           } else if (snElapsed >= 2200 && snElapsed < 3200) {
             // Supernova detonation phase: cinematic blinding flash!
             const progress = (snElapsed - 2200) / 1000;
             const fadeOut = Math.max(0, 1 - progress);
-            pipeline.bloomWeight = baseBloom + fadeOut * 1.8; // intense bloom flare peaks
+            pipeline.bloomWeight = baseBloom + fadeOut * 0.4; // intense bloom flare peaks (toned down)
           } else {
             pipeline.bloomWeight = baseBloom;
           }
         } else {
           // Standard cosmic breathing pulse with an added dynamic neon-blue bloom surge when electrical disturbances occur
           const pulse = Math.sin(time * 0.01) * 0.02;
-          const electricSurge = Math.min(1.0, disturbance) * 0.72; // boost bloom weight momentarily on click/interaction
-          const shockwaveSurge = shockwaveIntensity * 1.48; // gorgeous screen-wide neon bloom flare during periodic shocks!
+          const electricSurge = Math.min(1.0, disturbance) * 0.2; // boost bloom weight momentarily on click/interaction (toned down)
+          const shockwaveSurge = shockwaveIntensity * 0.3; // gorgeous screen-wide neon bloom flare during periodic shocks! (toned down)
           pipeline.bloomWeight = baseBloom + pulse + electricSurge + shockwaveSurge;
         }
       }
@@ -4823,7 +4950,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
       if (hudPlaneRef.current && cameraRef.current) {
         const planeZ = -60;
-        const cameraZ = Math.max(10.0, wh / (2 * Math.tan((fovRef.current * Math.PI) / 360)));
+        const cameraZ = Math.max(10.0, wh / (2 * Math.tan((fovRef.current * Math.PI) / 360))) * 2.5;
         // Camera is at -cameraZ. Distance to plane is cameraZ + planeZ
         const scaleFactor = (cameraZ + planeZ) / cameraZ;
         hudPlaneRef.current.scaling.set(scaleFactor, scaleFactor, 1);
@@ -5106,16 +5233,30 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           precision highp float;
           varying vec2 vUV;
           uniform float time;
+
+          // Simple 2D noise for star streaks
+          float hash(vec2 p) { return fract(1e4 * sin(17.0 * p.x + p.y * 0.1) * (0.1 + abs(sin(p.y * 13.0 + p.x)))); }
+          
           void main(void) {
               vec2 uv = vUV - vec2(0.5);
               float dist = length(uv);
               float angle = atan(uv.y, uv.x);
-              float spiral = sin(angle * 3.0 - dist * 6.5 + time * 1.8) * 0.5 + 0.5;
+              
+              // Gravitational lensing warp effect
+              float warp = 1.0 / (dist * 10.0 + 0.1);
+              float spiral = sin(angle * 2.0 - dist * 10.0 + time * 3.0) * 0.5 + 0.5;
+              
               float fade = smoothstep(0.5, 0.0, dist);
-              vec3 deepViolet = vec3(0.42, 0.0, 0.85);
-              vec3 cosmicAzure = vec3(0.0, 0.72, 1.0);
-              vec3 color = mix(deepViolet, cosmicAzure, spiral);
-              gl_FragColor = vec4(color * 1.3, fade * 0.85);
+              
+              // Event horizon is black, accretion glow near the edge
+              vec3 core = vec3(0.0);
+              vec3 accretionGlow = vec3(1.0, 0.8, 0.5) * spiral * warp * 0.2;
+              
+              // Background blueshifted starlight
+              vec3 starColor = vec3(0.6, 0.8, 1.0);
+              
+              vec3 finalColor = mix(core, accretionGlow + starColor * warp * 0.1, smoothstep(0.02, 0.15, dist));
+              gl_FragColor = vec4(finalColor, fade * smoothstep(0.0, 0.1, dist));
           }
         `;
 
@@ -5146,19 +5287,34 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           precision highp float;
           varying vec2 vUV;
           uniform float time;
+          
+          // Noise function for relativistic streaks
+          float hash(vec2 p) {
+              p = fract(p * vec2(123.34, 456.21));
+              p += dot(p, p + 45.32);
+              return fract(p.x * p.y);
+          }
+
           void main(void) {
               vec2 uv = vUV;
-              float slowWave1 = sin(uv.y * 8.0 - time * 1.5 + sin(uv.x * 3.0)) * 0.5 + 0.5;
-              float slowWave2 = cos(uv.y * 14.0 - time * 1.0 + cos(uv.x * 5.0)) * 0.5 + 0.5;
-              float fiberPattern = sin(uv.x * 12.0 + time * 0.5) * cos(uv.y * 22.0 - time * 1.2) * 0.5 + 0.5;
-              float softFiber = pow(fiberPattern, 3.0);
-              vec3 spaceBlue = vec3(0.01, 0.04, 0.18);
-              vec3 purpleNeon = vec3(0.38, 0.0, 0.72);
-              vec3 electricCyan = vec3(0.0, 0.75, 0.95);
-              vec3 baseColor = mix(spaceBlue, purpleNeon, slowWave1 * 0.6);
-              baseColor = mix(baseColor, electricCyan, slowWave2 * 0.35);
-              vec3 finalColor = baseColor + electricCyan * softFiber * 1.4;
-              float alpha = 0.55 + slowWave1 * 0.2 + softFiber * 0.25;
+              // Simulate extreme speed and blueshift/redshift
+              float speed = time * 8.0;
+              
+              // Create elongated streaks (starlight smeared by relativistic speeds)
+              float streak = hash(vec2(floor(uv.x * 100.0), floor(uv.y * 10.0 + speed)));
+              float intensity = smoothstep(0.95, 1.0, streak) * 2.0;
+              
+              // Base spacetime distortion (subtle gravitational waves)
+              float warp = sin(uv.x * 20.0 + time * 2.0) * cos(uv.y * 15.0 - time) * 0.5 + 0.5;
+              
+              // Doppler shift colors: blue/white ahead
+              vec3 blueShift = vec3(0.8, 0.9, 1.0);
+              vec3 distortionDark = vec3(0.01, 0.01, 0.02);
+              
+              vec3 baseColor = mix(distortionDark, blueShift * 0.2, warp);
+              vec3 finalColor = baseColor + blueShift * intensity;
+              
+              float alpha = 0.8 + warp * 0.2;
               gl_FragColor = vec4(finalColor, alpha);
           }
         `;

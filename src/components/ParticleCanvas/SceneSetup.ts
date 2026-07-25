@@ -28,6 +28,7 @@ export const initializeScene = (
   );
   camera.setTarget(BABYLON.Vector3.Zero());
   camera.fov = (fov * Math.PI) / 180;
+  camera.maxZ = 50000;
   
   cameraRef.current = camera;
 

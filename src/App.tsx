@@ -157,7 +157,7 @@ export default function App() {
     <div className="relative bg-black text-slate-200 overflow-x-hidden font-sans selection:bg-[#c14b2a]/30 selection:text-white">
       <ErrorOverlay />
       {/* Background visual engine */}
-      <WavelengthBackground />
+      <WavelengthBackground stage={stage} />
       {showDebug && (
         <div className="fixed top-0 left-0 z-[9999] p-4 text-green-400 font-mono text-xs max-w-[50vw] pointer-events-none bg-black/80">
           {debugLogs.map((log, i) => <div key={i}>{log}</div>)}
@@ -189,7 +189,7 @@ export default function App() {
             >
               <span className="relative flex h-2 w-2 items-center justify-center shrink-0">
                 {showSequenceCard && (
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#4deeea] opacity-75"></span>
+                  <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-[#4deeea] opacity-50"></span>
                 )}
                 <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${!showSequenceCard ? 'bg-[#e8e2d7]/40' : 'bg-[#4deeea]'}`}></span>
               </span>
@@ -228,7 +228,7 @@ export default function App() {
         >
           <span className="relative flex h-2 w-2 items-center justify-center shrink-0">
             {!muted && (
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#c14b2a] opacity-75"></span>
+              <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-[#c14b2a] opacity-50"></span>
             )}
             <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${muted ? 'bg-[#e8e2d7]/40' : 'bg-[#c14b2a]'}`}></span>
           </span>
@@ -263,7 +263,7 @@ export default function App() {
         >
           <span className="relative flex h-2 w-2 items-center justify-center shrink-0">
             {showDebug && (
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#4deeea] opacity-75"></span>
+              <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-[#4deeea] opacity-50"></span>
             )}
             <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${!showDebug ? 'bg-[#e8e2d7]/40' : 'bg-[#4deeea]'}`}></span>
           </span>
