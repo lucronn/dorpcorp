@@ -100,6 +100,14 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   const mouseRef = useRef({ x: -1000, y: -1000, lastMoved: Date.now() });
   const lastAutonomousEventTimeRef = useRef<number>(Date.now());
   const activeWormholeRef = useRef<{ startEntityIdx: number; endEntityIdx: number; life: number; duration: number } | null>(null);
+  const activeWormholeTunnelRef = useRef<{
+    x: number;
+    y: number;
+    startTime: number;
+    duration: number;
+    radius: number;
+    sceneTransitionTriggered?: boolean;
+  } | null>(null);
   const supernovaRef = useRef<{
     time: number;
     exploded: boolean;
@@ -536,10 +544,13 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
     const archetypes = [
       "BLACKHOLE_CENTRIC",
-      "BINARY_PLANETS",
+      "MAGNETAR_PULSAR",
       "NEBULA_CRADLE",
-      "EXOPLANET_CLUSTER",
+      "GRAVITATIONAL_MERGER",
       "SPIRAL_GALAXY",
+      "HYPERNOVA_COLLAPSE",
+      "SOLAR_FLARE_DYNASTY",
+      "RINGED_EXOPLANET_ARCHIPELAGO",
     ];
     const chosenArchetype =
       archetypes[Math.floor(Math.random() * archetypes.length)] ||
@@ -556,10 +567,10 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     const cy = height / 2;
 
     if (chosenArchetype === "BLACKHOLE_CENTRIC") {
-      systemName = "Singularity Core";
+      systemName = "Schwarzschild Relativistic Singularity";
       systemDesc =
-        "A supermassive rotating black hole locking dozens of systems in an aggressive, tightly wrapped accretion orbit. Spacetime bends visibly near the horizon.";
-      systemTags = ["🕳 BLACK HOLE", "☄ ACCRETION DISK", "★ GRAVITY SHEAR"];
+        "A supermassive Kerr black hole framed by a relativistic accretion disk. Frame-dragging and gravitational redshift warp ambient starlight near the photon sphere.";
+      systemTags = ["🕳 BLACK HOLE", "☄ ACCRETION DISK", "⚡ EINSTEIN RING"];
 
       const bhRad = isMobile ? 45 : 75;
       entities.push({
@@ -615,78 +626,43 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           isDestroyed: false,
         });
       }
-    } else if (chosenArchetype === "BINARY_PLANETS") {
-      systemName = "Gemini Synapse";
+    } else if (chosenArchetype === "MAGNETAR_PULSAR") {
+      systemName = "Magnetar Synchrotron Jet";
       systemDesc =
-        "A dance of twin sister planets locked in mutual orbit, connected by a high-energy particle bridge and cloaked in a dense orbital nebula.";
+        "An ultra-magnetic neutron star emitting high-frequency gamma-ray pulses and relativistic plasma jets along its magnetic dipole axis.";
       systemTags = [
-        "🪐 TWIN PLANETS",
-        "🌈 ENERGETIC BRIDGE",
-        "☁ NEBULA SHIELD",
+        "⚡ MAGNETAR CORE",
+        "🌌 SYNCHROTRON JET",
+        "⚡ GAMMA PULSE",
       ];
 
-      const separation = isMobile ? 350 : 650;
-      const p1Radius = isMobile ? 25 : 45;
-      const p2Radius = isMobile ? 22 : 38;
-
+      const mRadius = isMobile ? 24 : 42;
       entities.push({
-        type: "planet",
-        x: cx - separation,
+        type: "star",
+        x: cx,
         y: cy,
-        radius: p1Radius,
-        color: "#00ffd2",
-        secondaryColor: "#20c997",
-        hasRings: true,
-        ringColor: "rgba(0,255,210,0.35)",
-        orbitRadius: separation,
-        orbitAngle: Math.PI,
-        orbitSpeed: 0.004,
-        centerX: cx,
-        centerY: cy,
-        vx: -Math.sin(Math.PI) * separation * 0.004 * 1.5,
-        vy: Math.cos(Math.PI) * separation * 0.004 * 1.5,
-        mass: p1Radius * p1Radius,
-        initialMass: p1Radius * p1Radius,
+        radius: mRadius,
+        color: "#00f0ff",
+        secondaryColor: "#ffffff",
+        vx: 0,
+        vy: 0,
+        mass: mRadius * mRadius * 20,
         scale: 0,
-        currentRadius: p1Radius,
-        originalRadius: p1Radius,
-        targetRadius: p1Radius,
+        currentRadius: mRadius,
+        originalRadius: mRadius,
+        targetRadius: mRadius,
         isPhysicsEnabled: false,
         isDestroyed: false,
       });
 
-      entities.push({
-        type: "planet",
-        x: cx + separation,
-        y: cy,
-        radius: p2Radius,
-        color: "#da70d6",
-        secondaryColor: "#8a2be2",
-        hasRings: false,
-        orbitRadius: separation,
-        orbitAngle: 0,
-        orbitSpeed: 0.004,
-        centerX: cx,
-        centerY: cy,
-        vx: -Math.sin(0) * separation * 0.004 * 1.5,
-        vy: Math.cos(0) * separation * 0.004 * 1.5,
-        mass: p2Radius * p2Radius,
-        initialMass: p2Radius * p2Radius,
-        scale: 0,
-        currentRadius: p2Radius,
-        originalRadius: p2Radius,
-        targetRadius: p2Radius,
-        isPhysicsEnabled: false,
-        isDestroyed: false,
-      });
-
-      const nebRad = isMobile ? 250 : 450;
+      const nebRad = isMobile ? 220 : 420;
       entities.push({
         type: "nebula",
         x: cx,
         y: cy,
         radius: nebRad,
-        color: "rgba(120, 80, 220, 0.14)",
+        color: "rgba(0, 240, 255, 0.16)",
+        secondaryColor: "rgba(180, 0, 255, 0.12)",
         vx: 0,
         vy: 0,
         mass: nebRad * nebRad * 0.02,
@@ -698,10 +674,10 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         isDestroyed: false,
       });
     } else if (chosenArchetype === "NEBULA_CRADLE") {
-      systemName = "Vela Breeding Ground";
+      systemName = "Stelliferous Hydrodynamic Cradle";
       systemDesc =
-        "A majestic, multi-colored stellar nursery where new stars coalesce within beautiful gas envelopes of stellar dust.";
-      systemTags = ["★ STELLAR NURSERY", "🔮 VELA NEBULA", "🪐 PROTOPLANETS"];
+        "A star-forming molecular cloud complex where shockwaves compress cold interstellar gas, triggering gravitational collapse into protostars.";
+      systemTags = ["★ STELLAR NURSERY", "🔮 H II REGION", "🪐 PROTOSTARS"];
 
       const angle1 = Math.atan2(-(isMobile ? 50 : 90), -(isMobile ? 80 : 160));
       const angle2 = Math.atan2(isMobile ? 50 : 90, isMobile ? 80 : 160);
@@ -718,6 +694,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         y: cy + Math.sin(angle1) * radius1,
         radius: neb1Rad,
         color: "rgba(242, 95, 53, 0.16)",
+        secondaryColor: "rgba(255, 180, 50, 0.12)",
         orbitRadius: radius1,
         orbitAngle: angle1,
         orbitSpeed: 0.001,
@@ -740,6 +717,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         y: cy + Math.sin(angle2) * radius1,
         radius: neb2Rad,
         color: "rgba(77, 238, 234, 0.15)",
+        secondaryColor: "rgba(100, 100, 255, 0.12)",
         orbitRadius: radius1,
         orbitAngle: angle2,
         orbitSpeed: 0.001,
@@ -757,7 +735,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       });
 
       entities.push({
-        type: "planet",
+        type: "star",
         x: cx,
         y: cy,
         radius: pRadius,
@@ -765,7 +743,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         secondaryColor: "#f25f35",
         vx: 0,
         vy: 0,
-        mass: pRadius * pRadius,
+        mass: pRadius * pRadius * 5,
         scale: 0,
         currentRadius: pRadius,
         originalRadius: pRadius,
@@ -773,28 +751,28 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         isPhysicsEnabled: false,
         isDestroyed: false,
       });
-    } else if (chosenArchetype === "EXOPLANET_CLUSTER") {
-      systemName = "Solana Triad";
+    } else if (chosenArchetype === "GRAVITATIONAL_MERGER") {
+      systemName = "Compact Binary Gravitational Inspiral";
       systemDesc =
-        "Three pristine crystal exoplanets clustered in a highly dynamic, co-orbital gravitational field, woven together by a network of glowing particle highways.";
-      systemTags = ["🪐 ORBITAL TRIAD", "⚡ CONNECTOR HIGHS", "★ DEEP VOID"];
+        "Two massive stellar remnants undergoing extreme orbital decay, broadcasting gravitational waves into the surrounding spacetime metric.";
+      systemTags = ["🪐 BINARY INSPIRAL", "⚡ GRAVITATIONAL WAVES", "★ COMPACT CORE"];
 
-      const r = isMobile ? 350 : 600;
+      const r = isMobile ? 220 : 420;
 
-      for (let i = 0; i < 3; i++) {
-        const angle = (i * Math.PI * 2) / 3;
-        const pRadius = (isMobile ? 14 : 24) + Math.random() * 8;
-        const orbitSpeed = 0.0035;
+      for (let i = 0; i < 2; i++) {
+        const angle = (i * Math.PI);
+        const pRadius = (isMobile ? 18 : 32);
+        const orbitSpeed = 0.0045;
 
         entities.push({
           type: "planet",
           x: cx + Math.cos(angle) * r,
           y: cy + Math.sin(angle) * r,
           radius: pRadius,
-          color: i === 0 ? "#4deeea" : i === 1 ? "#ffd778" : "#ff5e62",
+          color: i === 0 ? "#4deeea" : "#ff5e62",
           secondaryColor: "#ffffff",
-          hasRings: i === 0,
-          ringColor: "rgba(77, 238, 234, 0.35)",
+          hasRings: true,
+          ringColor: i === 0 ? "rgba(77, 238, 234, 0.35)" : "rgba(255, 94, 98, 0.35)",
           orbitRadius: r,
           orbitAngle: angle,
           orbitSpeed: orbitSpeed,
@@ -802,7 +780,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           centerY: cy,
           vx: -Math.sin(angle) * r * orbitSpeed * 1.5,
           vy: Math.cos(angle) * r * orbitSpeed * 1.5,
-          mass: pRadius * pRadius,
+          mass: pRadius * pRadius * 8,
           scale: 0,
           currentRadius: pRadius,
           originalRadius: pRadius,
@@ -812,10 +790,10 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         });
       }
     } else if (chosenArchetype === "SPIRAL_GALAXY") {
-      systemName = "Andromeda Shard";
+      systemName = "Grand-Design Spiral Galaxy";
       systemDesc =
-        "A magnificent grand-design spiral galaxy spinning in silent majesty. Millions of newborn stars cluster in dense spiral arms fueled by rich interstellar dust lanes.";
-      systemTags = ["🌌 SPIRAL GALAXY", "☄ GALACTIC CORE", "★ STELLAR DISPERSION"];
+        "A magnificent galaxy spinning in quiet majesty. Millions of young blue stars cluster along spiral density waves fueled by dust lanes.";
+      systemTags = ["🌌 SPIRAL GALAXY", "☄ GALACTIC CORE", "★ DENSITY WAVES"];
 
       // 1. Central Galactic Nucleus
       const nucleusRad = isMobile ? 32 : 55;
@@ -873,6 +851,154 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         isPhysicsEnabled: false,
         isDestroyed: false,
       });
+    } else if (chosenArchetype === "HYPERNOVA_COLLAPSE") {
+      systemName = "Collapsar Gamma Ray Burst";
+      systemDesc =
+        "A massive Wolf-Rayet star at the end of its life cycle undergoes core collapse, firing twin ultra-relativistic gamma-ray jets through its expanding stellar envelope.";
+      systemTags = ["⚡ HYPERNOVA", "🌌 GAMMA-RAY BURST", "★ CORE COLLAPSE"];
+
+      const wrRad = isMobile ? 38 : 65;
+      entities.push({
+        type: "star",
+        x: cx,
+        y: cy,
+        radius: wrRad,
+        color: "#ff0055",
+        secondaryColor: "#ffaa00",
+        vx: 0,
+        vy: 0,
+        mass: wrRad * wrRad * 25,
+        scale: 0,
+        currentRadius: wrRad,
+        originalRadius: wrRad,
+        targetRadius: wrRad,
+        isPhysicsEnabled: false,
+        isDestroyed: false,
+      });
+
+      entities.push({
+        type: "nebula",
+        x: cx,
+        y: cy,
+        radius: isMobile ? 240 : 440,
+        color: "rgba(255, 0, 85, 0.18)",
+        secondaryColor: "rgba(255, 170, 0, 0.14)",
+        vx: 0,
+        vy: 0,
+        mass: 2000,
+        scale: 0,
+        currentRadius: isMobile ? 240 : 440,
+        originalRadius: isMobile ? 240 : 440,
+        targetRadius: isMobile ? 240 : 440,
+        isPhysicsEnabled: false,
+        isDestroyed: false,
+      });
+    } else if (chosenArchetype === "SOLAR_FLARE_DYNASTY") {
+      systemName = "Helios Coronal Mass Ejection";
+      systemDesc =
+        "A hyper-luminous supergiant star erupts with coronal magnetic arcs and coronal mass ejections, bathing its close-in terrestrial planets in solar wind plasma.";
+      systemTags = ["☀️ SUPERGIANT STAR", "⚡ CORONAL MASS EJECTION", "🪐 PLASMA WIND"];
+
+      const sunRad = isMobile ? 42 : 72;
+      entities.push({
+        type: "star",
+        x: cx,
+        y: cy,
+        radius: sunRad,
+        color: "#ffaa00",
+        secondaryColor: "#ffffff",
+        vx: 0,
+        vy: 0,
+        mass: sunRad * sunRad * 18,
+        scale: 0,
+        currentRadius: sunRad,
+        originalRadius: sunRad,
+        targetRadius: sunRad,
+        isPhysicsEnabled: false,
+        isDestroyed: false,
+      });
+
+      const pRadius = isMobile ? 14 : 24;
+      entities.push({
+        type: "planet",
+        x: cx + (isMobile ? 200 : 380),
+        y: cy,
+        radius: pRadius,
+        color: "#00e5ff",
+        secondaryColor: "#0077ff",
+        hasRings: true,
+        ringColor: "rgba(0, 229, 255, 0.4)",
+        orbitRadius: isMobile ? 200 : 380,
+        orbitAngle: 0,
+        orbitSpeed: 0.0035,
+        centerX: cx,
+        centerY: cy,
+        vx: 0,
+        vy: (isMobile ? 200 : 380) * 0.0035 * 1.5,
+        mass: pRadius * pRadius,
+        scale: 0,
+        currentRadius: pRadius,
+        originalRadius: pRadius,
+        targetRadius: pRadius,
+        isPhysicsEnabled: false,
+        isDestroyed: false,
+      });
+    } else if (chosenArchetype === "RINGED_EXOPLANET_ARCHIPELAGO") {
+      systemName = "Saturnian Crystal Archipelago";
+      systemDesc =
+        "A majestic gas giant encircled by ice-crystal ring systems, orbited by a resonant family of tidally locked moonlets.";
+      systemTags = ["🪐 GAS GIANT", "💎 ICE CRYSTAL RINGS", "🌕 RESONANT MOONS"];
+
+      const giantRad = isMobile ? 35 : 60;
+      entities.push({
+        type: "planet",
+        x: cx,
+        y: cy,
+        radius: giantRad,
+        color: "#e0c38c",
+        secondaryColor: "#a37a4c",
+        hasRings: true,
+        ringColor: "rgba(224, 195, 140, 0.55)",
+        vx: 0,
+        vy: 0,
+        mass: giantRad * giantRad * 6,
+        scale: 0,
+        currentRadius: giantRad,
+        originalRadius: giantRad,
+        targetRadius: giantRad,
+        isPhysicsEnabled: false,
+        isDestroyed: false,
+      });
+
+      for (let m = 0; m < 3; m++) {
+        const mAngle = (m * Math.PI * 2) / 3;
+        const mRadius = isMobile ? 8 : 14;
+        const mOrbitRad = (isMobile ? 180 : 320) + m * 60;
+        const mSpeed = 0.004 - m * 0.0008;
+
+        entities.push({
+          type: "planet",
+          x: cx + Math.cos(mAngle) * mOrbitRad,
+          y: cy + Math.sin(mAngle) * mOrbitRad,
+          radius: mRadius,
+          color: m === 0 ? "#77e5ff" : m === 1 ? "#ffb377" : "#d2ff77",
+          secondaryColor: "#ffffff",
+          orbitRadius: mOrbitRad,
+          orbitAngle: mAngle,
+          orbitSpeed: mSpeed,
+          centerX: cx,
+          centerY: cy,
+          vx: -Math.sin(mAngle) * mOrbitRad * mSpeed * 1.5,
+          vy: Math.cos(mAngle) * mOrbitRad * mSpeed * 1.5,
+          mass: mRadius * mRadius,
+          scale: 0,
+          currentRadius: mRadius,
+          originalRadius: mRadius,
+          targetRadius: mRadius,
+          isPhysicsEnabled: false,
+          isDestroyed: false,
+        });
+      }
     }
 
     console.log(`[DEBUG] generateInterstellarScene: Procedural fallback entities generated: ${entities.length}. Transitioning...`);
@@ -1545,7 +1671,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     let meshTransitionT = 0;
     let isMeshTransitioning = false;
     if (entityTransitionActiveRef.current) {
-      const duration = 2400; // 2.4 seconds duration matching camera
+      const duration = 5200; // 5.2s ultra-smooth, fluid morphing transition
       const elapsed = Date.now() - entityTransitionStartTimeRef.current;
       if (elapsed >= duration) {
         entityTransitionActiveRef.current = false;
@@ -1563,6 +1689,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       } else {
         isMeshTransitioning = true;
         const rawT = elapsed / duration;
+        // Smooth Cubic Ease-In-Out for continuous velocity across scene transitions
         meshTransitionT = rawT < 0.5 ? 4 * rawT * rawT * rawT : 1 - Math.pow(-2 * rawT + 2, 3) / 2;
       }
     }
@@ -1591,8 +1718,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     const musicAmp = (audio as any).getMusicAmplitude();
     const musicBands = (audio as any).getFrequencyBands ? (audio as any).getFrequencyBands() : { bass: 0, mid: 0, treble: 0 };
 
-    // Automatic Calming Cosmic Shift transition after 240 seconds for a slower, serene screensaver experience
-    if (isInterstellarRef.current && sceneAge > 240.0 && !supernovaRef.current) {
+    // Automatic Cosmic Transformation Shift transition after 45 seconds to advance the cosmic narrative
+    if (isInterstellarRef.current && sceneAge > 45.0 && !supernovaRef.current) {
       triggerCalmCosmicShift();
     }
 
@@ -2271,104 +2398,71 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           const bhContainer = new BABYLON.TransformNode("bh_group", scene);
           bhContainer.position.set(wx, wy, 0);
 
-          // 1. Accretion disk - Layer 1: Core fiery orange-yellow distorted waves
-          const diskRadius = entity.radius * 3.6;
-          const diskTex1 = generateDistortedLightwaveTexture("#ffa600", scene);
-          const diskMat1 = new BABYLON.PBRMaterial("diskMat1", scene);
-          diskMat1.albedoTexture = diskTex1;
-          diskMat1.emissiveTexture = diskTex1;
-          diskMat1.emissiveColor = new BABYLON.Color3(1, 1, 1);
-          diskMat1.disableLighting = true;
-          diskMat1.backFaceCulling = false;
-          diskMat1.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
-
-          diskMat1.alpha = 0.95;
-
-          const diskMesh1 = BABYLON.MeshBuilder.CreateTorus("accretion_layer_1", {
-            diameter: diskRadius * 1.8,
-            thickness: entity.radius * 0.22,
-            tessellation: 64
-          }, scene);
-          diskMesh1.material = diskMat1;
-          diskMesh1.rotation.x = Math.PI / 2.3;
-          diskMesh1.parent = bhContainer;
-
-          // Accretion disk - Layer 2: Opposing-spin golden wave warp (slightly tilted)
-          const diskTex2 = generateDistortedLightwaveTexture("#ffdf00", scene);
-          const diskMat2 = new BABYLON.PBRMaterial("diskMat2", scene);
-          diskMat2.albedoTexture = diskTex2;
-          diskMat2.emissiveTexture = diskTex2;
-          diskMat2.emissiveColor = new BABYLON.Color3(1, 1, 1);
-          diskMat2.disableLighting = true;
-          diskMat2.backFaceCulling = false;
-          diskMat2.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
-
-          diskMat2.alpha = 0.75;
-
-          const diskMesh2 = BABYLON.MeshBuilder.CreateTorus("accretion_layer_2", {
-            diameter: diskRadius * 1.6,
-            thickness: entity.radius * 0.16,
-            tessellation: 64
-          }, scene);
-          diskMesh2.material = diskMat2;
-          diskMesh2.rotation.x = Math.PI / 2.45;
-          diskMesh2.rotation.y = 0.12;
-          diskMesh2.parent = bhContainer;
-
-          // Accretion disk - Layer 3: Gravitational lensing ring (outer halo, near perpendicular view)
-          const lensRadius = entity.radius * 4.6;
-          const diskTex3 = generateDistortedLightwaveTexture("#ffffff", scene);
-          const diskMat3 = new BABYLON.PBRMaterial("diskMat3", scene);
-          diskMat3.albedoTexture = diskTex3;
-          diskMat3.emissiveTexture = diskTex3;
-          diskMat3.emissiveColor = new BABYLON.Color3(1, 1, 1);
-          diskMat3.disableLighting = true;
-          diskMat3.backFaceCulling = false;
-          diskMat3.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
-
-          diskMat3.alpha = 0.45;
-
-          const diskMesh3 = BABYLON.MeshBuilder.CreateTorus("gravitational_lensing", {
-            diameter: lensRadius * 1.8,
-            thickness: entity.radius * 0.12,
-            tessellation: 64
-          }, scene);
-          diskMesh3.material = diskMat3;
-          diskMesh3.rotation.x = Math.PI / 2.1;
-          diskMesh3.rotation.y = -0.08;
-          diskMesh3.parent = bhContainer;
-
-          // 2. Event Horizon Shadow
+          // 1. Schwarzschild Event Horizon - Absolute zero light reflection sphere
           const ehMat = new BABYLON.PBRMaterial("ehMat", scene);
           ehMat.albedoColor = new BABYLON.Color3(0, 0, 0);
           ehMat.emissiveColor = new BABYLON.Color3(0, 0, 0);
+          ehMat.roughness = 1.0;
+          ehMat.metallic = 0.0;
           ehMat.disableLighting = true;
 
           const ehMesh = BABYLON.MeshBuilder.CreateSphere("event_horizon_core", {
-            diameter: entity.radius * 1.02 * 2,
-            segments: 32
+            diameter: entity.radius * 2,
+            segments: 64
           }, scene);
           ehMesh.material = ehMat;
           ehMesh.parent = bhContainer;
 
-          // 2b. Event Horizon Glowing Corona (Einstein Ring / Photon Sphere lens aura)
-          const coronaTex = createCircularGlowTexture(hexToRgba(entity.color, 0.95), scene);
-          const coronaMat = new BABYLON.PBRMaterial("coronaMat", scene);
-          coronaMat.albedoTexture = coronaTex;
-          coronaMat.emissiveTexture = coronaTex;
-          coronaMat.emissiveColor = new BABYLON.Color3(1, 1, 1);
-          coronaMat.disableLighting = true;
-          coronaMat.backFaceCulling = false;
-          coronaMat.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
+          // 2. Gravitational Lensing Photon Sphere (Authentic relativistic Einstein Ring aura)
+          const photonRingMat = new BABYLON.StandardMaterial("photonRingMat", scene);
+          const pCol = parseColorToRgb(entity.color || "#ff6600");
+          const photonColor = new BABYLON.Color3(pCol.r / 255, pCol.g / 255, pCol.b / 255);
+          
+          photonRingMat.emissiveColor = photonColor;
+          photonRingMat.disableLighting = true;
+          photonRingMat.backFaceCulling = false;
+          photonRingMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
 
-          coronaMat.alpha = 0.9;
+          const bhFresnel = new BABYLON.FresnelParameters();
+          bhFresnel.isEnabled = true;
+          bhFresnel.bias = 0.02;
+          bhFresnel.power = 4.0;
+          bhFresnel.leftColor = photonColor;
+          bhFresnel.rightColor = BABYLON.Color3.Black();
+          photonRingMat.emissiveFresnelParameters = bhFresnel;
+          photonRingMat.opacityFresnelParameters = bhFresnel;
 
-          const coronaMesh = BABYLON.MeshBuilder.CreateSphere("event_horizon_corona", {
-            diameter: entity.radius * 1.15 * 2,
+          const photonMesh = BABYLON.MeshBuilder.CreateSphere("event_horizon_photon_sphere", {
+            diameter: entity.radius * 2.3,
             segments: 32
           }, scene);
-          coronaMesh.material = coronaMat;
-          coronaMesh.parent = bhContainer;
+          photonMesh.material = photonRingMat;
+          photonMesh.parent = bhContainer;
+
+          // 3. Relativistic Accretion Disc with Doppler Beaming (Double-Sided Thin Disc)
+          const discMesh = BABYLON.MeshBuilder.CreateDisc("accretion_layer_1", {
+            radius: entity.radius * 3.8,
+            tessellation: 64,
+            sideOrientation: BABYLON.Mesh.DOUBLESIDE
+          }, scene);
+
+          const discMat = new BABYLON.StandardMaterial("accretionDiscMat", scene);
+          const discTex = generateConcentricRingTexture(entity.color || "#ff6600", scene);
+          if (discTex) {
+            discMat.diffuseTexture = discTex;
+            discMat.emissiveTexture = discTex;
+            discMat.useAlphaFromDiffuseTexture = true;
+          }
+          discMat.emissiveColor = photonColor;
+          discMat.disableLighting = true;
+          discMat.backFaceCulling = false;
+          discMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
+          discMat.alpha = 0.85;
+
+          discMesh.material = discMat;
+          discMesh.rotation.x = Math.PI / 2.2; // tilted accretion disc plane
+          discMesh.rotation.y = 0.2;
+          discMesh.parent = bhContainer;
 
           bhContainer.scaling.set(initScale, initScale, initScale);
           if (celestialGroupRef.current) {
@@ -2698,12 +2792,13 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         // Smooth flowing size transition
         entity.scale = entity.scale ?? 0;
         
-        if (entity.isDestroyed && entity.destroyedBy === "collision") {
-          // Instant vanish for shattering collisions
+        if (entity.destroyedBy === "collision") {
           entity.scale = 0;
         } else {
+          // Smooth fluid opacity/scale fade during scene transitions (prevents rapid vanishing)
           const targetScale = entity.isDestroyed ? 0 : 1;
-          entity.scale += (targetScale - entity.scale) * 0.08;
+          const fadeRate = entity.isDestroyed ? 0.025 : 0.06; // Slow, graceful fade-out
+          entity.scale += (targetScale - entity.scale) * fadeRate;
         }
 
         entity.currentRadius = entity.currentRadius ?? entity.radius;
@@ -2787,13 +2882,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           });
           meshZ += meshGravityZ;
 
-          const mouseNormX = (mouseRef.current.x - ww / 2) / (ww / 2 || 1);
-          const mouseNormY = (mouseRef.current.y - wh / 2) / (wh / 2 || 1);
-          const parallaxFactor = 0.15;
-          const parallaxX = mouseNormX * meshZ * parallaxFactor;
-          const parallaxY = mouseNormY * meshZ * parallaxFactor;
-
-          inst.mesh.position.set(wx + parallaxX, wy + parallaxY, meshZ);
+          inst.mesh.position.set(wx, wy, meshZ);
         } else {
           inst.mesh.position.set(wx, wy, -30);
           if (cameraRef.current) {
@@ -3299,9 +3388,13 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       uniform float time;
       uniform float intensity;
       
-      // Noise function for relativistic distortion
-      float hash(float n) { return fract(sin(n) * 1e4); }
-      float hash(vec2 p) { return fract(1e4 * sin(17.0 * p.x + p.y * 0.1) * (0.1 + abs(sin(p.y * 13.0 + p.x)))); }
+      // High quality 2D Simplex/Value Noise for plasma swirls & cosmic turbulence
+      float hash(vec2 p) { 
+          p = fract(p * vec2(123.34, 456.21));
+          p += dot(p, p + 45.32);
+          return fract(p.x * p.y);
+      }
+      
       float noise(vec2 x) {
           vec2 i = floor(x);
           vec2 f = fract(x);
@@ -3311,6 +3404,17 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           float d = hash(i + vec2(1.0, 1.0));
           vec2 u = f * f * (3.0 - 2.0 * f);
           return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+      }
+      
+      float fbm(vec2 p) {
+          float val = 0.0;
+          float amp = 0.5;
+          for(int i = 0; i < 4; i++) {
+              val += amp * noise(p);
+              p *= 2.02;
+              amp *= 0.5;
+          }
+          return val;
       }
       
       void main(void) {
@@ -3324,52 +3428,58 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
               return;
           }
           
-          // Wormhole tunnel effect: space bends inward drastically
-          // dist = max(dist, 0.001); // prevent division by zero
+          vec2 normDir = dist > 0.0001 ? dir / dist : vec2(0.0);
           
-          // The tunnel gets deeper as intensity increases
-          float pull = (1.0 - smoothstep(0.0, 0.5, dist)) * intensity * 2.0;
+          // Relativistic Spacetime Gravitational Pull (Hyperbolic exponential pull towards center)
+          float pull = pow(1.0 - smoothstep(0.0, 0.5, dist), 1.8) * intensity * 2.5;
           
-          // Rotate UVs around center (swirling effect)
-          float angle = pull * time * 2.0;
-          float s = sin(angle);
-          float c = cos(angle);
-          mat2 rot = mat2(c, -s, s, c);
+          // Multi-layer counter-rotating swirl (photons orbiting the throat)
+          float angle1 = pull * (time * 2.5 + 1.0 / (dist + 0.05));
+          float angle2 = -pull * (time * 1.5 + 0.5 / (dist + 0.08));
           
-          vec2 swirledUV = center + rot * (uv - center) * (1.0 - pull * 0.4);
+          mat2 rot1 = mat2(cos(angle1), -sin(angle1), sin(angle1), cos(angle1));
+          mat2 rot2 = mat2(cos(angle2), -sin(angle2), sin(angle2), cos(angle2));
           
-          // Add some relativistic quantum noise
-          float n = noise(swirledUV * 20.0 - time * 5.0) * pull * 0.05;
-          swirledUV += vec2(n);
+          // Warp UV coordinates inward along geodesic rays
+          vec2 swirledUV1 = center + rot1 * (uv - center) * (1.0 - pull * 0.45);
+          vec2 swirledUV2 = center + rot2 * (uv - center) * (1.0 - pull * 0.3);
           
-          if (dist > 0.0001) {
-              dir = dir / dist;
-          } else {
-              dir = vec2(0.0);
-          }
+          // Relativistic plasma turbulence & energy filaments
+          float plasma = fbm(swirledUV1 * 12.0 - vec2(time * 2.0, time * 3.0)) * pull * 0.08;
+          swirledUV1 += normDir * plasma;
           
-          // Smoothly building radial blur (motion blur falling into the singularity)
-          float blurAmount = min(time * 0.015, 0.06) * intensity + pull * 0.05;
-          
+          // Multi-sample Radial Motion Blur (simulating light speed transit)
+          float blurAmount = min(time * 0.02, 0.08) * intensity + pull * 0.07;
           vec4 sum = vec4(0.0);
-          float samples = 12.0;
-          for(float i=0.0; i<12.0; i++) {
-              sum += texture2D(textureSampler, swirledUV + dir * (i / samples) * blurAmount);
+          float samples = 16.0;
+          for(float i = 0.0; i < 16.0; i++) {
+              float weight = 1.0 - (i / samples) * 0.5;
+              vec2 sampleUV = mix(swirledUV1, swirledUV2, i / samples) + normDir * (i / samples) * blurAmount;
+              sum += texture2D(textureSampler, sampleUV) * weight;
           }
-          sum /= samples;
+          sum /= (samples * 0.75);
           
-          // Relativistic Chromatic Aberration & Blueshift
-          // Light getting pulled into the wormhole blueshifts (gets brighter and bluer/whiter)
-          float ca = blurAmount * 0.6;
-          sum.r = texture2D(textureSampler, swirledUV + dir * ca * 1.5).r;
-          sum.g = texture2D(textureSampler, swirledUV + dir * ca * 0.5).g;
-          sum.b = texture2D(textureSampler, swirledUV - dir * ca * 0.5).b;
+          // Doppler Shift & Relativistic Chromatic Aberration
+          // Approaching light is blueshifted, trailing light is redshifted
+          float ca = blurAmount * 0.85;
+          sum.r = texture2D(textureSampler, swirledUV1 + normDir * ca * 2.0).r * 1.1;
+          sum.g = texture2D(textureSampler, swirledUV1 + normDir * ca * 0.7).g;
+          sum.b = texture2D(textureSampler, swirledUV1 - normDir * ca * 1.2).b * 1.2;
           
-          // Extreme brightness at the singularity edge
-          vec3 eventHorizonGlow = vec3(0.1, 0.5, 1.0) * pow(pull, 3.0) * 2.0;
+          // Gravitational Lensing Photonic Ring & Event Horizon Glow
+          float photonRing = smoothstep(0.08, 0.02, abs(dist - 0.18 * (1.0 - pull * 0.2))) * intensity;
+          vec3 ringColor = vec3(0.3, 0.85, 1.0) * photonRing * 3.0;
+          
+          // High-energy accretion disc / throat singularity illumination
+          vec3 singularityGlow = vec3(0.05, 0.4, 0.95) * pow(pull, 2.5) * 3.0;
+          vec3 coreHotspot = vec3(0.9, 0.95, 1.0) * pow(pull, 5.0) * 4.0;
           
           vec4 finalColor = mix(texture2D(textureSampler, uv), sum, intensity);
-          finalColor.rgb += eventHorizonGlow;
+          finalColor.rgb += singularityGlow + ringColor + coreHotspot;
+          
+          // Subtle vignetting at event horizon boundary
+          float horizonDarkening = smoothstep(0.0, 0.06, dist);
+          finalColor.rgb *= mix(0.2, 1.0, horizonDarkening);
           
           gl_FragColor = finalColor;
       }
@@ -3452,7 +3562,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     const fallbackColor = "#ffffff";
 
     // Tail/trail particles variables
-    const tailCount: number = isMobileDevice ? 3000 : 10000;
+    const tailCount: number = isMobileDevice ? 1500 : 4500;
     let tailStartIndex = -1;
     let tailIndex = 0;
 
@@ -3476,8 +3586,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     }
 
     const initialCoords = generateTargetsForStage(0, ww, wh);
-    const maxCap = isMobileDevice ? 25000 : 75000;
-    const minCap = isMobileDevice ? 12000 : 45000;
+    const maxCap = isMobileDevice ? 18000 : 42000;
+    const minCap = isMobileDevice ? 10000 : 28000;
     const particleCount = Math.min(
       maxCap,
       Math.max(minCap, initialCoords.length),
@@ -3785,11 +3895,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       const musicSpeedFactor = 1.0 + musicBands.mid * 2.2 + musicBands.bass * 0.8;
 
       const idleTime = now - lastUserActivityRef.current;
-      const isIdle = idleTime > 10000; // 10 seconds idle timeout
-      isScreensaverActiveRef.current = (stageRef.current === 0) && isIdle;
+      const isIdle = idleTime > 4000; // 4 seconds idle threshold for automatic camera recentering
+      isScreensaverActiveRef.current = isIdle;
 
       if (isScreensaverActiveRef.current) {
-        screensaverOpacityRef.current += (1.0 - screensaverOpacityRef.current) * 0.02;
+        screensaverOpacityRef.current += (1.0 - screensaverOpacityRef.current) * 0.04;
       } else {
         screensaverOpacityRef.current += (0.0 - screensaverOpacityRef.current) * 0.08;
       }
@@ -3944,6 +4054,42 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         };
       });
 
+      // Handle click-spawned physical particle wormhole tunnel
+      const clickWormhole = activeWormholeTunnelRef.current;
+      let whElapsed = 0;
+      let whProgress = 0;
+      let whOpenPhase = 0;
+      if (clickWormhole) {
+        whElapsed = Date.now() - clickWormhole.startTime;
+        whProgress = Math.min(1.0, whElapsed / clickWormhole.duration);
+        
+        // Mid-travel transition (at 55% of tunnel flight): switch scene entities in the background so camera emerges into new system!
+        if (whProgress > 0.55 && !clickWormhole.sceneTransitionTriggered) {
+          clickWormhole.sceneTransitionTriggered = true;
+          console.log("[DEBUG] Wormhole tunnel mid-travel exit reached: morphing into new cosmic sequence scene!");
+          if (animationComplete) {
+            animationComplete();
+          }
+          const ww = window.innerWidth;
+          const wh = window.innerHeight;
+          generateInterstellarScene(ww, wh, true);
+          mapParticlesToInterstellar(ww, wh);
+        }
+
+        if (whProgress >= 1.0) {
+          activeWormholeTunnelRef.current = null;
+        } else {
+          // Long travel envelope: opens & expands (0->0.2), deep travel tunnel (0.2->0.75), emerges into new scene (0.75->1.0)
+          if (whProgress < 0.2) {
+            whOpenPhase = Math.pow(whProgress / 0.2, 2.0);
+          } else if (whProgress < 0.75) {
+            whOpenPhase = 1.0;
+          } else {
+            whOpenPhase = 1.0 - Math.pow((whProgress - 0.75) / 0.25, 1.5);
+          }
+        }
+      }
+      
       // Compute total disturbance level from ripples and active supernovae
       let disturbance = activeRipples.reduce((acc, r) => acc + r.life, 0);
       
@@ -4325,12 +4471,19 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
               p.vx += (bdx / bdist) * radialStrength + tx * orbitalStrength;
               p.vy += (bdy / bdist) * radialStrength + ty * orbitalStrength;
 
+              // Differential Tidal Forces: Spaghettification stretching along radial axis towards the singularity
+              const tidalForce = Math.pow(closeness, 3.2) * 18.0;
+              p.vx += (bdx / bdist) * tidalForce;
+              p.vy += (bdy / bdist) * tidalForce;
+              // Stretch particle Z coordinate radially along the gravitational gradient
+              p.z += (Math.random() - 0.5) * tidalForce * 12.0;
+
               if (bdist < entity.radius * 1.25) {
                 // Smoothly fade out particle emission brightness to exactly 0 as it crosses the event horizon
                 const transitionProgress = (bdist - entity.radius * 1.02) / (entity.radius * 0.23);
                 particleBrightness = Math.max(0.0, Math.min(1.0, transitionProgress));
                 
-                if (bdist < entity.radius * 0.5 && Math.random() < 0.15) {
+                if (bdist < entity.radius * 0.4 && Math.random() < 0.2) {
                   // Sucked into the singularity! Recycle the particle to keep the cosmic density balanced
                   p.x = (Math.random() > 0.5 ? -100 : currentW + 100);
                   p.y = (Math.random() > 0.5 ? -100 : currentH + 100);
@@ -4459,6 +4612,36 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           }
         });
 
+        // Physical Wormhole Tunnel morphing at click location: long continuous travel through high-velocity particle tunnel
+        if (clickWormhole && whOpenPhase > 0) {
+          const wdx = drawX - clickWormhole.x;
+          const wdy = drawY - clickWormhole.y;
+          const wdist = Math.sqrt(wdx * wdx + wdy * wdy) || 1;
+          const maxRadius = clickWormhole.radius * whOpenPhase;
+          
+          if (wdist < maxRadius) {
+            const relDist = wdist / maxRadius; // 0 at click center, 1 at tunnel edge
+            const pullFactor = Math.pow(1.0 - relDist, 1.2) * whOpenPhase;
+            
+            // Continuous high-velocity vortex spiral rotation along the tunnel travel path
+            const travelProgress = whProgress * 25.0;
+            const swirlAngle = pullFactor * (6.0 + Math.sin(travelProgress + i * 0.1) * 2.0);
+            const cosS = Math.cos(swirlAngle);
+            const sinS = Math.sin(swirlAngle);
+            const rotX = wdx * cosS - wdy * sinS;
+            const rotY = wdx * sinS + wdy * cosS;
+            
+            // Constrain surrounding particles onto the cylindrical tunnel walls
+            const rimRadius = maxRadius * (0.25 + relDist * 0.75);
+            drawX = clickWormhole.x + (rotX / wdist) * rimRadius;
+            drawY = clickWormhole.y + (rotY / wdist) * rimRadius;
+            
+            // Extreme deep Z-axis tunneling (stretching particles far back into cosmic travel distance)
+            const zStream = Math.sin(whProgress * Math.PI * 4.0 + i * 0.05) * 150;
+            p.z -= pullFactor * 1600 + zStream;
+          }
+        }
+
         if (p.prevDrawX !== undefined && p.prevDrawY !== undefined) {
           const pdx = drawX - p.prevDrawX;
           const pdy = drawY - p.prevDrawY;
@@ -4475,7 +4658,10 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         const mdy = mouseRef.current.y - drawY;
         const mDistSq = mdx * mdx + mdy * mdy;
 
-        if (mDistSq < 40000) {
+        // Do not allow mouse vortex/magnetic drag forces to distort front layer celestial objects when camera lock is active
+        const isLockSuppressed = inputControllerRef.current.currentLock.intensity > 0.1;
+
+        if (mDistSq < 40000 && !isLockSuppressed) {
           const mDist = Math.sqrt(mDistSq);
           let mForce = Math.pow((200 - mDist) / 200, 1.5) * vortexMultiplier;
 
@@ -4557,16 +4743,9 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           }
         });
 
-        // Enhanced parallax offset based on depth (p.z) and mouse cursor
-        const mouseNormX = (mouseRef.current.x - currentW / 2) / (currentW / 2 || 1);
-        const mouseNormY = (mouseRef.current.y - currentH / 2) / (currentH / 2 || 1);
-        const parallaxFactor = 0.15;
-        const parallaxX = mouseNormX * p.z * parallaxFactor;
-        const parallaxY = mouseNormY * p.z * parallaxFactor;
-
-        // Map points to positions
-        positions[i * 3] = drawX - currentW / 2 + parallaxX;
-        positions[i * 3 + 1] = -(drawY - currentH / 2 + parallaxY);
+        // Map points to positions without mouse cursor parallax displacement
+        positions[i * 3] = drawX - currentW / 2;
+        positions[i * 3 + 1] = -(drawY - currentH / 2);
         positions[i * 3 + 2] = p.z + particleGravityZ;
 
         // Map colors
@@ -4586,36 +4765,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           }
         }
 
-        // Apply global visual fading & chromatic aberrations on color arrays
-        let rFactor = 1.0;
-        let gFactor = 1.0;
-        let bFactor = 1.0;
-
-        if (activeSupernova && !activeSupernova.isCalmShift && snElapsed > 0) {
-          const snX = activeSupernova.x;
-          const snY = activeSupernova.y;
-          const dist = Math.sqrt((drawX - snX) * (drawX - snX) + (drawY - snY) * (drawY - snY));
-          
-          // Entangle colors/light/wavelengths with shockwaves
-          const shock = Math.sin((snElapsed / 100) - (dist / 80)) * Math.max(0, 1 - (snElapsed / 3000)) * 0.1;
-          if (i % 3 === 0) {
-            rFactor = 1.0 + shock * 2.5;
-            bFactor = 1.0 - shock * 0.8;
-          } else if (i % 3 === 1) {
-            gFactor = 1.0 + shock * 2.5;
-            rFactor = 1.0 - shock * 0.8;
-          } else {
-            bFactor = 1.0 + shock * 2.5;
-            gFactor = 1.0 - shock * 0.8;
-          }
-        }
-
-         let textAlphaDimmer = 1.0;
+        let textAlphaDimmer = 1.0;
         if (p.isProjectText) {
           textAlphaDimmer = 1.0 - (screensaverOpacityRef.current * 0.72);
         }
 
-        // Dynamic frequency-band specific color shifts (e.g. Bass -> Red, Mids -> Green, Treble -> Blue/Cyan boost)
         let audioColorR = 1.0;
         let audioColorG = 1.0;
         let audioColorB = 1.0;
@@ -4625,52 +4779,10 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           audioColorB += musicBands.treble * 0.45;
         }
 
-        // Relativistic Doppler beaming and Gravitational redshift (astrophysical realism)
-        let dopplerR = 1.0;
-        let dopplerG = 1.0;
-        let dopplerB = 1.0;
-        let dopplerIntensity = 1.0;
-
-        if (isInterstellarRef.current && p.interstellarType === "blackhole" && p.orbitAngle !== undefined) {
-          // Relativistic Doppler Beaming:
-          // Approximate the line-of-sight velocity using the orbital angle's tangent component.
-          // Particles traveling towards the observer are blueshifted (hotter, bluer, brighter);
-          // particles traveling away are redshifted (cooler, redder, dimmer).
-          const velLineOfSight = -Math.sin(p.orbitAngle); // radial velocity projection
-
-          if (velLineOfSight > 0) {
-            // Blueshift (approaching): brighter, bluer
-            const factor = velLineOfSight * 0.42;
-            dopplerR = 1.0 - factor * 0.2;
-            dopplerG = 1.0 + factor * 0.1;
-            dopplerB = 1.0 + factor * 0.65;
-            dopplerIntensity = 1.0 + factor * 0.8;
-          } else {
-            // Redshift (receding): dimmer, redder
-            const factor = -velLineOfSight * 0.42;
-            dopplerR = 1.0 + factor * 0.55;
-            dopplerG = 1.0 - factor * 0.15;
-            dopplerB = 1.0 - factor * 0.4;
-            dopplerIntensity = Math.max(0.35, 1.0 - factor * 0.65);
-          }
-
-          // Gravitational Redshift (General Relativity Schwarzschild metric approximation):
-          // As stardust particles approach the Event Horizon (radius ~35), wavelengths stretch relativistically,
-          // causing them to shift towards deep red and fade out completely as they cross the photon sphere.
-          const horizonRadius = 35;
-          if (p.orbitRadius && p.orbitRadius < horizonRadius * 2.2) {
-            const grFactor = (horizonRadius * 2.2 - p.orbitRadius) / (horizonRadius * 1.2);
-            const redshift = Math.max(0, Math.min(0.65, grFactor));
-            dopplerR *= (1.0 + redshift * 0.35);
-            dopplerG *= (1.0 - redshift * 0.25);
-            dopplerB *= (1.0 - redshift * 0.55);
-            dopplerIntensity *= (1.0 - redshift * 0.5);
-          }
-        }
-
-        colors[i * 4] = Math.min(1.0, Math.max(0.0, (r / 255) * globalAlpha * rFactor * audioColorR * particleBrightness * textAlphaDimmer * dopplerR * dopplerIntensity));
-        colors[i * 4 + 1] = Math.min(1.0, Math.max(0.0, (g / 255) * globalAlpha * gFactor * audioColorG * particleBrightness * textAlphaDimmer * dopplerG * dopplerIntensity));
-        colors[i * 4 + 2] = Math.min(1.0, Math.max(0.0, (b / 255) * globalAlpha * bFactor * audioColorB * particleBrightness * textAlphaDimmer * dopplerB * dopplerIntensity));
+        // Clean, photorealistic color mapping without artificial RGB channel splitting
+        colors[i * 4] = Math.min(1.0, Math.max(0.0, (r / 255) * globalAlpha * audioColorR * particleBrightness * textAlphaDimmer));
+        colors[i * 4 + 1] = Math.min(1.0, Math.max(0.0, (g / 255) * globalAlpha * audioColorG * particleBrightness * textAlphaDimmer));
+        colors[i * 4 + 2] = Math.min(1.0, Math.max(0.0, (b / 255) * globalAlpha * audioColorB * particleBrightness * textAlphaDimmer));
         colors[i * 4 + 3] = globalAlpha * textAlphaDimmer;
         extras[i] = p.isTail ? 2.0 : (p.interstellarType === "background_galaxy" ? 3.0 : (!p.isCosmicAmbient ? 1.0 : 0.0));
       }
@@ -4747,52 +4859,47 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       let finalTargetZ = -cameraZ + inputs.currentCameraZDepthOffset;
 
       if (isInterstellarRef.current) {
-        // High-fidelity 3D orbital flyby path for cinematic 360-degree showcase
-        const orbitAngle = time * 0.0022; // smooth 360 rotation speed
-        const pitchAngle = Math.sin(time * 0.0006) * 0.28 + 0.18; // vertical slow-wave tilt
-        
-        // Intelligent Zooming: Calculate the maximum spread of active celestial entities
-        let maxSpread = 50; // Minimum fallback
+        // Find center of mass / primary focal entity of the active sequence
+        let centroidX = 0;
+        let centroidY = 0;
+        let centroidZ = 0;
+        let activeCount = 0;
+
         if (celestialEntitiesRef.current && celestialEntitiesRef.current.length > 0) {
-          let maxDistSq = 0;
           celestialEntitiesRef.current.forEach(entity => {
             if (!entity.isDestroyed) {
-              const wx = entity.x - currentW / 2;
-              const wy = -(entity.y - currentH / 2);
-              const wz = entity.z || 0;
-              // include radius in the distance
-              const dist = Math.sqrt(wx*wx + wy*wy + wz*wz) + entity.radius * 2;
-              if (dist * dist > maxDistSq) {
-                maxDistSq = dist * dist;
-              }
+              centroidX += entity.x - currentW / 2;
+              centroidY += -(entity.y - currentH / 2);
+              centroidZ += entity.z || 0;
+              activeCount++;
             }
           });
-          if (maxDistSq > 0) {
-             maxSpread = Math.sqrt(maxDistSq);
+          if (activeCount > 0) {
+            centroidX /= activeCount;
+            centroidY /= activeCount;
+            centroidZ /= activeCount;
           }
         }
-        
-        // Dynamically adjust radius based on spread, ensuring we stay close enough to see events but far enough to see everything
-        const dynamicRadius = Math.max(cameraZ * 0.5, maxSpread * 1.25) + cameraZ * Math.sin(time * 0.0012) * 0.15;
-        const currentRadius = dynamicRadius;
 
-        // 3D spherical coordinates relative to center (0,0,0)
-        const ox = currentRadius * Math.sin(orbitAngle) * Math.cos(pitchAngle);
-        const oy = currentRadius * Math.sin(pitchAngle);
-        const oz = currentRadius * Math.cos(orbitAngle) * Math.cos(pitchAngle);
+        // Dynamic cinematic orbiting & slow focal zoom breathing (getting close-up & far away seamlessly)
+        const orbitTime = now * 0.00018;
+        const orbitRadiusX = Math.sin(orbitTime) * 120.0;
+        const orbitRadiusY = Math.cos(orbitTime * 0.8) * 45.0;
+        const zoomPulse = Math.sin(orbitTime * 0.6) * (cameraZ * 0.28); // Dynamic zoom closer and farther away
 
-        finalTargetX = ox + inputs.currentCameraParallaxX;
-        finalTargetY = oy + inputs.currentCameraParallaxY;
-        finalTargetZ = oz + inputs.currentCameraZDepthOffset;
+        finalTargetX = centroidX + orbitRadiusX;
+        finalTargetY = centroidY + orbitRadiusY;
+        finalTargetZ = centroidZ - (cameraZ * 0.85 + zoomPulse);
       }
 
-      // Smooth cinematic orbital sweep in screensaver mode
-      if (stageRef.current === 0 && screensaverOpacityRef.current > 0.01) {
+      // Smooth camera centering and cinematic framing when mouse cursor is idle
+      if (screensaverOpacityRef.current > 0.01) {
         const ssTime = now * 0.00014;
-        const orbitAngle = ssTime;
-        const pitchAngle = Math.sin(ssTime * 0.6) * 0.14 + 0.06;
-        
         let maxSpread = 50;
+        let centroidX = 0;
+        let centroidY = 0;
+        let activeCount = 0;
+
         if (celestialEntitiesRef.current && celestialEntitiesRef.current.length > 0) {
           let maxDistSq = 0;
           celestialEntitiesRef.current.forEach(entity => {
@@ -4800,23 +4907,28 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
               const wx = entity.x - currentW / 2;
               const wy = -(entity.y - currentH / 2);
               const wz = entity.z || 0;
+              centroidX += wx;
+              centroidY += wy;
+              activeCount++;
               const dist = Math.sqrt(wx*wx + wy*wy + wz*wz) + entity.radius * 2;
               if (dist * dist > maxDistSq) maxDistSq = dist * dist;
             }
           });
           if (maxDistSq > 0) maxSpread = Math.sqrt(maxDistSq);
+          if (activeCount > 0) {
+            centroidX /= activeCount;
+            centroidY /= activeCount;
+          }
         }
-        
-        const dynamicRadius = Math.max(cameraZ * 0.5, maxSpread * 1.25) + cameraZ * Math.sin(ssTime * 1.2) * 0.15;
-        const currentRadius = dynamicRadius;
 
-        const ox = currentRadius * Math.sin(orbitAngle) * Math.cos(pitchAngle);
-        const oy = currentRadius * Math.sin(pitchAngle);
-        const oz = currentRadius * Math.cos(orbitAngle) * Math.cos(pitchAngle);
+        // Subtle front arc sweep keeping camera always positioned IN FRONT (negative Z) of the scene
+        const arcX = Math.sin(ssTime) * 60.0;
+        const arcY = Math.cos(ssTime * 0.7) * 30.0;
+        const frontTargetZ = -cameraZ * 0.85;
 
-        finalTargetX = finalTargetX * (1 - screensaverOpacityRef.current) + ox * screensaverOpacityRef.current;
-        finalTargetY = finalTargetY * (1 - screensaverOpacityRef.current) + oy * screensaverOpacityRef.current;
-        finalTargetZ = finalTargetZ * (1 - screensaverOpacityRef.current) + oz * screensaverOpacityRef.current;
+        finalTargetX = finalTargetX * (1 - screensaverOpacityRef.current) + (centroidX + arcX) * screensaverOpacityRef.current;
+        finalTargetY = finalTargetY * (1 - screensaverOpacityRef.current) + (centroidY + arcY) * screensaverOpacityRef.current;
+        finalTargetZ = finalTargetZ * (1 - screensaverOpacityRef.current) + frontTargetZ * screensaverOpacityRef.current;
       }
 
       // Cinematic Fly-Through Transition and Smooth Camera Interpolation
@@ -4845,42 +4957,10 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           const basePosY = (1 - transitionT) * startPos.y + transitionT * finalTargetY;
           const basePosZ = (1 - transitionT) * startPos.z + transitionT * finalTargetZ;
 
-          // Cinematic Fly-Through: Z Surge pushes directly THROUGH the central geometry plane (Z=0)
-          // Peak surge reaches +1400.0 at t=0.5, ensuring the lens goes far past Z=0.
-          const zSurge = Math.sin(transitionT * Math.PI) * 1400.0;
-
-          // Interactive/Organic weaving offsets simulating a complex pilot maneuver
-          const weaveX = Math.sin(transitionT * Math.PI) * 140.0 * Math.sin(transitionT * Math.PI * 2.5);
-          const weaveY = Math.sin(transitionT * Math.PI) * 90.0 * Math.cos(transitionT * Math.PI * 2.0);
-
           // Apply position update directly, integrating camera shake
-          camera.position.x = basePosX + weaveX + shakeX;
-          camera.position.y = basePosY + weaveY + shakeY;
-          camera.position.z = basePosZ + zSurge + shakeZ;
-
-          // Target locks blending
-          const lockX = inputs.currentLock.x * inputs.currentLock.intensity;
-          const lockY = inputs.currentLock.y * inputs.currentLock.intensity;
-          const lockZ = inputs.currentLock.z * inputs.currentLock.intensity;
-
-          // Dynamic target offset to add parallax sweep while maneuvering
-          const targetOffsetX = weaveX * 0.42 + lockX;
-          const targetOffsetY = weaveY * 0.42 + lockY;
-          camera.setTarget(new BABYLON.Vector3(targetOffsetX, targetOffsetY, lockZ));
-
-          // Incorporate camera tilt (pitch and yaw)
-          camera.rotation.x += inputs.currentCameraPitch;
-          camera.rotation.y += inputs.currentCameraYaw;
-
-          // Dynamic rotational banking (roll):
-          // Simulate physical centripetal banking forces as the camera snakes through space.
-          const rollAngle = Math.sin(transitionT * Math.PI) * 0.52 * Math.cos(transitionT * Math.PI * 1.5);
-          camera.rotation.z = rollAngle;
-        } else {
-          // Standard smooth camera interpolation for normal states
-          camera.position.x += (finalTargetX + shakeX - camera.position.x) * 0.04;
-          camera.position.y += (finalTargetY + shakeY - camera.position.y) * 0.04;
-          camera.position.z += (finalTargetZ + shakeZ - camera.position.z) * 0.04;
+          camera.position.x = basePosX + shakeX;
+          camera.position.y = basePosY + shakeY;
+          camera.position.z = basePosZ + shakeZ;
 
           // Target locks blending
           const lockX = inputs.currentLock.x * inputs.currentLock.intensity;
@@ -4888,12 +4968,77 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           const lockZ = inputs.currentLock.z * inputs.currentLock.intensity;
 
           camera.setTarget(new BABYLON.Vector3(lockX, lockY, lockZ));
+        } else {
+          // Standard smooth camera interpolation for normal states
+          let targetCamX = finalTargetX + shakeX;
+          let targetCamY = finalTargetY + shakeY;
+          let targetCamZ = finalTargetZ + shakeZ;
 
-          // Incorporate camera tilt (pitch and yaw)
-          camera.rotation.x += inputs.currentCameraPitch;
-          camera.rotation.y += inputs.currentCameraYaw;
+          // Smooth continuous wormhole transition without pausing or snappy camera jumps
+          if (clickWormhole && whOpenPhase > 0) {
+            const clickWorldX = clickWormhole.x - currentW / 2;
+            const clickWorldY = -(clickWormhole.y - currentH / 2);
+            const holeCamZ = -cameraZ * (1.0 - whOpenPhase * 0.45);
+            // Smooth ease-out multiplier to eliminate pause/snap
+            const lerpFactor = Math.sin(whOpenPhase * Math.PI * 0.5) * 0.7;
+            targetCamX = (1 - lerpFactor) * targetCamX + lerpFactor * clickWorldX;
+            targetCamY = (1 - lerpFactor) * targetCamY + lerpFactor * clickWorldY;
+            targetCamZ = (1 - lerpFactor) * targetCamZ + lerpFactor * holeCamZ;
+          }
 
-          // Reset camera roll gradually to 0 for vertical alignment when stable
+          camera.position.x += (targetCamX - camera.position.x) * 0.08;
+          camera.position.y += (targetCamY - camera.position.y) * 0.08;
+          camera.position.z += (targetCamZ - camera.position.z) * 0.08;
+
+          // --- Dynamic Cinematic Object Lock-On System ---
+          let primaryTargetX = 0;
+          let primaryTargetY = 0;
+          let primaryTargetZ = 0;
+          let hasPrimaryTarget = false;
+
+          if (celestialEntitiesRef.current && celestialEntitiesRef.current.length > 0) {
+            const activeEntities = celestialEntitiesRef.current.filter(e => !e.isDestroyed);
+            if (activeEntities.length > 0) {
+              const priorityEntity = activeEntities.find(e => e.type === "blackhole") || 
+                                     activeEntities.reduce((prev, curr) => (curr.mass || 0) > (prev.mass || 0) ? curr : prev, activeEntities[0]!);
+              
+              if (priorityEntity) {
+                primaryTargetX = priorityEntity.x - currentW / 2;
+                primaryTargetY = -(priorityEntity.y - currentH / 2);
+                primaryTargetZ = priorityEntity.z || 0;
+                hasPrimaryTarget = true;
+              }
+            }
+          }
+
+          const trackingTargetX = hasPrimaryTarget ? primaryTargetX : 0;
+          const trackingTargetY = hasPrimaryTarget ? primaryTargetY : 0;
+          const trackingTargetZ = hasPrimaryTarget ? primaryTargetZ : 0;
+
+          const baseLookX = trackingTargetX;
+          const baseLookY = trackingTargetY;
+          const baseLookZ = trackingTargetZ;
+
+          if (clickWormhole && whOpenPhase > 0) {
+            const clickWorldX = clickWormhole.x - currentW / 2;
+            const clickWorldY = -(clickWormhole.y - currentH / 2);
+            const lerpFactor = whOpenPhase * 0.85;
+            const targetX = (1 - lerpFactor) * baseLookX + lerpFactor * clickWorldX;
+            const targetY = (1 - lerpFactor) * baseLookY + lerpFactor * clickWorldY;
+            const targetZ = (1 - lerpFactor) * baseLookZ + lerpFactor * (-600);
+            camera.setTarget(new BABYLON.Vector3(targetX, targetY, targetZ));
+          } else {
+            const currentLook = camera.getTarget();
+            const lerpRate = 0.08;
+            const nextLookX = currentLook.x + (baseLookX - currentLook.x) * lerpRate;
+            const nextLookY = currentLook.y + (baseLookY - currentLook.y) * lerpRate;
+            const nextLookZ = currentLook.z + (baseLookZ - currentLook.z) * lerpRate;
+            camera.setTarget(new BABYLON.Vector3(nextLookX, nextLookY, nextLookZ));
+          }
+
+          // Zero out manual pitch/yaw overrides to prevent facing backwards/away
+          camera.rotation.x = 0;
+          camera.rotation.y = 0;
           camera.rotation.z *= 0.95;
         }
       }
@@ -4955,11 +5100,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         const scaleFactor = (cameraZ + planeZ) / cameraZ;
         hudPlaneRef.current.scaling.set(scaleFactor, scaleFactor, 1);
         
-        // Subtle parallax effect based on mouse position
-        const parallaxIntensity = 0.03; 
-        const offsetX = (mouseRef.current.x - ww / 2) * parallaxIntensity;
-        const offsetY = -(mouseRef.current.y - wh / 2) * parallaxIntensity;
-        hudPlaneRef.current.position.set(offsetX, offsetY, 0);
+        hudPlaneRef.current.position.set(0, 0, 0);
       }
 
       clearTimeout(resizeTimeout);
@@ -4993,15 +5134,10 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       const normY = -(e.clientY - currentH / 2) / (currentH / 2 || 1);
 
       const inputs = inputControllerRef.current;
-      if (!inputs.gyroActive) {
-        inputs.targetCameraParallaxX = normX * 85.0;
-        inputs.targetCameraParallaxY = normY * 85.0;
-        inputs.targetCameraPitch = normY * 0.22; // max ~12 degrees pitch
-        inputs.targetCameraYaw = normX * 0.22;   // max ~12 degrees yaw
-      } else {
-        inputs.targetCameraParallaxX = normX * 45.0;
-        inputs.targetCameraParallaxY = normY * 45.0;
-      }
+      inputs.targetCameraParallaxX = 0;
+      inputs.targetCameraParallaxY = 0;
+      inputs.targetCameraPitch = 0;
+      inputs.targetCameraYaw = 0;
 
       resetActivity();
     };
@@ -5040,67 +5176,19 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       // Trigger permission on click for iOS deviceorientation support
       requestGyroPermission();
 
-      ripplesRef.current.push({ x: e.clientX, y: e.clientY, life: 1.0 });
+      // Spawn a long physical particle wormhole tunnel travel sequence (6.5s) that opens at click location
+      activeWormholeTunnelRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        startTime: Date.now(),
+        duration: 6500,
+        radius: 380,
+        sceneTransitionTriggered: false,
+      };
 
-      // Compute Target Locks: Find closest celestial body near click coordinates
-      const currentW = window.innerWidth;
-      const currentH = window.innerHeight;
-      const clickX = e.clientX;
-      const clickY = e.clientY;
+      audio.playRippleShockwave();
+      fetchNextGeminiScene();
 
-      let nearestEntity: CelestialEntity | null = null;
-      let minDistance = 160; // target threshold in pixels
-      
-      celestialEntitiesRef.current.forEach((entity) => {
-        if (entity.isDestroyed) return;
-        const dist = Math.sqrt((entity.x - clickX) * (entity.x - clickX) + (entity.y - clickY) * (entity.y - clickY));
-        if (dist < minDistance) {
-          minDistance = dist;
-          nearestEntity = entity;
-        }
-      });
-
-      const inputs = inputControllerRef.current;
-      if (nearestEntity) {
-        const wx = (nearestEntity as CelestialEntity).x - currentW / 2;
-        const wy = -((nearestEntity as CelestialEntity).y - currentH / 2);
-        const wz = (nearestEntity as CelestialEntity).z || 0;
-        
-        inputs.targetLock = {
-          x: wx,
-          y: wy,
-          z: wz,
-          active: true,
-          entityId: (nearestEntity as CelestialEntity).id || "unknown"
-        };
-      } else {
-        inputs.targetLock = {
-          x: 0,
-          y: 0,
-          z: 0,
-          active: false,
-          entityId: null
-        };
-      }
-
-      // Trigger a cinematic cosmic shift on click so sequences can progress manually, but ONLY when in interstellar mode!
-      if (isInterstellarRef.current && !supernovaRef.current) {
-        // Smoothly fade out all current entities by setting them as destroyed
-        celestialEntitiesRef.current.forEach((entity) => {
-          entity.isDestroyed = true;
-        });
-
-        supernovaRef.current = {
-          time: Date.now(),
-          exploded: false,
-          isCalmShift: true,
-          x: e.clientX,
-          y: e.clientY,
-        };
-        console.log("[DEBUG] Click triggered supernova/shift", supernovaRef.current);
-        audio.playRippleShockwave();
-        fetchNextGeminiScene();
-      }
       resetActivity();
     };
 
@@ -5288,33 +5376,54 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           varying vec2 vUV;
           uniform float time;
           
-          // Noise function for relativistic streaks
           float hash(vec2 p) {
               p = fract(p * vec2(123.34, 456.21));
               p += dot(p, p + 45.32);
               return fract(p.x * p.y);
           }
+          
+          float noise(vec2 p) {
+              vec2 i = floor(p);
+              vec2 f = fract(p);
+              float a = hash(i);
+              float b = hash(i + vec2(1.0, 0.0));
+              float c = hash(i + vec2(0.0, 1.0));
+              float d = hash(i + vec2(1.0, 1.0));
+              vec2 u = f * f * (3.0 - 2.0 * f);
+              return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+          }
 
           void main(void) {
               vec2 uv = vUV;
-              // Simulate extreme speed and blueshift/redshift
-              float speed = time * 8.0;
+              // High speed transit velocity along tube length (u) and angular swirl (v)
+              float speed = time * 6.0;
               
-              // Create elongated streaks (starlight smeared by relativistic speeds)
-              float streak = hash(vec2(floor(uv.x * 100.0), floor(uv.y * 10.0 + speed)));
-              float intensity = smoothstep(0.95, 1.0, streak) * 2.0;
+              // Multi-frequency energy streaks (relativistic speed lines)
+              float streak1 = hash(vec2(floor(uv.x * 120.0), floor(uv.y * 12.0 + speed * 2.0)));
+              float streak2 = hash(vec2(floor(uv.x * 240.0), floor(uv.y * 24.0 + speed * 3.5)));
               
-              // Base spacetime distortion (subtle gravitational waves)
-              float warp = sin(uv.x * 20.0 + time * 2.0) * cos(uv.y * 15.0 - time) * 0.5 + 0.5;
+              float intensity1 = smoothstep(0.92, 1.0, streak1) * 2.5;
+              float intensity2 = smoothstep(0.95, 1.0, streak2) * 1.8;
               
-              // Doppler shift colors: blue/white ahead
-              vec3 blueShift = vec3(0.8, 0.9, 1.0);
-              vec3 distortionDark = vec3(0.01, 0.01, 0.02);
+              // Volumetric plasma wave turbulence on tunnel wall
+              vec2 plasmaUV = vec2(uv.x * 8.0, uv.y * 4.0 + time * 1.2);
+              float plasma = noise(plasmaUV) * noise(plasmaUV * 2.1 + vec2(time * 0.5));
               
-              vec3 baseColor = mix(distortionDark, blueShift * 0.2, warp);
-              vec3 finalColor = baseColor + blueShift * intensity;
+              // Gravitational wave rippling along tunnel length
+              float wave = sin(uv.x * 30.0 + time * 4.0) * cos(uv.y * 20.0 - time * 2.0) * 0.5 + 0.5;
               
-              float alpha = 0.8 + warp * 0.2;
+              // Relativistic Doppler colors (cyan/electric blue core with glowing magenta/violet plasma accent)
+              vec3 blueShift = vec3(0.3, 0.9, 1.0);
+              vec3 plasmaColor = vec3(0.85, 0.2, 0.95);
+              vec3 voidDark = vec3(0.005, 0.01, 0.03);
+              
+              vec3 baseColor = mix(voidDark, blueShift * 0.35, wave);
+              baseColor += plasmaColor * plasma * 0.6;
+              
+              vec3 streakColor = mix(blueShift, vec3(1.0, 1.0, 1.0), 0.6);
+              vec3 finalColor = baseColor + streakColor * (intensity1 + intensity2);
+              
+              float alpha = 0.85 + wave * 0.15;
               gl_FragColor = vec4(finalColor, alpha);
           }
         `;
@@ -5474,15 +5583,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
                     }
                 }
             }
-            if (!isInterstellarRef.current) {
-                if (camera) {
-                    const ray = scene.createPickingRay(scene.pointerX, scene.pointerY, BABYLON.Matrix.Identity(), camera);
-                    const targetPoint = ray.origin.add(ray.direction.scale(1500));
-                    startWormholeTransit(targetPoint, ray.direction);
-                } else {
-                    startWormholeTransit();
-                }
-            }
+            // On pointer down in non-interstellar mode, pure physical particle wormhole deformation handles the click natively in handleClick.
+            // No synthetic 3D tube/disc mesh or post-process shader graphics will be spawned.
         }
     });
 
@@ -5495,12 +5597,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       window.removeEventListener("deviceorientation", handleDeviceOrientation);
       delete (window as any).activateSequence;
 
-      if (lensingPostProcessRef.current) {
-        lensingPostProcessRef.current.dispose();
+      if (pointsMaterialRef.current) {
+        pointsMaterialRef.current.dispose();
       }
-
-      if (wormholePostProcessRef.current) {
-        wormholePostProcessRef.current.dispose();
+      if (composerRef.current) {
+        composerRef.current.dispose();
       }
 
       if (rendererRef.current) {
