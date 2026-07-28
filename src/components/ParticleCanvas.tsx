@@ -4858,38 +4858,32 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       let finalTargetY = inputs.currentCameraParallaxY;
       let finalTargetZ = -cameraZ + inputs.currentCameraZDepthOffset;
 
-      if (isInterstellarRef.current) {
-        // Find center of mass / primary focal entity of the active sequence
-        let centroidX = 0;
-        let centroidY = 0;
-        let centroidZ = 0;
-        let activeCount = 0;
+      // Calculate active celestial sequence centroid focal center
+      let seqCentroidX = 0;
+      let seqCentroidY = 0;
+      let seqCentroidZ = 0;
+      let seqActiveCount = 0;
 
-        if (celestialEntitiesRef.current && celestialEntitiesRef.current.length > 0) {
-          celestialEntitiesRef.current.forEach(entity => {
-            if (!entity.isDestroyed) {
-              centroidX += entity.x - currentW / 2;
-              centroidY += -(entity.y - currentH / 2);
-              centroidZ += entity.z || 0;
-              activeCount++;
-            }
-          });
-          if (activeCount > 0) {
-            centroidX /= activeCount;
-            centroidY /= activeCount;
-            centroidZ /= activeCount;
+      if (celestialEntitiesRef.current && celestialEntitiesRef.current.length > 0) {
+        celestialEntitiesRef.current.forEach(entity => {
+          if (!entity.isDestroyed) {
+            seqCentroidX += entity.x - currentW / 2;
+            seqCentroidY += -(entity.y - currentH / 2);
+            seqCentroidZ += entity.z || 0;
+            seqActiveCount++;
           }
+        });
+        if (seqActiveCount > 0) {
+          seqCentroidX /= seqActiveCount;
+          seqCentroidY /= seqActiveCount;
+          seqCentroidZ /= seqActiveCount;
         }
+      }
 
-        // Dynamic cinematic orbiting & slow focal zoom breathing (getting close-up & far away seamlessly)
-        const orbitTime = now * 0.00018;
-        const orbitRadiusX = Math.sin(orbitTime) * 120.0;
-        const orbitRadiusY = Math.cos(orbitTime * 0.8) * 45.0;
-        const zoomPulse = Math.sin(orbitTime * 0.6) * (cameraZ * 0.28); // Dynamic zoom closer and farther away
-
-        finalTargetX = centroidX + orbitRadiusX;
-        finalTargetY = centroidY + orbitRadiusY;
-        finalTargetZ = centroidZ - (cameraZ * 0.85 + zoomPulse);
+      if (isInterstellarRef.current) {
+        finalTargetX = seqCentroidX;
+        finalTargetY = seqCentroidY;
+        finalTargetZ = seqCentroidZ - cameraZ * 0.85;
       }
 
       // Smooth camera centering and cinematic framing when mouse cursor is idle
@@ -4990,30 +4984,9 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           camera.position.y += (targetCamY - camera.position.y) * 0.08;
           camera.position.z += (targetCamZ - camera.position.z) * 0.08;
 
-          // --- Dynamic Cinematic Object Lock-On System ---
-          let primaryTargetX = 0;
-          let primaryTargetY = 0;
-          let primaryTargetZ = 0;
-          let hasPrimaryTarget = false;
-
-          if (celestialEntitiesRef.current && celestialEntitiesRef.current.length > 0) {
-            const activeEntities = celestialEntitiesRef.current.filter(e => !e.isDestroyed);
-            if (activeEntities.length > 0) {
-              const priorityEntity = activeEntities.find(e => e.type === "blackhole") || 
-                                     activeEntities.reduce((prev, curr) => (curr.mass || 0) > (prev.mass || 0) ? curr : prev, activeEntities[0]!);
-              
-              if (priorityEntity) {
-                primaryTargetX = priorityEntity.x - currentW / 2;
-                primaryTargetY = -(priorityEntity.y - currentH / 2);
-                primaryTargetZ = priorityEntity.z || 0;
-                hasPrimaryTarget = true;
-              }
-            }
-          }
-
-          const trackingTargetX = hasPrimaryTarget ? primaryTargetX : 0;
-          const trackingTargetY = hasPrimaryTarget ? primaryTargetY : 0;
-          const trackingTargetZ = hasPrimaryTarget ? primaryTargetZ : 0;
+          const trackingTargetX = seqCentroidX;
+          const trackingTargetY = seqCentroidY;
+          const trackingTargetZ = seqCentroidZ;
 
           const baseLookX = trackingTargetX;
           const baseLookY = trackingTargetY;
