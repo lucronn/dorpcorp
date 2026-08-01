@@ -46,7 +46,7 @@ async function startServer() {
     let systemTags: string[] = [];
     const entities: any[] = [];
 
-    const hexColors = ["#00ffd2", "#ff6600", "#ffdf00", "#00e5ff", "#ff007f", "#aa00ff", "#00ff99", "#ffe600", "#e100ff"];
+    const hexColors = ["#ffffff", "#ffccaa", "#aaccff", "#ffddbb", "#cc8844", "#88bbff", "#aa4422", "#44aa44", "#cccccc"];
     const randomColor = () => hexColors[Math.floor(Math.random() * hexColors.length)];
 
     if (chosenArchetype === "BLACKHOLE_CENTRIC") {
@@ -56,8 +56,8 @@ async function startServer() {
       entities.push({
         type: "blackhole",
         radius: Math.floor(Math.random() * 20 + 55),
-        color: "#ff5100",
-        secondaryColor: "#ffa600"
+        color: "#ff8844",
+        secondaryColor: "#ff4422"
       });
       const count = Math.floor(Math.random() * 2 + 1);
       for (let i = 0; i < count; i++) {
@@ -67,14 +67,14 @@ async function startServer() {
           color: randomColor(),
           secondaryColor: randomColor(),
           hasRings: Math.random() > 0.4,
-          ringColor: "rgba(0, 255, 210, 0.4)"
+          ringColor: "rgba(200, 200, 200, 0.4)"
         });
       }
       entities.push({
         type: "star",
         radius: Math.floor(Math.random() * 10 + 20),
         color: "#ffffff",
-        secondaryColor: "#00e5ff"
+        secondaryColor: "#aaccff"
       });
     } else if (chosenArchetype === "BINARY_PLANETS") {
       systemDesc = `Two massive, twin planets tidally locked to one another, orbiting a common barycenter. Ionized particle winds bridge their upper atmospheres, generating a permanent bridge of glowing auroral light.`;
@@ -89,16 +89,16 @@ async function startServer() {
       entities.push({
         type: "planet",
         radius: 30,
-        color: "#00ffd2",
-        secondaryColor: "#0055ff",
+        color: "#2255aa",
+        secondaryColor: "#44aa44",
         hasRings: true,
-        ringColor: "rgba(0, 255, 210, 0.35)"
+        ringColor: "rgba(220, 220, 220, 0.35)"
       });
       entities.push({
         type: "planet",
         radius: 26,
-        color: "#ff007f",
-        secondaryColor: "#aa00ff",
+        color: "#cc8844",
+        secondaryColor: "#aa4422",
         hasRings: false
       });
     } else if (chosenArchetype === "NEBULA_CRADLE") {
@@ -108,22 +108,22 @@ async function startServer() {
       entities.push({
         type: "nebula",
         radius: Math.floor(Math.random() * 100 + 250),
-        color: "#aa00ff",
-        secondaryColor: "#00ffd2"
+        color: "#ff4466",
+        secondaryColor: "#4488ff"
       });
       entities.push({
         type: "star",
         radius: 35,
-        color: "#00e5ff",
+        color: "#aaccff",
         secondaryColor: "#ffffff"
       });
       entities.push({
         type: "planet",
         radius: 22,
-        color: "#ffdf00",
-        secondaryColor: "#ff5100",
+        color: "#ffddbb",
+        secondaryColor: "#cc8844",
         hasRings: true,
-        ringColor: "rgba(255, 223, 0, 0.45)"
+        ringColor: "rgba(255, 255, 255, 0.45)"
       });
     } else if (chosenArchetype === "EXOPLANET_CLUSTER") {
       systemDesc = `A rare, perfectly resonant chain of crystalline planets sharing a stable orbit. Silicate rich sands on their surfaces reflect the brilliant golden radiation of their host hypergiant star.`;
@@ -132,8 +132,8 @@ async function startServer() {
       entities.push({
         type: "star",
         radius: 50,
-        color: "#ffa600",
-        secondaryColor: "#ffe600"
+        color: "#ffccaa",
+        secondaryColor: "#ffddbb"
       });
       const count = Math.floor(Math.random() * 2 + 2);
       for (let i = 0; i < count; i++) {
@@ -153,22 +153,22 @@ async function startServer() {
       entities.push({
         type: "star",
         radius: 38,
-        color: "#00e5ff",
+        color: "#aaccff",
         secondaryColor: "#ffffff"
       });
       entities.push({
         type: "nebula",
         radius: 300,
-        color: "#0033ff",
-        secondaryColor: "#ff00aa"
+        color: "#4488ff",
+        secondaryColor: "#ff4466"
       });
       entities.push({
         type: "planet",
         radius: 20,
-        color: "#00ff99",
-        secondaryColor: "#008855",
+        color: "#44aa44",
+        secondaryColor: "#2255aa",
         hasRings: true,
-        ringColor: "rgba(0, 255, 153, 0.3)"
+        ringColor: "rgba(200, 200, 200, 0.3)"
       });
     }
 
@@ -197,7 +197,7 @@ async function startServer() {
       const client = getAIClient();
       const response = await client.models.generateContent({
         model: "gemini-3.5-flash",
-        contents: "Generate a completely unique, highly imaginative, custom cosmic system. It could be centered around an exotic black hole, binary stars, twin planets, celestial nurseries, or crystal exoplanets.",
+        contents: "Generate a completely unique, highly imaginative, custom cosmic system. Focus on realistic, high-fidelity space objects, avoiding plain neon colors.",
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -235,11 +235,11 @@ async function startServer() {
                     },
                     color: {
                       type: Type.STRING,
-                      description: "Hex color representing the entity's visual palette (e.g. #00ffd2, #ffd778, #ff6600, etc.)"
+                      description: "Realistic hex color representing the entity's visual palette (e.g., Earthly blue #2255aa, Gas giant orange #cc8844, Star white #ffffff, NOT neon colors)"
                     },
                     secondaryColor: {
                       type: Type.STRING,
-                      description: "Hex color for secondary shading or textures"
+                      description: "Hex color for secondary shading or textures (realistic, non-neon)"
                     },
                     hasRings: {
                       type: Type.BOOLEAN,
@@ -247,7 +247,7 @@ async function startServer() {
                     },
                     ringColor: {
                       type: Type.STRING,
-                      description: "rgba string color for the rings (e.g., rgba(77, 238, 234, 0.4))"
+                      description: "rgba string color for the rings (e.g., rgba(200, 200, 200, 0.4))"
                     }
                   },
                   required: ["type", "radius", "color"]

@@ -33,10 +33,10 @@ export const createCircleTexture = (scene: BABYLON.Scene) => {
   const ctx = canvas.getContext("2d");
   if (ctx) {
     const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-    grad.addColorStop(0, "rgba(255, 255, 255, 1.0)");
-    grad.addColorStop(0.18, "rgba(255, 252, 245, 0.85)");
-    grad.addColorStop(0.4, "rgba(255, 245, 235, 0.4)");
-    grad.addColorStop(0.75, "rgba(240, 235, 225, 0.08)");
+    grad.addColorStop(0, "rgba(255, 255, 255, 0.85)");
+    grad.addColorStop(0.12, "rgba(255, 255, 255, 0.65)");
+    grad.addColorStop(0.3, "rgba(255, 248, 240, 0.32)");
+    grad.addColorStop(0.6, "rgba(255, 245, 235, 0.1)");
     grad.addColorStop(1, "rgba(255, 255, 255, 0)");
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 64, 64);

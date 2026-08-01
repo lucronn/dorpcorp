@@ -88,15 +88,6 @@ export default function App() {
         window.requestAnimationFrame(() => {
           let scrollY = window.scrollY || document.documentElement.scrollTop;
           
-          // Endless scrolling loop
-          if (scrollY >= maxScroll - 2) {
-             window.scrollTo({ top: 10, behavior: 'instant' });
-             scrollY = 10;
-          } else if (scrollY <= 0) {
-             window.scrollTo({ top: maxScroll - 10, behavior: 'instant' });
-             scrollY = maxScroll - 10;
-          }
-
           const scrollFraction = Math.max(0, Math.min(1, scrollY / maxScroll));
           
           // 6 even stages: 0 to 5
@@ -280,9 +271,9 @@ export default function App() {
 
       {/* HUD Layout for Project Details (Immersive, no box overlays) */}
       <div 
-         className="fixed inset-0 z-30 pointer-events-none flex items-end sm:items-center justify-start p-6 sm:p-16"
+         className="fixed inset-0 z-30 pointer-events-none p-6 sm:p-16"
       >
-        <AnimatePresence mode="wait">
+        <AnimatePresence>
           {!isInterstellar && stage >= 2 && project && (
             <motion.div
               key={`hud-${stage}`}
@@ -291,7 +282,7 @@ export default function App() {
               exit={{ y: -50, opacity: 0, filter: 'blur(10px)' }}
               transition={{ duration: 1.0, ease: [0.16, 1, 0.3, 1] }}
               id="project-hud"
-              className="w-full max-w-[500px] pointer-events-auto"
+              className="absolute bottom-6 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 left-6 sm:left-16 w-full max-w-[500px] pointer-events-auto flex flex-col"
             >
               {/* Top Section */}
               <div className="flex flex-col items-start z-10 w-full relative mb-8">

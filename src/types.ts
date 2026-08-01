@@ -6,6 +6,7 @@ export interface Particle {
   z: number;
   targetX: number;
   targetY: number;
+  targetZ?: number;
   vx: number;
   vy: number;
   vz: number;
