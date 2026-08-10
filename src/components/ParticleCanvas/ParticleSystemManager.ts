@@ -5,7 +5,6 @@ export class ParticleSystemManager {
 
   constructor(scene: BABYLON.Scene, capacity: number = 20000) {
     this.particleSystem = new BABYLON.ParticleSystem("particles", capacity, scene);
-    this.particleSystem.particleTexture = new BABYLON.Texture("https://www.babylonjs-playground.com/textures/flare.png", scene);
     this.particleSystem.emitter = BABYLON.Vector3.Zero();
     this.particleSystem.start();
   }

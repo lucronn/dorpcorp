@@ -47,6 +47,14 @@ export interface CelestialEntity {
   targetZ?: number;
 }
 
+export interface ParticleFilters {
+  ambient: boolean;      // Cosmic Ambient & Background Galaxies
+  celestial: boolean;    // Black Holes, Planets, Stars & Nebulas
+  bridges: boolean;      // Wormhole & Gravitational Bridges
+  tails: boolean;        // Jet Trails & Spaghettification Debris
+  typography: boolean;   // Project Text & Typography
+}
+
 export interface ParticleCanvasProps {
   stage: number;
   isInterstellar?: boolean;
@@ -57,4 +65,9 @@ export interface ParticleCanvasProps {
     description: string;
     tags: string[];
   }) => void;
+  showDebug?: boolean;
+  particleFilters?: ParticleFilters;
+  textParticleSpeed?: number;
+  ambientParticleSpeed?: number;
+  objectParticleSpeed?: number;
 }

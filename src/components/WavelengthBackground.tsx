@@ -13,10 +13,7 @@ export const WavelengthBackground: React.FC<Props> = ({ stage = 0 }) => {
   const swellIntensityRef = useRef(0);
 
   useEffect(() => {
-    if (stageRef.current !== stage) {
-      stageRef.current = stage;
-      swellIntensityRef.current = 1.0; // Trigger swell
-    }
+    // Stage changes remain calm and static without opacity spikes
   }, [stage]);
   
   useEffect(() => {
@@ -76,53 +73,39 @@ export const WavelengthBackground: React.FC<Props> = ({ stage = 0 }) => {
       const normalizedY = currentY / height;
       const baseAmplitude = (30 + normalizedY * 100) * (1.0 - scrollFactor * 0.4); // Waves get calmer as you descend deeper
       
-      // Decay swell
-      swellIntensityRef.current *= 0.985; // Gradual decay over a few seconds
-
-      // Breathing animation (baseline sine wave pulse)
-      const breathing = (Math.sin(time * 0.05) * 0.5 + 0.5); // 0.0 to 1.0
-      
-      const swell = swellIntensityRef.current;
-      
-      // Combine base amplitude with breathing and swell
-      const dynamicAmplitude = baseAmplitude * (1.0 + breathing * 0.15 + swell * 0.6);
+      // Smooth, static amplitude for photosensitive safety
+      const dynamicAmplitude = baseAmplitude;
 
       ctx.lineWidth = 1;
       
-      // Incorporate scroll depth into the phase to make waves shift vertically with scroll
-      const scrollPhase = scrollRef.current * 0.005;
+      const scrollPhase = scrollRef.current * 0.002;
       
       for (let i = 0; i < lines; i++) {
         ctx.beginPath();
         
-        // Highly visible, stunning multi-color layered glowing waves
-        // Apply breathing and swell to alpha as well
-        const baseAlpha = 0.03 + (i / lines) * 0.07; 
-        const dynamicAlpha = baseAlpha * (1.0 + breathing * 0.4 + swell * 1.5);
+        const baseAlpha = 0.02 + (i / lines) * 0.04; 
         
-        let strokeStyle = `rgba(245, 242, 235, ${dynamicAlpha})`; // Elegant soft white/ivory base
+        let strokeStyle = `rgba(245, 242, 235, ${baseAlpha})`; 
         
         if (i % 4 === 0) {
-          // Captivating terracotta accent wave
-          strokeStyle = `rgba(193, 75, 42, ${dynamicAlpha * 1.1})`;
+          strokeStyle = `rgba(193, 75, 42, ${baseAlpha * 0.8})`;
         } else if (i % 3 === 1) {
-          // Celestial neon cyan-blue accent wave
-          strokeStyle = `rgba(77, 238, 234, ${dynamicAlpha * 0.9})`;
+          strokeStyle = `rgba(77, 238, 234, ${baseAlpha * 0.7})`;
         }
         ctx.strokeStyle = strokeStyle;
-        ctx.lineWidth = i % 3 === 0 ? 1.5 : 1.0; // Variable thickness for amazing physical depth!
+        ctx.lineWidth = i % 3 === 0 ? 1.2 : 1.0;
         
-        for (let x = 0; x <= width; x += 15) { // Wider steps for smoother vectors
+        for (let x = 0; x <= width; x += 20) { 
           const distToMouse = Math.abs(x - currentX);
-          const influence = Math.max(0, 1 - distToMouse / (width * 0.5)); // Wider mouse influence
+          const influence = Math.max(0, 1 - distToMouse / (width * 0.5)); 
           
-          const freq1 = 0.0015 + (i * 0.0001);
-          const freq2 = 0.003 - (i * 0.0002);
+          const freq1 = 0.0012 + (i * 0.0001);
+          const freq2 = 0.002 - (i * 0.0001);
           
           const yOffset = (height / 2) 
-            + Math.sin(x * freq1 + time * 0.01 + i + scrollPhase) * dynamicAmplitude
-            + Math.cos(x * freq2 - time * 0.01 - i + scrollPhase * 1.5) * (dynamicAmplitude * 0.4)
-            + Math.sin(x * 0.005 + time * 0.02) * (influence * 40 * (1.0 + swell * 0.5)); // Toned down influence, slightly boosted during swells
+            + Math.sin(x * freq1 + time * 0.005 + i + scrollPhase) * dynamicAmplitude
+            + Math.cos(x * freq2 - time * 0.005 - i + scrollPhase * 1.2) * (dynamicAmplitude * 0.3)
+            + Math.sin(x * 0.003 + time * 0.008) * (influence * 15);
             
           if (x === 0) {
             ctx.moveTo(x, yOffset);
@@ -134,7 +117,7 @@ export const WavelengthBackground: React.FC<Props> = ({ stage = 0 }) => {
         ctx.stroke();
       }
       
-      time += 0.08; // Slower, more deliberate motion for a calm realistic wave
+      time += 0.008; // Slower, more deliberate motion for a calm realistic wave
       animationId = requestAnimationFrame(render);
     };
     

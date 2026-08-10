@@ -3,21 +3,47 @@ import { ParticleCanvas } from './components/ParticleCanvas';
 import { WavelengthBackground } from './components/WavelengthBackground';
 import { ErrorOverlay } from './components/ErrorOverlay';
 import { projects } from './types';
-import { AnimatePresence, motion } from 'motion/react';
+import { ProjectHUD } from './components/ProjectHUD';
+import { InterstellarHUD } from './components/InterstellarHUD';
+import { DebugInspectorCard } from './components/DebugInspectorCard';
+import { ParticleFilters } from './components/ParticleCanvas/types';
+import { AnimatePresence, motion, useScroll, useTransform } from 'motion/react';
 import { ExternalLink, Github, Volume2, VolumeX, Eye, EyeOff, Terminal } from 'lucide-react';
 import { audio } from './utils/audio';
-
-
 
 export default function App() {
   const [stage, setStage] = useState(0);
   const [isInterstellar, setIsInterstellar] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const [particleFilters, setParticleFilters] = useState<ParticleFilters>({
+    ambient: false,
+    celestial: true,
+    bridges: true,
+    tails: true,
+    typography: true,
+  });
   useEffect(() => {
+    const safeStringify = (val: any): string => {
+      if (val === null || val === undefined) return String(val);
+      if (typeof val !== 'object') return String(val);
+      try {
+        const seen = new WeakSet();
+        return JSON.stringify(val, (key, value) => {
+          if (typeof value === 'object' && value !== null) {
+            if (seen.has(value)) return '[Circular]';
+            seen.add(value);
+          }
+          return value;
+        });
+      } catch {
+        return String(val);
+      }
+    };
+
     const origLog = console.log;
     console.log = (...args) => {
       origLog(...args);
-      const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+      const msg = args.map(safeStringify).join(' ');
       if (msg.includes("[DEBUG]") || msg.includes("Error")) {
          setDebugLogs(prev => [...prev.slice(-15), msg]);
       }
@@ -26,7 +52,7 @@ export default function App() {
     const origError = console.error;
     console.error = (...args) => {
       origError(...args);
-      const msg = "[ERROR] " + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+      const msg = "[ERROR] " + args.map(safeStringify).join(' ');
       setDebugLogs(prev => [...prev.slice(-15), msg]);
     };
 
@@ -54,6 +80,9 @@ export default function App() {
   const [muted, setMuted] = useState(true);
   const [showSequenceCard, setShowSequenceCard] = useState(true);
   const [showDebug, setShowDebug] = useState(false);
+  const [textParticleSpeed, setTextParticleSpeed] = useState<number>(0.12);
+  const [ambientParticleSpeed, setAmbientParticleSpeed] = useState<number>(0.15);
+  const [objectParticleSpeed, setObjectParticleSpeed] = useState<number>(0.15);
   const [isIdle, setIsIdle] = useState(false);
   const [isSoundHovered, setIsSoundHovered] = useState(false);
   const [isInfoHovered, setIsInfoHovered] = useState(false);
@@ -149,11 +178,19 @@ export default function App() {
       <ErrorOverlay />
       {/* Background visual engine */}
       <WavelengthBackground stage={stage} />
-      {showDebug && (
-        <div className="fixed top-0 left-0 z-[9999] p-4 text-green-400 font-mono text-xs max-w-[50vw] pointer-events-none bg-black/80">
-          {debugLogs.map((log, i) => <div key={i}>{log}</div>)}
-        </div>
-      )}
+      <DebugInspectorCard
+        showDebug={showDebug}
+        setShowDebug={setShowDebug}
+        debugLogs={debugLogs}
+        particleFilters={particleFilters}
+        setParticleFilters={setParticleFilters}
+        textParticleSpeed={textParticleSpeed}
+        setTextParticleSpeed={setTextParticleSpeed}
+        ambientParticleSpeed={ambientParticleSpeed}
+        setAmbientParticleSpeed={setAmbientParticleSpeed}
+        objectParticleSpeed={objectParticleSpeed}
+        setObjectParticleSpeed={setObjectParticleSpeed}
+      />
       
       {/* Control Pod in Top Right Corner */}
       <div className="fixed top-6 right-6 lg:top-8 lg:right-8 z-50 flex items-center gap-3">
@@ -275,46 +312,7 @@ export default function App() {
       >
         <AnimatePresence>
           {!isInterstellar && stage >= 2 && project && (
-            <motion.div
-              key={`hud-${stage}`}
-              initial={{ y: 50, opacity: 0, filter: 'blur(10px)' }}
-              animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
-              exit={{ y: -50, opacity: 0, filter: 'blur(10px)' }}
-              transition={{ duration: 1.0, ease: [0.16, 1, 0.3, 1] }}
-              id="project-hud"
-              className="absolute bottom-6 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 left-6 sm:left-16 w-full max-w-[500px] pointer-events-auto flex flex-col"
-            >
-              {/* Top Section */}
-              <div className="flex flex-col items-start z-10 w-full relative mb-8">
-                <div id="project-number" className="font-mono text-xs text-[#f5f2eb]/40 tracking-[0.4em] leading-none mb-4 font-semibold uppercase">
-                  Project {String(activeProjectIndex + 1).padStart(2, '0')} // 04
-                </div>
-                <div id="project-category" className="font-mono text-xs tracking-widest text-[#4deeea] font-bold uppercase opacity-90 drop-shadow-[0_0_12px_rgba(77,238,234,0.3)]">
-                  {project.category}
-                </div>
-              </div>
-
-              {/* Middle textual content */}
-              <div className="z-10 text-left mb-10">
-                <h3 id="project-title" className="text-4xl sm:text-5xl lg:text-6xl font-semibold text-[#f5f2eb] mb-6 tracking-tight font-serif drop-shadow-[0_4px_32px_rgba(0,0,0,0.9)]">
-                  {project.title}
-                </h3>
-                <p id="project-description" className="text-[#f5f2eb]/70 text-base sm:text-lg leading-relaxed font-sans font-light drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)]">
-                  {project.description}
-                </p>
-              </div>
-
-              {/* Tags & Actions */}
-              <div className="z-10 flex flex-col gap-8">
-                <div className="flex flex-wrap gap-2">
-                  {project.tags.map(tag => (
-                     <span key={tag} className="project-tag px-3 py-1.5 bg-[#f5f2eb]/5 backdrop-blur-sm border border-[#e1d6c0]/20 rounded-full text-[10px] font-mono text-[#f5f2eb]/80 tracking-widest shadow-sm">
-                       {tag}
-                     </span>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
+            <ProjectHUD project={project} index={activeProjectIndex} key={`hud-${stage}`} />
           )}
         </AnimatePresence>
       </div>
@@ -322,51 +320,7 @@ export default function App() {
       {/* Sequence Card (25% size, bottom left corner, toggle-able) */}
       <AnimatePresence>
         {isInterstellar && showSequenceCard && (
-          <motion.div
-            key={`hud-interstellar-compact-${sequenceInfo.name}`}
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-            id="interstellar-hud"
-            className="fixed bottom-6 left-6 z-40 w-full max-w-[210px] bg-black/35 backdrop-blur-md border border-[#e8e2d7]/15 rounded-xl p-3.5 shadow-[0_12px_24px_rgba(0,0,0,0.5)] pointer-events-auto flex flex-col gap-2.5 text-left"
-          >
-            {/* Top Section */}
-            <div className="flex flex-col gap-0.5">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[8px] text-[#f5f2eb]/40 tracking-widest font-semibold uppercase">
-                  COSMIC SEQUENCE
-                </span>
-                {sequenceInfo.id && (
-                  <span className="font-mono text-[7.5px] text-[#ffd778] font-bold tracking-wider uppercase border border-[#ffd778]/25 px-1 bg-[#ffd778]/5 rounded">
-                    {sequenceInfo.id}
-                  </span>
-                )}
-              </div>
-              <div className="font-mono text-[9px] tracking-widest text-[#4deeea] font-bold uppercase drop-shadow-[0_0_8px_rgba(77,238,234,0.3)]">
-                ASTROPHYSICS ENGINE
-              </div>
-            </div>
-
-            {/* Middle textual content */}
-            <div className="flex flex-col gap-1">
-              <h3 className="text-sm font-semibold text-[#f5f2eb] tracking-tight font-serif">
-                {sequenceInfo.name}
-              </h3>
-              <p className="text-[#f5f2eb]/70 text-[10px] leading-relaxed font-sans font-light">
-                {sequenceInfo.description}
-              </p>
-            </div>
-
-            {/* Action hints / tags */}
-            <div className="flex flex-wrap gap-1 mt-1">
-              {sequenceInfo.tags.slice(0, 3).map(tag => (
-                 <span key={tag} className="px-1.5 py-0.5 bg-[#f5f2eb]/5 border border-[#e1d6c0]/15 rounded text-[8px] font-mono text-[#f5f2eb]/80 tracking-widest uppercase">
-                   {tag}
-                 </span>
-              ))}
-            </div>
-          </motion.div>
+          <InterstellarHUD sequenceInfo={sequenceInfo} />
         )}
       </AnimatePresence>
 
@@ -377,6 +331,11 @@ export default function App() {
           isInterstellar={isInterstellar} 
           animationComplete={() => setIsInterstellar(true)} 
           onSequenceGenerated={setSequenceInfo}
+          showDebug={showDebug}
+          particleFilters={particleFilters}
+          textParticleSpeed={textParticleSpeed}
+          ambientParticleSpeed={ambientParticleSpeed}
+          objectParticleSpeed={objectParticleSpeed}
         />
       </div>
 

@@ -6,9 +6,18 @@ export function ErrorOverlay() {
     const origError = console.error;
     console.error = (...args) => {
       const msg = args.map(a => {
+        if (a === null || a === undefined) return String(a);
+        if (typeof a !== 'object') return String(a);
         try {
-          return typeof a === 'object' ? JSON.stringify(a) : String(a);
-        } catch (err) {
+          const seen = new WeakSet();
+          return JSON.stringify(a, (key, value) => {
+            if (typeof value === 'object' && value !== null) {
+              if (seen.has(value)) return '[Circular]';
+              seen.add(value);
+            }
+            return value;
+          });
+        } catch {
           return String(a);
         }
       }).join(' ');

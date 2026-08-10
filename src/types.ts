@@ -1,6 +1,7 @@
 import { Database, Zap, Layers, Globe } from "lucide-react";
 
 export interface Particle {
+  id?: string;
   x: number;
   y: number;
   z: number;
@@ -45,7 +46,15 @@ export interface Particle {
   b?: number;
 }
 
-export const projects = [
+export interface Project {
+  title: string;
+  category: string;
+  description: string;
+  tags: string[];
+  icon: any;
+}
+
+export const projects: Project[] = [
   {
     title: "AI Engineering",
     category: "WHO I AM",
