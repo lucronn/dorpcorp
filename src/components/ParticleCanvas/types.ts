@@ -1,5 +1,13 @@
+import type React from "react";
+import type { MutableRefObject } from "react";
 export type { Particle } from "../../types";
 import * as BABYLON from "@babylonjs/core";
+
+export interface CelestialMeshInstance {
+  id: string;
+  mesh: BABYLON.TransformNode;
+  entityRef: CelestialEntity;
+}
 
 export interface CelestialEntity {
   id?: string;
@@ -35,6 +43,26 @@ export interface CelestialEntity {
   currentRadius?: number;
   targetRadius?: number;
   initialMass?: number;
+  lastCollisionTime?: number;
+
+  // 500ms Swift Merger & High-Energy Glow State
+  isMerging?: boolean;
+  isMergerSurvivor?: boolean;
+  mergerTargetId?: string;
+  mergerStartTime?: number;
+  mergerStartX?: number;
+  mergerStartY?: number;
+  mergerStartZ?: number;
+  mergerTargetX?: number;
+  mergerTargetY?: number;
+  mergerTargetZ?: number;
+  mergerSurvivorMass?: number;
+  mergerVictimMass?: number;
+  mergerSurvivorRadius?: number;
+  mergerVictimRadius?: number;
+  mergerVictimColor?: string;
+  glowIntensity?: number;
+  mergePulse?: number;
 
   // Smooth Morphing Transitions
   startX?: number;
@@ -55,6 +83,8 @@ export interface ParticleFilters {
   typography: boolean;   // Project Text & Typography
 }
 
+import { CosmicTransitionStateMachine, TransitionStateInfo } from "./TransitionManager";
+
 export interface ParticleCanvasProps {
   stage: number;
   isInterstellar?: boolean;
@@ -70,4 +100,6 @@ export interface ParticleCanvasProps {
   textParticleSpeed?: number;
   ambientParticleSpeed?: number;
   objectParticleSpeed?: number;
+  onTransitionStateChange?: (info: TransitionStateInfo) => void;
+  transitionStateMachineRef?: MutableRefObject<CosmicTransitionStateMachine | null>;
 }

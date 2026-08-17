@@ -44,6 +44,7 @@ export interface Particle {
   r?: number;
   g?: number;
   b?: number;
+  tunnelLife?: number;
 }
 
 export interface Project {

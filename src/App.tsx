@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ParticleCanvas } from './components/ParticleCanvas';
 import { WavelengthBackground } from './components/WavelengthBackground';
 import { ErrorOverlay } from './components/ErrorOverlay';
@@ -7,14 +7,23 @@ import { ProjectHUD } from './components/ProjectHUD';
 import { InterstellarHUD } from './components/InterstellarHUD';
 import { DebugInspectorCard } from './components/DebugInspectorCard';
 import { ParticleFilters } from './components/ParticleCanvas/types';
+import { CosmicTransitionStateMachine, TransitionStateInfo } from './components/ParticleCanvas/TransitionManager';
 import { AnimatePresence, motion, useScroll, useTransform } from 'motion/react';
 import { ExternalLink, Github, Volume2, VolumeX, Eye, EyeOff, Terminal } from 'lucide-react';
 import { audio } from './utils/audio';
+import { CustomCursor } from './components/CustomCursor';
 
 export default function App() {
   const [stage, setStage] = useState(0);
   const [isInterstellar, setIsInterstellar] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const transitionStateMachineRef = useRef<CosmicTransitionStateMachine>(new CosmicTransitionStateMachine());
+  const [transitionInfo, setTransitionInfo] = useState<TransitionStateInfo>({
+    stage: 'IDLE_BLACKHOLE',
+    progress: 0,
+    description: 'Singularity Core Stable',
+    isTransitioning: false,
+  });
   const [particleFilters, setParticleFilters] = useState<ParticleFilters>({
     ambient: false,
     celestial: true,
@@ -71,10 +80,10 @@ export default function App() {
     description: string;
     tags: string[];
   }>({
-    id: 'seq-andromeda-gateway',
-    name: 'Interstellar Void',
-    description: 'A pocket universe birthed from the supernova dust. Move your cursor to bend spacetime with gravity, or click anywhere to collapse reality and seed a new cosmic sequence.',
-    tags: ['★ NEBULAS', '🪐 PLANETS & RINGS', '☄ ACCRETION DISK', '🕳 BLACK HOLE']
+    id: 'seq-singularity-event',
+    name: 'Singularity Event',
+    description: 'A supermassive rotating black hole locking dozens of systems in an aggressive accretion orbit.',
+    tags: ['🕳 BLACK HOLE', '☄ ACCRETION DISK', '★ GRAVITY SHEAR']
   });
   const [mousePos, setMousePos] = useState({ x: -1000, y: -1000 });
   const [muted, setMuted] = useState(true);
@@ -144,6 +153,20 @@ export default function App() {
     };
 
     const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && target.tagName !== "CANVAS" && target.id !== "canvas-babylon") {
+        if (
+          target.closest &&
+          (target.closest(".pointer-events-auto") ||
+            target.closest("button") ||
+            target.closest("input") ||
+            target.closest("a") ||
+            target.closest("[role='dialog']"))
+        ) {
+          resetIdleTimer();
+          return;
+        }
+      }
       // Play high fidelity physical audio click pop matching the ripple shockwave
       audio.playRippleShockwave();
       resetIdleTimer();
@@ -175,6 +198,7 @@ export default function App() {
 
   return (
     <div className="relative bg-black text-slate-200 overflow-x-hidden font-sans selection:bg-[#c14b2a]/30 selection:text-white">
+      <CustomCursor />
       <ErrorOverlay />
       {/* Background visual engine */}
       <WavelengthBackground stage={stage} />
@@ -198,6 +222,7 @@ export default function App() {
         <AnimatePresence>
           {isInterstellar && (
             <motion.button
+              data-magnetic
               initial={{ opacity: 0, x: 20, scale: 0.8 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: 20, scale: 0.8 }}
@@ -239,6 +264,7 @@ export default function App() {
 
         {/* Interactive Sound Orchestration HUD Toggle */}
         <button 
+          data-magnetic
           onClick={(e) => {
             e.stopPropagation();
             const nextMute = !muted;
@@ -276,6 +302,7 @@ export default function App() {
 
         {/* Debug Logs Overlay Toggle */}
         <button 
+          data-magnetic
           onClick={(e) => {
             e.stopPropagation();
             setShowDebug(!showDebug);
@@ -320,7 +347,18 @@ export default function App() {
       {/* Sequence Card (25% size, bottom left corner, toggle-able) */}
       <AnimatePresence>
         {isInterstellar && showSequenceCard && (
-          <InterstellarHUD sequenceInfo={sequenceInfo} />
+          <InterstellarHUD 
+            sequenceInfo={sequenceInfo} 
+            transitionInfo={transitionInfo}
+            onTriggerTransition={() => {
+              if (transitionStateMachineRef.current) {
+                transitionStateMachineRef.current.executeBlackHoleToSupernovaTransition({
+                  x: window.innerWidth / 2,
+                  y: window.innerHeight / 2,
+                });
+              }
+            }}
+          />
         )}
       </AnimatePresence>
 
@@ -336,6 +374,8 @@ export default function App() {
           textParticleSpeed={textParticleSpeed}
           ambientParticleSpeed={ambientParticleSpeed}
           objectParticleSpeed={objectParticleSpeed}
+          onTransitionStateChange={setTransitionInfo}
+          transitionStateMachineRef={transitionStateMachineRef}
         />
       </div>
 

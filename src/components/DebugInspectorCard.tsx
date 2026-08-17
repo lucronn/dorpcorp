@@ -79,7 +79,13 @@ export const DebugInspectorCard: React.FC<DebugInspectorCardProps> = ({
   // Minimized Compact Chip Mode
   if (isMinimized) {
     return (
-      <div className="fixed top-4 left-4 z-[9999] pointer-events-auto font-mono text-xs animate-fadeIn">
+      <div
+        className="fixed top-4 left-4 z-[9999] pointer-events-auto font-mono text-xs animate-fadeIn"
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center gap-2 bg-slate-950/90 border border-emerald-500/50 hover:border-emerald-400 px-3 py-2 rounded-full shadow-[0_0_20px_rgba(16,185,129,0.3)] backdrop-blur-md transition-all duration-200">
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -124,7 +130,13 @@ export const DebugInspectorCard: React.FC<DebugInspectorCardProps> = ({
 
   // Expanded Inspector Panel Window
   return (
-    <div className="fixed top-4 left-4 z-[9999] pointer-events-auto font-mono text-xs w-[380px] sm:w-[420px] max-w-[92vw] bg-slate-950/95 border border-emerald-500/40 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.85)] backdrop-blur-xl overflow-hidden flex flex-col transition-all duration-300 animate-fadeIn">
+    <div
+      className="fixed top-4 left-4 z-[9999] pointer-events-auto font-mono text-xs w-[380px] sm:w-[420px] max-w-[92vw] bg-slate-950/95 border border-emerald-500/40 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.85)] backdrop-blur-xl overflow-hidden flex flex-col transition-all duration-300 animate-fadeIn"
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+    >
       {/* Header Bar */}
       <div className="flex items-center justify-between border-b border-emerald-500/30 px-3.5 py-2.5 bg-slate-900/80">
         <div className="flex items-center gap-2">

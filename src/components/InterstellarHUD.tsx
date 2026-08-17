@@ -1,6 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { motion, useMotionValue, useSpring, useTransform } from 'motion/react';
 import { CardParticles } from './CardParticles';
+import { TransitionStateInfo } from './ParticleCanvas/TransitionManager';
+import { Zap } from 'lucide-react';
 
 interface SequenceInfo {
   name: string;
@@ -11,9 +13,15 @@ interface SequenceInfo {
 
 interface InterstellarHUDProps {
   sequenceInfo: SequenceInfo;
+  transitionInfo?: TransitionStateInfo;
+  onTriggerTransition?: () => void;
 }
 
-export const InterstellarHUD: React.FC<InterstellarHUDProps> = ({ sequenceInfo }) => {
+export const InterstellarHUD: React.FC<InterstellarHUDProps> = ({
+  sequenceInfo,
+  transitionInfo,
+  onTriggerTransition,
+}) => {
   const ref = useRef<HTMLDivElement>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -60,6 +68,8 @@ export const InterstellarHUD: React.FC<InterstellarHUDProps> = ({ sequenceInfo }
     setIsHovered(false);
   };
 
+  const isTransitioning = transitionInfo?.isTransitioning;
+
   return (
     <motion.div
       ref={ref}
@@ -104,6 +114,28 @@ export const InterstellarHUD: React.FC<InterstellarHUDProps> = ({ sequenceInfo }
           </div>
         </div>
 
+        {/* State Machine Transition Status Overlay */}
+        {transitionInfo && (
+          <div className="flex flex-col gap-1 p-2 rounded bg-white/5 border border-white/10">
+            <div className="flex items-center justify-between font-mono text-[8px] text-[#4deeea] tracking-wider uppercase font-semibold">
+              <span className="flex items-center gap-1">
+                <span className={`inline-block w-1.5 h-1.5 rounded-full ${isTransitioning ? 'bg-amber-400 animate-ping' : 'bg-emerald-400'}`} />
+                STATE: {transitionInfo.stage}
+              </span>
+              <span>{Math.round(transitionInfo.progress * 100)}%</span>
+            </div>
+            <div className="text-[8px] text-slate-300 font-mono truncate">
+              {transitionInfo.description}
+            </div>
+            <div className="w-full bg-slate-800 rounded-full h-1 overflow-hidden mt-0.5">
+              <div 
+                className="bg-gradient-to-r from-cyan-400 to-amber-400 h-full transition-all duration-300"
+                style={{ width: `${Math.round(transitionInfo.progress * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Middle textual content */}
         <div className="flex flex-col gap-1">
           <h3 className="text-sm font-semibold text-[#f5f2eb] tracking-tight font-serif">
@@ -114,8 +146,24 @@ export const InterstellarHUD: React.FC<InterstellarHUDProps> = ({ sequenceInfo }
           </p>
         </div>
 
+        {/* Trigger Supernova Shift Button */}
+        {onTriggerTransition && (
+          <button
+            data-magnetic
+            onClick={(e) => {
+              e.stopPropagation();
+              onTriggerTransition();
+            }}
+            disabled={isTransitioning}
+            className="w-full mt-1 px-2 py-1.5 rounded bg-[#c14b2a]/20 hover:bg-[#c14b2a]/40 border border-[#c14b2a]/40 hover:border-[#c14b2a] text-[#f5f2eb] font-mono text-[9px] tracking-wider font-semibold uppercase flex items-center justify-center gap-1.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+          >
+            <Zap className="w-3 h-3 text-[#ffd778]" />
+            <span>{isTransitioning ? 'TRANSITIONING...' : 'TRIGGER SUPERNOVA'}</span>
+          </button>
+        )}
+
         {/* Action hints / tags */}
-        <div className="flex flex-wrap gap-1 mt-1">
+        <div className="flex flex-wrap gap-1 mt-0.5">
           {sequenceInfo.tags.slice(0, 3).map(tag => (
               <span key={tag} className="px-1.5 py-0.5 bg-[#f5f2eb]/5 border border-[#e1d6c0]/15 rounded text-[8px] font-mono text-[#f5f2eb]/80 tracking-widest uppercase">
                 {tag}
