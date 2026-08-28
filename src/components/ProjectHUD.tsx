@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, useScroll, useTransform, AnimatePresence } from 'motion/react';
 import { Project } from '../types';
-import { CardParticles } from './CardParticles';
 
 interface ProjectHUDProps {
   project: any;
@@ -46,7 +45,6 @@ export const ProjectHUD: React.FC<ProjectHUDProps> = ({ project, index }) => {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <CardParticles isHovered={isHovered} width={dimensions.width} height={dimensions.height} color="#4deeea" count={120} />
       
       <motion.div 
         animate={{ opacity: isHovered ? 0 : 1, filter: isHovered ? 'blur(10px)' : 'blur(0px)', scale: isHovered ? 0.95 : 1 }}

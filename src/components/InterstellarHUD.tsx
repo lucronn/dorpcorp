@@ -1,6 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { motion, useMotionValue, useSpring, useTransform } from 'motion/react';
-import { CardParticles } from './CardParticles';
 import { TransitionStateInfo } from './ParticleCanvas/TransitionManager';
 import { Zap } from 'lucide-react';
 
@@ -90,7 +89,6 @@ export const InterstellarHUD: React.FC<InterstellarHUDProps> = ({
       id="interstellar-hud"
       className="fixed bottom-6 left-6 z-40 w-full max-w-[210px] pointer-events-auto flex flex-col gap-2.5 text-left relative"
     >
-      <CardParticles isHovered={isHovered} width={dimensions.width} height={dimensions.height} color="#ffd778" count={60} />
 
       <motion.div 
         animate={{ opacity: isHovered ? 0 : 1, filter: isHovered ? 'blur(10px)' : 'blur(0px)', scale: isHovered ? 0.95 : 1 }}
@@ -149,7 +147,7 @@ export const InterstellarHUD: React.FC<InterstellarHUDProps> = ({
         {/* Trigger Supernova Shift Button */}
         {onTriggerTransition && (
           <button
-            data-magnetic
+            
             onClick={(e) => {
               e.stopPropagation();
               onTriggerTransition();

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ParticleCanvas } from './components/ParticleCanvas';
-import { WavelengthBackground } from './components/WavelengthBackground';
 import { ErrorOverlay } from './components/ErrorOverlay';
 import { projects } from './types';
 import { ProjectHUD } from './components/ProjectHUD';
@@ -11,7 +10,6 @@ import { CosmicTransitionStateMachine, TransitionStateInfo } from './components/
 import { AnimatePresence, motion, useScroll, useTransform } from 'motion/react';
 import { ExternalLink, Github, Volume2, VolumeX, Eye, EyeOff, Terminal } from 'lucide-react';
 import { audio } from './utils/audio';
-import { CustomCursor } from './components/CustomCursor';
 
 export default function App() {
   const [stage, setStage] = useState(0);
@@ -198,10 +196,8 @@ export default function App() {
 
   return (
     <div className="relative bg-black text-slate-200 overflow-x-hidden font-sans selection:bg-[#c14b2a]/30 selection:text-white">
-      <CustomCursor />
       <ErrorOverlay />
       {/* Background visual engine */}
-      <WavelengthBackground stage={stage} />
       <DebugInspectorCard
         showDebug={showDebug}
         setShowDebug={setShowDebug}
@@ -222,7 +218,7 @@ export default function App() {
         <AnimatePresence>
           {isInterstellar && (
             <motion.button
-              data-magnetic
+              
               initial={{ opacity: 0, x: 20, scale: 0.8 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: 20, scale: 0.8 }}
@@ -264,7 +260,7 @@ export default function App() {
 
         {/* Interactive Sound Orchestration HUD Toggle */}
         <button 
-          data-magnetic
+          
           onClick={(e) => {
             e.stopPropagation();
             const nextMute = !muted;
@@ -302,7 +298,7 @@ export default function App() {
 
         {/* Debug Logs Overlay Toggle */}
         <button 
-          data-magnetic
+          
           onClick={(e) => {
             e.stopPropagation();
             setShowDebug(!showDebug);
