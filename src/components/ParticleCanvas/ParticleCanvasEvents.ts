@@ -27,8 +27,6 @@ export interface EventManagerContext {
   isTransitActiveRef: React.MutableRefObject<boolean>;
   sceneRef: React.MutableRefObject<BABYLON.Scene | null>;
   startWormholeTransit: (targetPos?: BABYLON.Vector3, viewDir?: BABYLON.Vector3, bhRadius?: number) => Promise<void>;
-  lensingPostProcessRef?: React.MutableRefObject<BABYLON.PostProcess | null>;
-  wormholePostProcessRef?: React.MutableRefObject<BABYLON.PostProcess | null>;
   activeSupernovaFxRef: React.MutableRefObject<any>;
   triggerSupernovaTransition?: (x?: number, y?: number) => void;
 }
@@ -376,14 +374,6 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
 
     if (pointerObserver && ctx.sceneRef.current) {
       ctx.sceneRef.current.onPointerObservable.remove(pointerObserver);
-    }
-
-    if (ctx.lensingPostProcessRef && ctx.lensingPostProcessRef.current) {
-      ctx.lensingPostProcessRef.current.dispose();
-    }
-
-    if (ctx.wormholePostProcessRef && ctx.wormholePostProcessRef.current) {
-      ctx.wormholePostProcessRef.current.dispose();
     }
 
     if (ctx.activeSupernovaFxRef.current) {

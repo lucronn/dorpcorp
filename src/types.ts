@@ -23,6 +23,14 @@ export interface Particle {
   orbitAngle?: number;
   orbitSpeed?: number;
   isPlanetRing?: boolean;
+  clusterRole?: "surface" | "atmosphere" | "ring" | "core" | "corona" | "jet" | "photon_ring" | "accretion" | "warped_arch" | "gas_lobe" | "spiral_arm";
+  clusterRelX?: number;
+  clusterRelY?: number;
+  clusterRelZ?: number;
+  clusterPhi?: number;
+  clusterTheta?: number;
+  clusterSpinSpeed?: number;
+  clusterNoiseOffset?: number;
   bridgeStartEntityIndex?: number;
   bridgeStartEntity?: any;
   bridgeEndEntityIndex?: number;

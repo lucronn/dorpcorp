@@ -10,7 +10,6 @@ export interface WormholeTransitParams {
   transitStartTimeRef: React.MutableRefObject<number>;
   transitTargetPosRef: React.MutableRefObject<BABYLON.Vector3 | null>;
   transitDirRef: React.MutableRefObject<BABYLON.Vector3 | null>;
-  wormholePostProcessRef?: React.MutableRefObject<BABYLON.PostProcess | null>;
   wormholeTimeRef?: React.MutableRefObject<number>;
   wormholeIntensityRef?: React.MutableRefObject<number>;
   fovRef: React.MutableRefObject<number>;
@@ -36,7 +35,6 @@ export async function startWormholeTransit(
     transitStartTimeRef,
     transitTargetPosRef,
     transitDirRef,
-    wormholePostProcessRef,
     wormholeTimeRef,
     wormholeIntensityRef,
     fovRef,

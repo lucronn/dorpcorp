@@ -64,8 +64,8 @@ export function buildSpiralGalaxyScene(
     const posX = cx + Math.cos(angle) * rDistorted;
     const posY = cy + Math.sin(angle) * rDistorted;
     
-    // Outer stars move slower
-    const orbitSpeed = 0.0002 + (1 - t) * 0.001; 
+    // Outer stars move slower but maintain lively visual momentum
+    const orbitSpeed = 0.005 + (1 - t) * 0.010; 
 
     const radius = 2 + Math.random() * (isMobile ? 8 : 15);
     const color = colors[Math.floor(Math.random() * colors.length)];

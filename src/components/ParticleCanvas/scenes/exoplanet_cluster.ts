@@ -23,7 +23,7 @@ export function buildExoplanetClusterScene(
   for (let i = 0; i < 3; i++) {
     const angle = (i * Math.PI * 2) / 3;
     const pRadius = (isMobile ? 26 : 48) + (i % 2) * 8;
-    const orbitSpeed = 0.0035;
+    const orbitSpeed = 0.010;
 
     entities.push({
       type: "planet",

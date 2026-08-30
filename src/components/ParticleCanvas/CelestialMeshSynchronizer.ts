@@ -762,6 +762,10 @@ export function updateCelestial3DMeshes(
           child.rotation.z += (0.007 + musicBands.bass * 0.005) * objSpeedMult;
           const pulse = 1.0 + Math.sin(Date.now() * 0.001) * 0.012 + musicAmp * 0.02;
           child.scaling.set(pulse, pulse, pulse);
+        } else if (child.name.indexOf("accretion_layer_outer") !== -1) {
+          child.rotation.z += (0.0028 + musicBands.mid * 0.003) * objSpeedMult;
+          const pulse = 1.0 + Math.sin(Date.now() * 0.0007) * 0.01 + musicAmp * 0.015;
+          child.scaling.set(pulse, pulse, pulse);
         } else if (child.name.indexOf("accretion_layer_warped") !== -1) {
           child.rotation.z -= (0.009 + musicBands.mid * 0.006) * objSpeedMult;
           const pulse = 1.0 + Math.cos(Date.now() * 0.0012) * 0.015 + musicAmp * 0.02;
@@ -781,10 +785,14 @@ export function updateCelestial3DMeshes(
           child.rotation.z += (0.0003 + musicBands.treble * 0.001) * objSpeedMult;
           const breathe = 1.0 + Math.sin(Date.now() * 0.0008 + lobeIdx * 0.7) * 0.04 + musicAmp * 0.03;
           child.scaling.scaleInPlace(breathe / (child.scaling.x || 1.0));
-        } else if (child.name.indexOf("nebula_core_glow_disc") !== -1) {
-          child.rotation.z += (0.0012 + musicBands.mid * 0.003) * objSpeedMult;
-          const pulse = 1.0 + Math.sin(Date.now() * 0.0015) * 0.06 + musicAmp * 0.05;
-          child.scaling.set(pulse, pulse, 1.0);
+        } else if (child.name.indexOf("polar_jet_") !== -1) {
+          const isNorth = child.name.indexOf("north") !== -1;
+          const precessAngle = Date.now() * 0.003;
+          child.rotation.x = Math.sin(precessAngle) * 0.12;
+          child.rotation.z = Math.cos(precessAngle) * 0.12;
+          const jetPulseY = 1.0 + Math.sin(Date.now() * 0.008) * 0.15 + (musicBands.treble || 0) * 0.25;
+          const jetPulseXZ = 1.0 + Math.cos(Date.now() * 0.008) * 0.08 + (musicBands.mid || 0) * 0.10;
+          child.scaling.set(jetPulseXZ, jetPulseY, jetPulseXZ);
         } else {
           child.rotation.z += (0.003 + musicBands.mid * 0.005) * objSpeedMult;
         }

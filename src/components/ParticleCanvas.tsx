@@ -106,10 +106,6 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   const celestialMeshInstancesRef = useRef<
     { id: string; mesh: BABYLON.TransformNode | BABYLON.Mesh; entityRef: CelestialEntity }[]
   >([]);
-  const lensingPostProcessRef = useRef<BABYLON.PostProcess | null>(null);
-  const wormholePostProcessRef = useRef<BABYLON.PostProcess | null>(null);
-  const wormholeIntensityRef = useRef<number>(0.0);
-  const wormholeTimeRef = useRef<number>(0.0);
 
   // Unified Input Controller for continuous mathematical interpolation
   const inputControllerRef = useRef({
@@ -394,9 +390,6 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         transitStartTimeRef,
         transitTargetPosRef,
         transitDirRef,
-        wormholePostProcessRef,
-        wormholeTimeRef,
-        wormholeIntensityRef,
         fovRef,
         cameraZRef,
         isInterstellarRef,
@@ -830,7 +823,6 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         rendererRef,
         composerRef,
         pointsMaterialRef,
-        lensingPostProcessRef,
         celestialEntitiesRef,
         supernovaRef,
         activeSupernovaFxRef,
@@ -906,8 +898,6 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       isTransitActiveRef,
       sceneRef,
       startWormholeTransit,
-      lensingPostProcessRef,
-      wormholePostProcessRef,
       activeSupernovaFxRef,
       triggerSupernovaTransition,
     });

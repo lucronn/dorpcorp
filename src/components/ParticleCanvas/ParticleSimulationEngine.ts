@@ -362,130 +362,145 @@ export function simulateParticles(
       const objSpeedMult = (objectParticleSpeed ?? 0.15) / 0.15;
       const ambSpeedMult = (ambientParticleSpeed ?? 0.15) / 0.15;
 
-      if (
-        p.interstellarType === "blackhole" ||
-        p.interstellarType === "planet"
-      ) {
-        p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.005) * 0.45 * localTimeDilation * musicSpeedFactor * objSpeedMult;
-        let entity = p.interstellarEntity || celestialEntities[p.interstellarEntityIndex || 0];
-
-        if (entity && entity.isDestroyed) {
-          const activeEntityIdx = celestialEntities.findIndex(e => e && !e.isDestroyed && e.type === "blackhole");
-          if (activeEntityIdx !== -1) {
-            p.interstellarEntityIndex = activeEntityIdx;
-            p.interstellarEntity = celestialEntities[activeEntityIdx];
-            p.orbitRadius = (p.orbitRadius || 50) * 0.96;
-            entity = p.interstellarEntity;
-          }
+      let entity = p.interstellarEntity || celestialEntities[p.interstellarEntityIndex || 0];
+      if (entity && entity.isDestroyed) {
+        const activeEntityIdx = celestialEntities.findIndex(e => e && !e.isDestroyed);
+        if (activeEntityIdx !== -1) {
+          p.interstellarEntityIndex = activeEntityIdx;
+          p.interstellarEntity = celestialEntities[activeEntityIdx];
+          entity = p.interstellarEntity;
         }
+      }
 
-        if (entity) {
-          if (entity.type === "blackhole") {
-            const rx = p.orbitRadius || 50;
-            const ry = rx * 0.25;
-            const theta = 0.05;
-            const cosT = Math.cos(theta);
-            const sinT = Math.sin(theta);
-            const ox = Math.cos(p.orbitAngle) * rx;
-            const oy = Math.sin(p.orbitAngle) * ry;
-            p.targetX = entity.x + (ox * cosT - oy * sinT);
-            p.targetY = entity.y + (ox * sinT + oy * cosT);
-            p.targetZ = Math.sin(p.orbitAngle) * rx * 0.55;
-          } else {
-            if (p.isPlanetRing) {
-              const rx = p.orbitRadius || 50;
-              const ry = rx * 0.22;
-              const theta = 0.3;
-              const cosT = Math.cos(theta);
-              const sinT = Math.sin(theta);
-              const ox = Math.cos(p.orbitAngle) * rx;
-              const oy = Math.sin(p.orbitAngle) * ry;
-              p.targetX = entity.x + (ox * cosT - oy * sinT);
-              p.targetY = entity.y + (ox * sinT + oy * cosT);
-              p.targetZ = Math.sin(p.orbitAngle) * rx * 0.4;
-            } else {
-              const rx = p.orbitRadius || 50;
-              const ry = rx * 0.7;
-              const theta = -0.15;
-              const cosT = Math.cos(theta);
-              const sinT = Math.sin(theta);
-              const ox = Math.cos(p.orbitAngle) * rx;
-              const oy = Math.sin(p.orbitAngle) * ry;
-              p.targetX = entity.x + (ox * cosT - oy * sinT);
-              p.targetY = entity.y + (ox * sinT + oy * cosT);
-              p.targetZ = Math.sin(p.orbitAngle) * rx * 0.4;
-            }
-          }
-        }
-      } else if (p.interstellarType === "nebula") {
-        p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.002) * 0.45 * localTimeDilation * musicSpeedFactor * objSpeedMult;
-        const entity = p.interstellarEntity || celestialEntities[p.interstellarEntityIndex || 0];
-        if (entity) {
-          // 3D Curl-like fluid turbulence and gaseous vortex convection
+      if (entity) {
+        if (p.clusterRole === "surface" || p.clusterRole === "atmosphere") {
+          // 1. 3D Spherical Particle Shell rotating with polar spin axis
+          const spin = ((time * 0.0015) * (p.clusterSpinSpeed || 1.2) + (p.clusterTheta || 0)) * localTimeDilation * musicSpeedFactor * objSpeedMult;
+          const lx = p.clusterRelX || 0;
+          const ly = p.clusterRelY || 0;
+          const lz = p.clusterRelZ || 0;
+          const cosS = Math.cos(spin);
+          const sinS = Math.sin(spin);
+          const rotX = lx * cosS - lz * sinS;
+          const rotZ = lx * sinS + lz * cosS;
+
+          const stretch = 1.0 + (entity.isMerging ? 0.25 * Math.sin(time * 0.01) : 0);
+          p.targetX = entity.x + rotX * stretch;
+          p.targetY = entity.y + ly * stretch;
+          p.targetZ = (entity.z || 0) + rotZ * stretch;
+        } else if (p.clusterRole === "core") {
+          // 2. Incandescent Fusion Core Pulsation
+          const pulse = 1.0 + Math.sin(time * 0.006 + i * 0.2) * 0.08 + (musicBands.bass || 0) * 0.15;
+          p.targetX = entity.x + (p.clusterRelX || 0) * pulse;
+          p.targetY = entity.y + (p.clusterRelY || 0) * pulse;
+          p.targetZ = (entity.z || 0) + (p.clusterRelZ || 0) * pulse;
+        } else if (p.clusterRole === "corona") {
+          // 3. Convective Granulation & Boiling Flares
+          const flareTime = time * 0.004 + (p.clusterNoiseOffset || 0);
+          const flareWobble = 1.0 + Math.sin(flareTime * 2.5) * 0.22 + Math.cos(flareTime * 4.2) * 0.12 + (musicBands.mid || 0) * 0.25;
+          p.targetX = entity.x + (p.clusterRelX || 0) * flareWobble;
+          p.targetY = entity.y + (p.clusterRelY || 0) * flareWobble;
+          p.targetZ = (entity.z || 0) + (p.clusterRelZ || 0) * flareWobble;
+        } else if (p.clusterRole === "jet") {
+          // 4. Collimated Relativistic Polar Jet Traversal
+          const precess = time * 0.003;
+          const jetOffset = ((time * 0.15 + (i * 4.5)) % 140);
+          const isNorth = (p.clusterRelY || 0) >= 0;
+          const dirY = isNorth ? 1 : -1;
+          const jetHeight = (entity.radius || 30) + jetOffset;
+          const jetSpread = (jetHeight / (entity.radius * 3.5)) * 16;
+          const jx = Math.cos(precess + i) * jetSpread;
+          const jz = Math.sin(precess + i) * jetSpread;
+          p.targetX = entity.x + jx;
+          p.targetY = entity.y + dirY * jetHeight;
+          p.targetZ = (entity.z || 0) + jz;
+        } else if (
+          p.clusterRole === "photon_ring" ||
+          p.clusterRole === "accretion" ||
+          p.clusterRole === "warped_arch" ||
+          p.clusterRole === "ring" ||
+          p.isPlanetRing ||
+          p.interstellarType === "blackhole"
+        ) {
+          // 5. Relativistic / Keplerian Orbital Rings & Accretion Disks
+          p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.02) * localTimeDilation * musicSpeedFactor * objSpeedMult;
+          const rx = p.orbitRadius || 50;
+          const ry = rx * (p.clusterRole === "photon_ring" ? 0.38 : (p.isPlanetRing || p.clusterRole === "ring" ? 0.32 : 0.30));
+          const theta = p.clusterRole === "warped_arch" ? 0.85 : 0.15;
+          const cosT = Math.cos(theta);
+          const sinT = Math.sin(theta);
+          const ox = Math.cos(p.orbitAngle) * rx;
+          const oy = Math.sin(p.orbitAngle) * ry;
+          p.targetX = entity.x + (ox * cosT - oy * sinT);
+          p.targetY = entity.y + (ox * sinT + oy * cosT);
+          p.targetZ = (entity.z || 0) + Math.sin(p.orbitAngle) * rx * 0.45;
+        } else if (p.interstellarType === "nebula" || p.clusterRole === "gas_lobe") {
+          // 6. 3D Curl Fluid Vortex Turbulence Gas Clouds
+          p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.005) * localTimeDilation * musicSpeedFactor * objSpeedMult;
           const seed = (i * 0.173) % 100.0;
-          const tTurb = time * 0.0008 + seed;
-          const turbX = Math.sin(tTurb * 1.5 + (p.targetY || 0) * 0.008) * 16.0 + Math.cos(tTurb * 0.8) * 8.0;
-          const turbY = Math.cos(tTurb * 1.3 + (p.targetX || 0) * 0.008) * 16.0 + Math.sin(tTurb * 0.6) * 8.0;
-          const turbZ = Math.sin(tTurb * 1.1 + seed) * 12.0;
+          const tTurb = time * 0.002 + seed;
+          const turbX = Math.sin(tTurb * 1.5 + (p.targetY || 0) * 0.008) * 25.0 + Math.cos(tTurb * 0.8) * 12.0;
+          const turbY = Math.cos(tTurb * 1.3 + (p.targetX || 0) * 0.008) * 25.0 + Math.sin(tTurb * 0.6) * 12.0;
+          const turbZ = Math.sin(tTurb * 1.1 + seed) * 18.0;
 
           const baseRad = p.orbitRadius || entity.radius * 0.5;
-          const pulseExpansion = 1.0 + Math.sin(time * 0.0012 + seed) * 0.08 + (musicBands.bass || 0) * 0.12;
+          const pulseExpansion = 1.0 + Math.sin(time * 0.0025 + seed) * 0.12 + (musicBands.bass || 0) * 0.2;
           const effRad = baseRad * pulseExpansion;
 
           const angle = p.orbitAngle + (seed * 0.05);
           p.targetX = entity.x + Math.cos(angle) * effRad + turbX;
           p.targetY = entity.y + Math.sin(angle) * effRad + turbY;
-          p.targetZ = (p.targetZ !== undefined ? p.targetZ : (Math.sin(seed) * 30)) + turbZ * 0.3;
+          p.targetZ = (entity.z || 0) + (p.targetZ !== undefined ? p.targetZ : (Math.sin(seed) * 30)) + turbZ * 0.3;
+        } else if (p.interstellarType === "bridge") {
+          p.bridgeProgress =
+            (p.bridgeProgress ?? 0) + (p.bridgeSpeed ?? 0.018) * localTimeDilation * musicSpeedFactor * objSpeedMult;
+          if (p.bridgeProgress > 1) {
+            p.bridgeProgress = 0;
+          }
+          const start = p.bridgeStartEntity || celestialEntities[p.bridgeStartEntityIndex ?? 0];
+          const end = p.bridgeEndEntity || celestialEntities[p.bridgeEndEntityIndex ?? 1];
+          if (start && end) {
+            const t = p.bridgeProgress;
+            const dx = end.x - start.x;
+            const dy = end.y - start.y;
+            const midX = start.x + dx * 0.5 - dy * 0.25;
+            const midY = start.y + dy * 0.5 + dx * 0.25;
+            const x =
+              (1 - t) * (1 - t) * start.x +
+              2 * (1 - t) * t * midX +
+              t * t * end.x;
+            const y =
+              (1 - t) * (1 - t) * start.y +
+              2 * (1 - t) * t * midY +
+              t * t * end.y;
+            p.targetX = x;
+            p.targetY = y;
+            p.targetZ = (start.z || 0) + Math.sin(t * Math.PI) * 25;
+          }
+        } else if (p.interstellarType === "background_galaxy") {
+          p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.012) * localTimeDilation * musicSpeedFactor * ambSpeedMult;
+          
+          const rx = p.orbitRadius || 20;
+          const ry = p.galaxyType === "spiral" ? rx * 0.35 : rx * 0.8;
+          const ox = Math.cos(p.orbitAngle) * rx;
+          const oy = Math.sin(p.orbitAngle) * ry;
+          
+          const cosP = Math.cos(p.galaxyPitch || 0);
+          const sinP = Math.sin(p.galaxyPitch || 0);
+          const cosY = Math.cos(p.galaxyYaw || 0);
+          const sinY = Math.sin(p.galaxyYaw || 0);
+          
+          const lx = ox * cosY - oy * sinY * cosP;
+          const ly = ox * sinY + oy * cosY * cosP;
+          const lz = oy * sinP;
+          
+          p.targetX = (p.galaxyX || 0) + lx;
+          p.targetY = (p.galaxyY || 0) + ly;
+          p.targetZ = (p.galaxyZ || -1400) + lz;
+        } else if (p.interstellarType === "star") {
+          p.targetX += Math.sin(time * 0.002 + i) * 0.25 * objSpeedMult;
+          p.targetY += Math.cos(time * 0.002 + i) * 0.25 * objSpeedMult;
         }
-      } else if (p.interstellarType === "bridge") {
-        p.bridgeProgress =
-          (p.bridgeProgress ?? 0) + (p.bridgeSpeed ?? 0.012) * 0.45 * localTimeDilation * musicSpeedFactor * objSpeedMult;
-        if (p.bridgeProgress > 1) {
-          p.bridgeProgress = 0;
-        }
-        const start = p.bridgeStartEntity || celestialEntities[p.bridgeStartEntityIndex ?? 0];
-        const end = p.bridgeEndEntity || celestialEntities[p.bridgeEndEntityIndex ?? 1];
-        if (start && end) {
-          const t = p.bridgeProgress;
-          const dx = end.x - start.x;
-          const dy = end.y - start.y;
-          const midX = start.x + dx * 0.5 - dy * 0.25;
-          const midY = start.y + dy * 0.5 + dx * 0.25;
-          const x =
-            (1 - t) * (1 - t) * start.x +
-            2 * (1 - t) * t * midX +
-            t * t * end.x;
-          const y =
-            (1 - t) * (1 - t) * start.y +
-            2 * (1 - t) * t * midY +
-            t * t * end.y;
-          p.targetX = x;
-          p.targetY = y;
-          p.targetZ = Math.sin(t * Math.PI) * 15;
-        }
-      } else if (p.interstellarType === "background_galaxy") {
-        p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.012) * localTimeDilation * musicSpeedFactor * ambSpeedMult;
-        
-        const rx = p.orbitRadius || 20;
-        const ry = p.galaxyType === "spiral" ? rx * 0.35 : rx * 0.8;
-        const ox = Math.cos(p.orbitAngle) * rx;
-        const oy = Math.sin(p.orbitAngle) * ry;
-        
-        const cosP = Math.cos(p.galaxyPitch || 0);
-        const sinP = Math.sin(p.galaxyPitch || 0);
-        const cosY = Math.cos(p.galaxyYaw || 0);
-        const sinY = Math.sin(p.galaxyYaw || 0);
-        
-        const lx = ox * cosY - oy * sinY * cosP;
-        const ly = ox * sinY + oy * cosY * cosP;
-        const lz = oy * sinP;
-        
-        p.targetX = (p.galaxyX || 0) + lx;
-        p.targetY = (p.galaxyY || 0) + ly;
-        p.targetZ = (p.galaxyZ || -1400) + lz;
-      } else if (p.interstellarType === "star") {
-        p.targetX += Math.sin(time * 0.01 + i) * 0.05 * objSpeedMult;
-        p.targetY += Math.cos(time * 0.01 + i) * 0.05 * objSpeedMult;
       }
     }
 
@@ -499,6 +514,11 @@ export function simulateParticles(
       
       // 1. Black hole attraction & event horizon consumption (Accretion Zone)
       activeBlackholes.forEach((entity) => {
+        // Accretion disk and photon ring particles for THIS black hole follow relativistic orbits
+        if (p.interstellarEntity === entity && (p.clusterRole === "accretion" || p.clusterRole === "photon_ring" || p.clusterRole === "warped_arch")) {
+          return;
+        }
+
         const bdx = entity.x - p.x;
         const bdy = entity.y - p.y;
         const bhGravityMult = isInterstellar ? 3.8 : 2.5;
@@ -523,36 +543,20 @@ export function simulateParticles(
             p.vy *= 1.04;
           }
 
-          // 1. Relativistic Infall & Event Horizon Swallowing (Nothing escapes)
+          // Relativistic Infall & Event Horizon Swallowing
           if (bdist <= entity.radius * 1.0) {
-            // Inside the event horizon: 100% trapped, inexorably drawn to central singularity
             const singularityPull = 8.0 + (1.0 - bdist / entity.radius) * 16.0;
             p.vx = (bdx / bdist) * singularityPull;
             p.vy = (bdy / bdist) * singularityPull;
-            p.vz = (0 - (p.z || 0)) * 0.2; // Flatten onto the equatorial singularity plane
+            p.vz = (0 - (p.z || 0)) * 0.2;
 
-            // Gravitational redshift: extreme dimming and color shift to deep infrared
             const horizonFade = Math.max(0.0, (bdist - entity.radius * 0.15) / (entity.radius * 0.85));
             particleBrightness = Math.min(particleBrightness, horizonFade);
 
-            // Reached central singularity: particle is completely swallowed
             if (bdist < entity.radius * 0.2) {
               if (entity.mass) {
                 entity.mass += 0.05;
               }
-              // Spawn faint accretion infalling tail spark at horizon entrance
-              if (spawnTailParticle && Math.random() < 0.15) {
-                spawnTailParticle(
-                  entity.x + (bdx / bdist) * entity.radius * 1.02,
-                  entity.y + (bdy / bdist) * entity.radius * 1.02,
-                  p.z || 0,
-                  tx * 1.5,
-                  ty * 1.5,
-                  entity.color || "#ff6600",
-                  0.05
-                );
-              }
-              // Recycle particle to outer accretion disk orbit
               const newOrbitRad = entity.radius * (3.5 + Math.random() * 4.5);
               const newAngle = Math.random() * Math.PI * 2;
               p.x = entity.x + Math.cos(newAngle) * newOrbitRad;
@@ -575,6 +579,9 @@ export function simulateParticles(
       // 2. Rigid body collision with planets/stars
       const colOffset = currentW < 768 ? 2 : 3;
       activeCollidables.forEach((entity) => {
+        // Particles that belong to this celestial body's cluster do not collide with their parent entity
+        if (p.interstellarEntity === entity) return;
+
         const bdx = entity.x - p.x;
         const bdy = entity.y - p.y;
         const bdist = Math.sqrt(bdx * bdx + bdy * bdy) || 1;
@@ -671,15 +678,17 @@ export function simulateParticles(
         floatY += Math.cos(time * 0.42 + i * 0.2) * trebleJitter;
       }
     }
-    const floatZ = Math.sin(time * floatSpeed * 0.7 + i * 0.04) * 8;
-    p.z += (floatZ - p.z) * 0.05;
+    if (!isInterstellar || p.isProjectText) {
+      const floatZ = Math.sin(time * floatSpeed * 0.7 + i * 0.04) * 8;
+      p.z += (floatZ - p.z) * 0.05;
+    }
 
     const selfMovementX = isTypographyMode
       ? 0
-      : Math.sin(time * 0.045 + i * 0.17) * 0.95;
+      : Math.sin(time * 0.015 + i * 0.17) * 0.45;
     const selfMovementY = isTypographyMode
       ? 0
-      : Math.cos(time * 0.045 + i * 0.23) * 0.95;
+      : Math.cos(time * 0.015 + i * 0.23) * 0.45;
     let drawX = p.x + floatX + selfMovementX;
     let drawY = p.y + floatY + selfMovementY;
 
@@ -932,12 +941,21 @@ export function simulateParticles(
       colors[i * 4 + 2] = 0;
       colors[i * 4 + 3] = 0;
     } else {
-      const starDimmer = (p.interstellarType === "star" || p.isCosmicAmbient) ? 0.38 : 1.0;
+      const isAmbientStar = p.isCosmicAmbient || (p.interstellarType === "star" && !p.clusterRole);
+      const starDimmer = isAmbientStar ? 0.38 : 1.0;
       colors[i * 4] = Math.min(1.0, Math.max(0.0, (r / 255) * globalAlpha * rFactor * audioColorR * particleBrightness * textAlphaDimmer * dopplerR * dopplerIntensity * bhAbsorbFactor * starDimmer));
       colors[i * 4 + 1] = Math.min(1.0, Math.max(0.0, (g / 255) * globalAlpha * gFactor * audioColorG * particleBrightness * textAlphaDimmer * dopplerG * dopplerIntensity * bhAbsorbFactor * starDimmer));
       colors[i * 4 + 2] = Math.min(1.0, Math.max(0.0, (b / 255) * globalAlpha * bFactor * audioColorB * particleBrightness * textAlphaDimmer * dopplerB * dopplerIntensity * bhAbsorbFactor * starDimmer));
       colors[i * 4 + 3] = globalAlpha * textAlphaDimmer * bhAbsorbFactor * starDimmer;
     }
-    extras[i] = p.isTail ? 2.0 : (p.interstellarType === "nebula" ? 4.0 : (p.interstellarType === "background_galaxy" ? 3.0 : ((!p.isCosmicAmbient && p.interstellarType !== "star") ? 1.0 : 0.0)));
+    extras[i] = p.isTail
+      ? 2.0
+      : (p.interstellarType === "nebula" || p.clusterRole === "gas_lobe")
+      ? 4.0
+      : p.interstellarType === "background_galaxy"
+      ? 3.0
+      : (!p.isCosmicAmbient && (p.interstellarType !== "star" || !!p.clusterRole))
+      ? 1.0
+      : 0.0;
   }
 }

@@ -43,7 +43,7 @@ export function buildBlackholeCentricScene(
     const orbitRad = (isMobile ? 120 : 160) + p * (isMobile ? 70 : 95);
     const angle = (p * Math.PI) + 0.45;
     const pRadius = (isMobile ? 16 : 24) + p * 4;
-    const orbitSpeed = 0.004 + (1 - p * 0.3) * 0.002;
+    const orbitSpeed = 0.010 + (1 - p * 0.3) * 0.006;
 
     entities.push({
       type: "planet",

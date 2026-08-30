@@ -14,7 +14,6 @@ export interface RenderEngineContext {
   rendererRef: React.MutableRefObject<BABYLON.Engine | null>;
   composerRef: React.MutableRefObject<BABYLON.DefaultRenderingPipeline | null>;
   pointsMaterialRef: React.MutableRefObject<BABYLON.ShaderMaterial | null>;
-  lensingPostProcessRef?: React.MutableRefObject<BABYLON.PostProcess | null>;
   celestialEntitiesRef: React.MutableRefObject<CelestialEntity[]>;
   supernovaRef: React.MutableRefObject<{
     time: number;
