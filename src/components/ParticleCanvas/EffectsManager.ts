@@ -2,9 +2,8 @@ import React from "react";
 import * as BABYLON from "@babylonjs/core";
 import { CelestialEntity } from "./types";
 import { spawnSupernovaFX, SupernovaFXInstance } from "./SupernovaFX";
-import { setupBlackholeLensingPostProcess } from "./BlackholeLensingPostProcess";
 
-export { spawnSupernovaFX, setupBlackholeLensingPostProcess };
+export { spawnSupernovaFX };
 export type { SupernovaFXInstance };
 
 /**

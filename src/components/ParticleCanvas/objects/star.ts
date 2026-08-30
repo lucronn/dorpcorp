@@ -28,6 +28,7 @@ export function createStarMesh(
     scene
   );
   coreMesh.material = coreMat;
+  coreMesh.renderingGroupId = 2;
   coreMesh.parent = starContainer;
 
   const starAtmosMesh = BABYLON.MeshBuilder.CreateSphere(
@@ -54,7 +55,38 @@ export function createStarMesh(
   starAtmosMat.opacityFresnelParameters = starFresnel;
 
   starAtmosMesh.material = starAtmosMat;
+  starAtmosMesh.renderingGroupId = 2;
   starAtmosMesh.parent = starContainer;
+
+  // For compact high-energy stars / neutron stars: add collimated 3D polar jet beams
+  if (entity.radius <= 25) {
+    const jetMat = new BABYLON.StandardMaterial("polarJetMat", scene);
+    jetMat.emissiveColor = new BABYLON.Color3(0.6, 0.9, 1.2);
+    jetMat.disableLighting = true;
+    jetMat.backFaceCulling = false;
+    jetMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
+    jetMat.alpha = 0.65;
+
+    const northJet = BABYLON.MeshBuilder.CreateCylinder(
+      "polar_jet_north",
+      { height: entity.radius * 9.0, diameterTop: entity.radius * 1.6, diameterBottom: entity.radius * 0.2 },
+      scene
+    );
+    northJet.position.y = entity.radius * 4.5;
+    northJet.material = jetMat;
+    northJet.renderingGroupId = 2;
+    northJet.parent = starContainer;
+
+    const southJet = BABYLON.MeshBuilder.CreateCylinder(
+      "polar_jet_south",
+      { height: entity.radius * 9.0, diameterTop: entity.radius * 0.2, diameterBottom: entity.radius * 1.6 },
+      scene
+    );
+    southJet.position.y = -entity.radius * 4.5;
+    southJet.material = jetMat;
+    southJet.renderingGroupId = 2;
+    southJet.parent = starContainer;
+  }
 
   starContainer.scaling.set(initScale, initScale, initScale);
   return starContainer;

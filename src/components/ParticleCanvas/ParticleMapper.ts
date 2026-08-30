@@ -126,55 +126,97 @@ export function mapParticlesToInterstellar(
       p.targetZ = p.galaxyZ + lz;
     } else {
       if (arch === "BLACKHOLE_CENTRIC" && bh) {
-        if (rand < 0.72) {
+        if (rand < 0.80) {
           p.interstellarType = "blackhole";
-          p.interstellarEntityIndex = entities.indexOf(bh);
-          p.interstellarEntity = bh;
-          const minR = bh.radius * 1.5;
-          const maxR = bh.radius * 24.0;
-          p.orbitRadius = minR + Math.random() * (maxR - minR);
+          const minR = bh.radius * 2.6;
+          const maxR = bh.radius * 9.5;
+          const radFactor = Math.pow(Math.random(), 1.6);
+          p.orbitRadius = minR + radFactor * (maxR - minR);
           p.orbitAngle = Math.random() * Math.PI * 2;
 
           const r = p.orbitRadius || 50;
-          const baseSpeed = 0.012 + Math.random() * 0.008;
-          p.orbitSpeed = baseSpeed * Math.pow((bh.radius * 2.5) / r, 1.5);
+          const baseSpeed = 0.024 + Math.random() * 0.016;
+          p.orbitSpeed = baseSpeed * Math.pow((bh.radius * 3.0) / r, 1.5);
 
           const rx = p.orbitRadius;
-          const ry = rx * 0.25;
-          const theta = 0.05;
+          const ry = rx * 0.32;
+          const theta = 0.12;
           const cosT = Math.cos(theta);
           const sinT = Math.sin(theta);
           const ox = Math.cos(p.orbitAngle) * rx;
           const oy = Math.sin(p.orbitAngle) * ry;
           p.targetX = bh.x + (ox * cosT - oy * sinT);
           p.targetY = bh.y + (ox * sinT + oy * cosT);
-          p.targetZ = Math.sin(p.orbitAngle) * rx * 0.55;
+          p.targetZ = Math.sin(p.orbitAngle) * rx * 0.45;
 
           const colorRand = Math.random();
-          if (p.orbitRadius < bh.radius * 2.5) {
-            p.baseColor = colorRand > 0.5 ? "#ffffff" : "#ffd778";
+          if (p.orbitRadius < bh.radius * 4.5) {
+            p.baseColor = colorRand > 0.4 ? "#ffffff" : "#ffd778";
           } else {
-            p.baseColor = colorRand > 0.4 ? "#f25f35" : "#c14b2a";
+            p.baseColor = colorRand > 0.4 ? "#ff7733" : "#dd4422";
           }
           p.color = p.baseColor;
           p.isPlanetRing = false;
-        } else if (planets.length > 0 && rand < 0.88) {
+        } else if (planets.length > 0 && rand < 0.95) {
           p.interstellarType = "planet";
           const planet = planets[idx % planets.length]!;
           p.interstellarEntityIndex = entities.indexOf(planet);
           p.interstellarEntity = planet;
-          p.orbitRadius = planet.radius * (1.1 + Math.random() * 0.6);
+          p.orbitRadius = planet.radius * (1.5 + Math.random() * 1.5);
           p.orbitAngle = Math.random() * Math.PI * 2;
 
           const r = p.orbitRadius || 30;
-          const baseSpeed = 0.012 + Math.random() * 0.008;
-          p.orbitSpeed = baseSpeed * Math.pow((planet.radius * 1.5) / r, 1.5);
+          const baseSpeed = 0.014 + Math.random() * 0.010;
+          p.orbitSpeed = baseSpeed * Math.pow((planet.radius * 1.8) / r, 1.5);
 
-          p.isPlanetRing = false;
+          p.isPlanetRing = true;
 
           const rx = p.orbitRadius;
-          const ry = rx * 0.7;
-          const theta = -0.15;
+          const ry = rx * 0.35;
+          const theta = -0.22;
+          const cosT = Math.cos(theta);
+          const sinT = Math.sin(theta);
+          const ox = Math.cos(p.orbitAngle) * rx;
+          const oy = Math.sin(p.orbitAngle) * ry;
+          p.targetX = planet.x + (ox * cosT - oy * sinT);
+          p.targetY = planet.y + (ox * sinT + oy * cosT);
+          p.targetZ = Math.sin(p.orbitAngle) * rx * 0.35;
+          p.baseColor = planet.ringColor || planet.color;
+          p.color = p.baseColor;
+        } else {
+          p.interstellarType = "star";
+          const rRadius = 400 + Math.random() * (width * 4);
+          const rTheta = Math.random() * Math.PI * 2;
+          const rPhi = Math.acos(Math.random() * 2 - 1);
+          p.targetX = width / 2 + rRadius * Math.sin(rPhi) * Math.cos(rTheta);
+          p.targetY = height / 2 + rRadius * Math.sin(rPhi) * Math.sin(rTheta);
+          p.targetZ = rRadius * Math.cos(rPhi);
+          p.baseColor = Math.random() > 0.8 ? "#99e5ff" : (Math.random() > 0.5 ? "#ffd778" : "#ffffff");
+          p.color = p.baseColor;
+          p.isPlanetRing = false;
+        }
+      } else if (arch === "BINARY_PLANETS" && planets.length >= 2) {
+        if (rand < 0.70) {
+          p.interstellarType = "planet";
+          const planetIdx = idx % 2;
+          const planet = planets[planetIdx] || planets[0]!;
+          p.interstellarEntityIndex = entities.indexOf(planet);
+          p.interstellarEntity = planet;
+
+          const minR = planet.radius * 1.4;
+          const maxR = planet.radius * 3.0;
+          p.orbitRadius = minR + Math.random() * (maxR - minR);
+          p.orbitAngle = Math.random() * Math.PI * 2;
+
+          const r = p.orbitRadius || 30;
+          const baseSpeed = 0.015 + Math.random() * 0.015;
+          p.orbitSpeed = baseSpeed * Math.pow((planet.radius * 1.8) / r, 1.5);
+
+          p.isPlanetRing = true;
+
+          const rx = p.orbitRadius;
+          const ry = rx * 0.35;
+          const theta = planetIdx === 0 ? 0.3 : -0.3;
           const cosT = Math.cos(theta);
           const sinT = Math.sin(theta);
           const ox = Math.cos(p.orbitAngle) * rx;
@@ -182,76 +224,9 @@ export function mapParticlesToInterstellar(
           p.targetX = planet.x + (ox * cosT - oy * sinT);
           p.targetY = planet.y + (ox * sinT + oy * cosT);
           p.targetZ = Math.sin(p.orbitAngle) * rx * 0.4;
-          p.baseColor = planet.color;
+          p.baseColor = planet.ringColor || planet.color;
           p.color = p.baseColor;
-        } else {
-          p.interstellarType = "star";
-          const rRadius = Math.random() * (width * 6);
-          const rTheta = Math.random() * Math.PI * 2;
-          const rPhi = Math.acos(Math.random() * 2 - 1);
-          p.targetX = width / 2 + rRadius * Math.sin(rPhi) * Math.cos(rTheta);
-          p.targetY = height / 2 + rRadius * Math.sin(rPhi) * Math.sin(rTheta);
-          p.targetZ = rRadius * Math.cos(rPhi);
-          p.baseColor = Math.random() > 0.8 ? "#88ffff" : "#ffffff";
-          p.color = p.baseColor;
-          p.isPlanetRing = false;
-        }
-      } else if (arch === "BINARY_PLANETS" && planets.length >= 2) {
-        if (rand < 0.65) {
-          p.interstellarType = "planet";
-          const planetIdx = idx % 2;
-          const planet = planets[planetIdx] || planets[0]!;
-          p.interstellarEntityIndex = entities.indexOf(planet);
-          p.interstellarEntity = planet;
-
-          const ringRand = Math.random();
-          if (ringRand > 0.3) {
-            const minR = planet.radius * 1.2;
-            const maxR = planet.radius * 2.8;
-            p.orbitRadius = minR + Math.random() * (maxR - minR);
-            p.orbitAngle = Math.random() * Math.PI * 2;
-
-            const r = p.orbitRadius || 30;
-            const baseSpeed = 0.015 + Math.random() * 0.015;
-            p.orbitSpeed = baseSpeed * Math.pow((planet.radius * 1.8) / r, 1.5);
-
-            p.isPlanetRing = true;
-
-            const rx = p.orbitRadius;
-            const ry = rx * 0.22;
-            const theta = planetIdx === 0 ? 0.3 : -0.3;
-            const cosT = Math.cos(theta);
-            const sinT = Math.sin(theta);
-            const ox = Math.cos(p.orbitAngle) * rx;
-            const oy = Math.sin(p.orbitAngle) * ry;
-            p.targetX = planet.x + (ox * cosT - oy * sinT);
-            p.targetY = planet.y + (ox * sinT + oy * cosT);
-            p.targetZ = Math.sin(p.orbitAngle) * rx * 0.4;
-            p.baseColor = planet.ringColor || planet.color;
-          } else {
-            p.orbitRadius = planet.radius * (1.1 + Math.random() * 0.5);
-            p.orbitAngle = Math.random() * Math.PI * 2;
-
-            const r = p.orbitRadius || 30;
-            const baseSpeed = 0.012 + Math.random() * 0.012;
-            p.orbitSpeed = baseSpeed * Math.pow((planet.radius * 1.4) / r, 1.5);
-
-            p.isPlanetRing = false;
-
-            const rx = p.orbitRadius;
-            const ry = rx * 0.7;
-            const theta = planetIdx === 0 ? -0.15 : 0.15;
-            const cosT = Math.cos(theta);
-            const sinT = Math.sin(theta);
-            const ox = Math.cos(p.orbitAngle) * rx;
-            const oy = Math.sin(p.orbitAngle) * ry;
-            p.targetX = planet.x + (ox * cosT - oy * sinT);
-            p.targetY = planet.y + (ox * sinT + oy * cosT);
-            p.targetZ = Math.sin(p.orbitAngle) * rx * 0.4;
-            p.baseColor = planet.color;
-          }
-          p.color = p.baseColor;
-        } else if (rand < 0.85) {
+        } else if (rand < 0.95) {
           // High-energy particle bridge between twin planets
           p.interstellarType = "bridge";
           p.bridgeStartEntityIndex = entities.indexOf(planets[0]!);
@@ -263,33 +238,15 @@ export function mapParticlesToInterstellar(
           p.baseColor = Math.random() > 0.5 ? "#00ffd2" : "#da70d6";
           p.color = p.baseColor;
           p.isPlanetRing = false;
-        } else if (nebulas.length > 0 && rand < 0.95) {
-          p.interstellarType = "nebula";
-          const nebula = nebulas[idx % nebulas.length] || nebulas[0]!;
-          p.interstellarEntityIndex = entities.indexOf(nebula);
-          p.interstellarEntity = nebula;
-
-          const angle = Math.random() * Math.PI * 2;
-          const rad = Math.pow(Math.random(), 1.5) * nebula.radius;
-          p.orbitRadius = rad;
-          p.orbitAngle = angle;
-          p.orbitSpeed = 0.005 + Math.random() * 0.005;
-          p.targetX = nebula.x + Math.cos(angle) * rad;
-          p.targetY = nebula.y + Math.sin(angle) * rad;
-          p.targetZ = (Math.random() - 0.5) * 50;
-
-          p.baseColor = "rgba(120, 80, 220, 0.65)";
-          p.color = p.baseColor;
-          p.isPlanetRing = false;
         } else {
           p.interstellarType = "star";
-          const rRadius = Math.random() * (width * 6);
+          const rRadius = 400 + Math.random() * (width * 4);
           const rTheta = Math.random() * Math.PI * 2;
           const rPhi = Math.acos(Math.random() * 2 - 1);
           p.targetX = width / 2 + rRadius * Math.sin(rPhi) * Math.cos(rTheta);
           p.targetY = height / 2 + rRadius * Math.sin(rPhi) * Math.sin(rTheta);
           p.targetZ = rRadius * Math.cos(rPhi);
-          p.baseColor = "#ffffff";
+          p.baseColor = Math.random() > 0.7 ? "#00ffd2" : (Math.random() > 0.5 ? "#ffd778" : "#ffffff");
           p.color = p.baseColor;
           p.isPlanetRing = false;
         }
@@ -299,21 +256,21 @@ export function mapParticlesToInterstellar(
           const planet = planets[idx % planets.length]!;
           p.interstellarEntityIndex = entities.indexOf(planet);
           p.interstellarEntity = planet;
-          p.orbitRadius = planet.radius * (1.1 + Math.random() * 0.8);
+          p.orbitRadius = planet.radius * (1.4 + Math.random() * 1.6);
           p.orbitAngle = Math.random() * Math.PI * 2;
           p.orbitSpeed = 0.01 + Math.random() * 0.01;
 
-          p.isPlanetRing = Math.random() > 0.5;
+          p.isPlanetRing = true;
           const rx = p.orbitRadius;
-          const ry = rx * (p.isPlanetRing ? 0.25 : 0.7);
+          const ry = rx * 0.35;
           const ox = Math.cos(p.orbitAngle) * rx;
           const oy = Math.sin(p.orbitAngle) * ry;
           p.targetX = planet.x + ox;
           p.targetY = planet.y + oy;
-          p.targetZ = Math.sin(p.orbitAngle) * rx * 0.4;
+          p.targetZ = Math.sin(p.orbitAngle) * rx * 0.35;
           p.baseColor = planet.color;
           p.color = p.baseColor;
-        } else if (rand < 0.88) {
+        } else if (rand < 0.95) {
           // Co-orbital gravitational connector bridges
           p.interstellarType = "bridge";
           const startIdx = idx % planets.length;
@@ -329,35 +286,60 @@ export function mapParticlesToInterstellar(
           p.isPlanetRing = false;
         } else {
           p.interstellarType = "star";
-          const rRadius = Math.random() * (width * 6);
+          const rRadius = 400 + Math.random() * (width * 4);
           const rTheta = Math.random() * Math.PI * 2;
           const rPhi = Math.acos(Math.random() * 2 - 1);
           p.targetX = width / 2 + rRadius * Math.sin(rPhi) * Math.cos(rTheta);
           p.targetY = height / 2 + rRadius * Math.sin(rPhi) * Math.sin(rTheta);
           p.targetZ = rRadius * Math.cos(rPhi);
-          p.baseColor = "#ffffff";
+          p.baseColor = Math.random() > 0.8 ? "#4deeea" : "#ffffff";
           p.color = p.baseColor;
           p.isPlanetRing = false;
         }
       } else if (arch === "NEBULA_CRADLE" && (nebulas.length > 0 || planets.length > 0)) {
-        if (nebulas.length > 0 && rand < 0.65) {
+        if (nebulas.length > 0 && rand < 0.78) {
           p.interstellarType = "nebula";
           const nebula = nebulas[idx % nebulas.length]!;
           p.interstellarEntityIndex = entities.indexOf(nebula);
           p.interstellarEntity = nebula;
 
-          const angle = Math.random() * Math.PI * 2;
-          const rad = Math.pow(Math.random(), 1.4) * nebula.radius;
-          p.orbitRadius = rad;
-          p.orbitAngle = angle;
-          p.orbitSpeed = 0.004 + Math.random() * 0.004;
-          p.targetX = nebula.x + Math.cos(angle) * rad;
-          p.targetY = nebula.y + Math.sin(angle) * rad;
-          p.targetZ = (Math.random() - 0.5) * 60;
-          p.baseColor = nebula.color || "rgba(242, 95, 53, 0.7)";
+          // 3D Multi-lobe fractal volumetric cloud clustering
+          const subCluster = idx % 5;
+          const subOffsets = [
+            { x: 0, y: 0, z: 0, spread: 0.65 },
+            { x: 0.35, y: 0.25, z: 20, spread: 0.45 },
+            { x: -0.30, y: -0.20, z: -15, spread: 0.50 },
+            { x: 0.20, y: -0.38, z: 12, spread: 0.40 },
+            { x: -0.40, y: 0.30, z: -18, spread: 0.48 },
+          ];
+          const cluster = subOffsets[subCluster]!;
+          const u = Math.random() + Math.random() + Math.random() - 1.5; // Gaussian distribution
+          const v = Math.random() + Math.random() + Math.random() - 1.5;
+          const w = Math.random() + Math.random() + Math.random() - 1.5;
+          const lobeRad = nebula.radius * cluster.spread;
+
+          p.targetX = nebula.x + cluster.x * nebula.radius + u * lobeRad;
+          p.targetY = nebula.y + cluster.y * nebula.radius + v * lobeRad;
+          p.targetZ = cluster.z + w * (lobeRad * 0.7);
+
+          p.orbitRadius = Math.hypot(p.targetX - nebula.x, p.targetY - nebula.y);
+          p.orbitAngle = Math.atan2(p.targetY - nebula.y, p.targetX - nebula.x);
+          p.orbitSpeed = 0.003 + Math.random() * 0.004;
+
+          // Multi-spectral astrophysics ionization color gradients
+          const colorPick = Math.random();
+          if (colorPick < 0.35) {
+            p.baseColor = nebula.color || "#ff3366"; // H-alpha ionized hydrogen
+          } else if (colorPick < 0.65) {
+            p.baseColor = nebula.secondaryColor || "#00ffd2"; // [O III] doubly ionized oxygen
+          } else if (colorPick < 0.85) {
+            p.baseColor = "#da70d6"; // Ionized helium / nitrogen
+          } else {
+            p.baseColor = "#ffd778"; // Stellar nursery stardust
+          }
           p.color = p.baseColor;
           p.isPlanetRing = false;
-        } else if (planets.length > 0 && rand < 0.88) {
+        } else if (planets.length > 0 && rand < 0.95) {
           p.interstellarType = "planet";
           const planet = planets[idx % planets.length]!;
           p.interstellarEntityIndex = entities.indexOf(planet);
@@ -373,7 +355,7 @@ export function mapParticlesToInterstellar(
           p.isPlanetRing = false;
         } else {
           p.interstellarType = "star";
-          const rRadius = Math.random() * (width * 6);
+          const rRadius = 400 + Math.random() * (width * 4);
           const rTheta = Math.random() * Math.PI * 2;
           const rPhi = Math.acos(Math.random() * 2 - 1);
           p.targetX = width / 2 + rRadius * Math.sin(rPhi) * Math.cos(rTheta);
@@ -386,7 +368,7 @@ export function mapParticlesToInterstellar(
       } else if (arch === "SPIRAL_GALAXY") {
         const cx = width / 2;
         const cy = height / 2;
-        if (rand < 0.88) {
+        if (rand < 0.94) {
           p.interstellarType = "nebula";
 
           const arm = idx % 2;
@@ -422,7 +404,7 @@ export function mapParticlesToInterstellar(
           p.isPlanetRing = false;
         } else {
           p.interstellarType = "star";
-          const rRadius = Math.random() * (width * 6);
+          const rRadius = 400 + Math.random() * (width * 4);
           const rTheta = Math.random() * Math.PI * 2;
           const rPhi = Math.acos(Math.random() * 2 - 1);
           p.targetX = width / 2 + rRadius * Math.sin(rPhi) * Math.cos(rTheta);
@@ -432,7 +414,7 @@ export function mapParticlesToInterstellar(
           p.color = p.baseColor;
           p.isPlanetRing = false;
         }
-      } else if (entities.length > 0) {
+      } else if (entities.length > 0 && rand < 0.92) {
         // Generalized dynamic entity mapping for Gemini AI custom generated systems
         const entity = entities[idx % entities.length]!;
         p.interstellarEntityIndex = entities.indexOf(entity);
@@ -440,30 +422,30 @@ export function mapParticlesToInterstellar(
 
         if (entity.type === "blackhole") {
           p.interstellarType = "blackhole";
-          const minR = entity.radius * 1.5;
-          const maxR = entity.radius * 18.0;
+          const minR = entity.radius * 2.6;
+          const maxR = entity.radius * 10.0;
           p.orbitRadius = minR + Math.random() * (maxR - minR);
           p.orbitAngle = Math.random() * Math.PI * 2;
           p.orbitSpeed = (0.01 + Math.random() * 0.01) * (entity.radius / p.orbitRadius);
           p.targetX = entity.x + Math.cos(p.orbitAngle) * p.orbitRadius;
-          p.targetY = entity.y + Math.sin(p.orbitAngle) * p.orbitRadius * 0.3;
+          p.targetY = entity.y + Math.sin(p.orbitAngle) * p.orbitRadius * 0.35;
           p.targetZ = Math.sin(p.orbitAngle) * p.orbitRadius * 0.4;
           p.baseColor = entity.color || "#ff6600";
           p.color = p.baseColor;
           p.isPlanetRing = false;
         } else if (entity.type === "planet") {
           p.interstellarType = "planet";
-          p.isPlanetRing = entity.hasRings && Math.random() > 0.4;
-          const rMult = p.isPlanetRing ? (1.3 + Math.random() * 1.5) : (1.1 + Math.random() * 0.5);
+          p.isPlanetRing = true;
+          const rMult = 1.4 + Math.random() * 1.5;
           p.orbitRadius = entity.radius * rMult;
           p.orbitAngle = Math.random() * Math.PI * 2;
           p.orbitSpeed = 0.01 + Math.random() * 0.01;
           const rx = p.orbitRadius;
-          const ry = rx * (p.isPlanetRing ? 0.25 : 0.65);
+          const ry = rx * 0.35;
           p.targetX = entity.x + Math.cos(p.orbitAngle) * rx;
           p.targetY = entity.y + Math.sin(p.orbitAngle) * ry;
           p.targetZ = Math.sin(p.orbitAngle) * rx * 0.35;
-          p.baseColor = p.isPlanetRing ? (entity.ringColor || entity.color) : entity.color;
+          p.baseColor = entity.ringColor || entity.color;
           p.color = p.baseColor;
         } else if (entity.type === "nebula") {
           p.interstellarType = "nebula";
@@ -480,7 +462,7 @@ export function mapParticlesToInterstellar(
           p.isPlanetRing = false;
         } else {
           p.interstellarType = "star";
-          const rRadius = entity.radius * (1.2 + Math.random() * 3.5);
+          const rRadius = entity.radius * (1.5 + Math.random() * 2.5);
           const rAngle = Math.random() * Math.PI * 2;
           p.targetX = entity.x + Math.cos(rAngle) * rRadius;
           p.targetY = entity.y + Math.sin(rAngle) * rRadius;
@@ -491,13 +473,13 @@ export function mapParticlesToInterstellar(
         }
       } else {
         p.interstellarType = "star";
-        const rRadius = Math.random() * (width * 6);
+        const rRadius = 400 + Math.random() * (width * 4);
         const rTheta = Math.random() * Math.PI * 2;
         const rPhi = Math.acos(Math.random() * 2 - 1);
         p.targetX = width / 2 + rRadius * Math.sin(rPhi) * Math.cos(rTheta);
         p.targetY = height / 2 + rRadius * Math.sin(rPhi) * Math.sin(rTheta);
         p.targetZ = rRadius * Math.cos(rPhi);
-        p.baseColor = "#ffffff";
+        p.baseColor = Math.random() > 0.8 ? "#4deeea" : (Math.random() > 0.5 ? "#ffd778" : "#ffffff");
         p.color = p.baseColor;
         p.isPlanetRing = false;
       }

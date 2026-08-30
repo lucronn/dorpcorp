@@ -10,6 +10,8 @@ import {
 } from "./CelestialMeshBuilder";
 import { createCircularGlowTexture } from "./TextureUtils";
 import { createNeutronStarBirthEvent } from "./scenes/neutronstarbirth";
+import { resolveCelestialCollision } from "./CollisionEngine";
+import { calculateRocheLimit } from "./PhysicsUtils";
 
 export function getSpacetimeFabricDistortion(
   wx: number,
@@ -87,7 +89,9 @@ export function updateCelestial3DMeshes(
   activeWormholeRef: React.MutableRefObject<any>,
   particlesRef: React.MutableRefObject<Particle[]>,
   swallowEntity: (bh: CelestialEntity, victim: CelestialEntity) => void,
-  mergeEntities: (e1: CelestialEntity, e2: CelestialEntity) => void,
+  mergeEntities: (e1: CelestialEntity, e2: CelestialEntity) => { contactPointX: number; contactPointY: number; contactPointZ: number },
+  createShatterDebris: (x: number, y: number, color: string, count: number, spawnFn: any) => void,
+  spawnCollisionFlare: (scene: BABYLON.Scene, x: number, y: number, z: number, radius: number, colorHex: string, flaresList: any[]) => void,
   celestialMeshInstancesRef: React.MutableRefObject<CelestialMeshInstance[]>,
   mouseRef: React.MutableRefObject<{ x: number; y: number }>,
   cameraRef: React.MutableRefObject<BABYLON.Camera | null>,
@@ -227,6 +231,31 @@ export function updateCelestial3DMeshes(
         const dragPull = 0.0008;
         entity.vx = (entity.vx || 0) + (dx / dist) * dragPull;
         entity.vy = (entity.vy || 0) + (dy / dist) * dragPull;
+      }
+    });
+
+    // Apply kinematics and orbital motion
+    entities.forEach((entity) => {
+      if (entity.isDestroyed) return;
+
+      // Update radius interpolation for swallowing
+      if (entity.targetRadius !== undefined && entity.currentRadius !== undefined) {
+        if (Math.abs(entity.targetRadius - entity.currentRadius) > 0.5) {
+          entity.currentRadius += (entity.targetRadius - entity.currentRadius) * 0.05;
+        } else {
+          entity.currentRadius = entity.targetRadius;
+        }
+      }
+
+      // Physics/Kinematic updates
+      if (entity.isPhysicsEnabled || entity.isSwallowing) {
+        entity.x += entity.vx || 0;
+        entity.y += entity.vy || 0;
+      } else if (entity.orbitAngle !== undefined && entity.orbitRadius !== undefined && entity.centerX !== undefined && entity.centerY !== undefined) {
+        // Orbital updates
+        entity.orbitAngle += (entity.orbitSpeed || 0);
+        entity.x = entity.centerX + Math.cos(entity.orbitAngle) * entity.orbitRadius;
+        entity.y = entity.centerY + Math.sin(entity.orbitAngle) * entity.orbitRadius;
       }
     });
 
@@ -385,6 +414,37 @@ export function updateCelestial3DMeshes(
         const dz = (e2.z || 0) - (e1.z || 0);
         const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
         const colDist = e1.radius + e2.radius;
+        
+        const m1 = e1.mass || Math.pow(e1.radius, 3);
+        const m2 = e2.mass || Math.pow(e2.radius, 3);
+        
+        let primary: CelestialEntity | null = null;
+        let secondary: CelestialEntity | null = null;
+        let rocheLimit = 0;
+        
+        if (e1.type === "blackhole" && e2.type !== "blackhole") {
+          primary = e1; secondary = e2;
+          rocheLimit = calculateRocheLimit(e1.radius, m1, m2);
+        } else if (e2.type === "blackhole" && e1.type !== "blackhole") {
+          primary = e2; secondary = e1;
+          rocheLimit = calculateRocheLimit(e2.radius, m2, m1);
+        } else if (e1.radius > e2.radius * 2.5) {
+          primary = e1; secondary = e2;
+          rocheLimit = calculateRocheLimit(e1.radius, m1, m2);
+        } else if (e2.radius > e1.radius * 2.5) {
+          primary = e2; secondary = e1;
+          rocheLimit = calculateRocheLimit(e2.radius, m2, m1);
+        }
+        
+        if (primary && secondary && dist < rocheLimit && !secondary.isDestroyed) {
+          secondary.isDestroyed = true;
+          secondary.destroyedBy = "tidal_forces";
+          createShatterDebris(
+            secondary.x, secondary.y, secondary.color || "#aaaaaa",
+            Math.floor(secondary.radius * 3), spawnTailParticleRef.current
+          );
+          continue;
+        }
 
         if (dist < colDist) {
           if (e1.type === "blackhole") {
@@ -392,10 +452,54 @@ export function updateCelestial3DMeshes(
           } else if (e2.type === "blackhole") {
             swallowEntity(e2, e1);
           } else if (!e1.isMerging && !e2.isMerging) {
-            if (e1.radius >= e2.radius) {
-              mergeEntities(e1, e2);
-            } else {
-              mergeEntities(e2, e1);
+            const collisionResult = resolveCelestialCollision(e1, e2, 0.45);
+            if (collisionResult) {
+              const { contactPointX, contactPointY, contactPointZ, kineticEnergyDissipated } = collisionResult;
+              const collisionEnergyThreshold = (m1 + m2) * 0.15;
+              
+              if (kineticEnergyDissipated > collisionEnergyThreshold) {
+                // High energy impact results in a merger
+                let collisionData;
+                if (e1.radius >= e2.radius) {
+                  collisionData = mergeEntities(e1, e2);
+                } else {
+                  collisionData = mergeEntities(e2, e1);
+                }
+                if (collisionData) {
+                  createShatterDebris(
+                    contactPointX,
+                    contactPointY,
+                    e1.color || e2.color || "#ffffff",
+                    Math.min(200, Math.floor((e1.radius + e2.radius) * 2)),
+                    spawnTailParticleRef.current
+                  );
+                }
+              } else {
+                // Low energy bounce
+                createDustSplash(
+                  contactPointX,
+                  contactPointY,
+                  e2.color || "#aaaaaa",
+                  30,
+                  spawnTailParticleRef.current
+                );
+              }
+              
+              if (sceneRef.current) {
+                spawnCollisionFlare(
+                  sceneRef.current,
+                  contactPointX - ww / 2,
+                  -(contactPointY - wh / 2),
+                  contactPointZ,
+                  Math.min(e1.radius, e2.radius) * 1.5,
+                  e1.color || "#ffaa44",
+                  collisionFlaresRef.current
+                );
+              }
+              
+              if (audio && audio.playImpact) {
+                audio.playImpact((e1.mass || 10) + (e2.mass || 10));
+              }
             }
           }
         }
@@ -488,6 +592,10 @@ export function updateCelestial3DMeshes(
       const wy = -(entity.y - wh / 2);
 
       entity.scale = entity.scale ?? 1.0;
+      if (entity.scale < 1.0 && !entity.isDestroyed && !isMeshTransitioning) {
+        entity.scale += (1.0 - entity.scale) * 0.05;
+        if (entity.scale > 0.99) entity.scale = 1.0;
+      }
       entity.currentRadius = entity.currentRadius ?? entity.radius;
       entity.originalRadius = entity.originalRadius ?? entity.radius;
 
@@ -495,8 +603,15 @@ export function updateCelestial3DMeshes(
       let finalScale = baseScale;
 
       if (entity.isDestroyed) {
-        entity.scale *= 0.88;
-        finalScale = entity.scale * (entity.currentRadius / entity.originalRadius);
+        if (entity.destroyedBy === "blackhole") {
+          entity.scale = 0;
+          finalScale = 0;
+          inst.mesh.setEnabled(false);
+          inst.mesh.scaling.set(0, 0, 0);
+        } else {
+          entity.scale *= 0.88;
+          finalScale = entity.scale * (entity.currentRadius / entity.originalRadius);
+        }
       }
 
       let finalScaleX = finalScale;
@@ -536,6 +651,12 @@ export function updateCelestial3DMeshes(
           if (blackholeDist < bh.radius * 1.12) {
             entity.isDestroyed = true;
             entity.destroyedBy = "blackhole";
+            entity.scale = 0;
+            finalScaleX = 0;
+            finalScaleY = 0;
+            finalScaleZ = 0;
+            inst.mesh.setEnabled(false);
+            inst.mesh.scaling.set(0, 0, 0);
 
             if (sceneRef.current) {
               const flareMesh = BABYLON.MeshBuilder.CreateTorus("bh_devour_flare_3d_torus", { diameter: bh.radius * 2.8, thickness: bh.radius * 0.4, tessellation: 32 }, sceneRef.current);
@@ -641,20 +762,29 @@ export function updateCelestial3DMeshes(
           child.rotation.z += (0.007 + musicBands.bass * 0.005) * objSpeedMult;
           const pulse = 1.0 + Math.sin(Date.now() * 0.001) * 0.012 + musicAmp * 0.02;
           child.scaling.set(pulse, pulse, pulse);
-        } else if (child.name.indexOf("accretion_layer_2") !== -1) {
-          child.rotation.z -= (0.011 + musicBands.mid * 0.005) * objSpeedMult;
-          const pulse = 1.0 + Math.cos(Date.now() * 0.0008) * 0.01 + musicAmp * 0.015;
+        } else if (child.name.indexOf("accretion_layer_warped") !== -1) {
+          child.rotation.z -= (0.009 + musicBands.mid * 0.006) * objSpeedMult;
+          const pulse = 1.0 + Math.cos(Date.now() * 0.0012) * 0.015 + musicAmp * 0.02;
           child.scaling.set(pulse, pulse, pulse);
+        } else if (child.name.indexOf("event_horizon_photon_ring") !== -1) {
+          child.rotation.z += (0.014 + musicBands.treble * 0.008) * objSpeedMult;
+          child.rotation.x = Math.PI / 3 + Math.sin(Date.now() * 0.001) * 0.05;
         } else if (child.name.indexOf("gravitational_lensing") !== -1) {
           child.rotation.z += (0.003 + musicBands.bass * 0.003) * objSpeedMult;
           const pulse = 1.0 + Math.sin(Date.now() * 0.0006) * 0.015 + musicAmp * 0.02;
           child.scaling.set(pulse, pulse, pulse);
-        } else if (child.name.indexOf("nebula_sphere_1") !== -1) {
-          child.rotation.y += (0.0008 + musicBands.mid * 0.003) * objSpeedMult;
-          child.rotation.x += (0.0004 + musicBands.mid * 0.002) * objSpeedMult;
-        } else if (child.name.indexOf("nebula_sphere_2") !== -1) {
-          child.rotation.y -= (0.0006 + musicBands.mid * 0.002) * objSpeedMult;
-          child.rotation.z += (0.0005 + musicBands.mid * 0.001) * objSpeedMult;
+        } else if (child.name.indexOf("nebula_cloud_lobe_") !== -1) {
+          const lobeIdx = parseInt(child.name.replace("nebula_cloud_lobe_", "") || "0", 10);
+          const dir = lobeIdx % 2 === 0 ? 1 : -1;
+          child.rotation.y += dir * (0.0006 + (lobeIdx * 0.0001) + musicBands.mid * 0.002) * objSpeedMult;
+          child.rotation.x += -dir * (0.0004 + (lobeIdx * 0.00008) + musicBands.bass * 0.001) * objSpeedMult;
+          child.rotation.z += (0.0003 + musicBands.treble * 0.001) * objSpeedMult;
+          const breathe = 1.0 + Math.sin(Date.now() * 0.0008 + lobeIdx * 0.7) * 0.04 + musicAmp * 0.03;
+          child.scaling.scaleInPlace(breathe / (child.scaling.x || 1.0));
+        } else if (child.name.indexOf("nebula_core_glow_disc") !== -1) {
+          child.rotation.z += (0.0012 + musicBands.mid * 0.003) * objSpeedMult;
+          const pulse = 1.0 + Math.sin(Date.now() * 0.0015) * 0.06 + musicAmp * 0.05;
+          child.scaling.set(pulse, pulse, 1.0);
         } else {
           child.rotation.z += (0.003 + musicBands.mid * 0.005) * objSpeedMult;
         }
@@ -682,8 +812,17 @@ export function updateCelestial3DMeshes(
       celestialGroupRef.current.getChildMeshes(false).forEach((child) => {
         if (child.material && child.material instanceof BABYLON.StandardMaterial) {
           const mat = child.material;
-          if (child.name.startsWith("event_horizon_")) {
+          if (
+            child.name.startsWith("event_horizon_") ||
+            child.name.startsWith("planet_sphere") ||
+            child.name.startsWith("star_core")
+          ) {
             mat.needDepthBufferWrite = true;
+            mat.alpha = 1.0;
+            return;
+          }
+
+          if (child.name.startsWith("accretion_layer_") || child.name.startsWith("event_horizon_photon_ring")) {
             mat.alpha = 1.0;
             return;
           }
@@ -692,12 +831,12 @@ export function updateCelestial3DMeshes(
             mat.metadata = { baseOpacity: mat.alpha ?? 1.0, fadeIn: 0.01 };
           }
           if (mat.metadata.fadeIn < 1.0) {
-            mat.metadata.fadeIn += 0.06;
+            mat.metadata.fadeIn += 0.08;
             if (mat.metadata.fadeIn > 1.0) mat.metadata.fadeIn = 1.0;
           }
           const baseOpacity = mat.metadata.baseOpacity * mat.metadata.fadeIn;
-          const musicPulseOpacity = 0.38 * musicAmp;
-          mat.alpha = baseOpacity * (targetGroupOpacity + musicPulseOpacity * (1 - targetGroupOpacity));
+          const musicPulseOpacity = 0.25 * musicAmp;
+          mat.alpha = baseOpacity * Math.max(0.7, targetGroupOpacity + musicPulseOpacity);
         }
       });
     }

@@ -3,7 +3,6 @@ import * as BABYLON from "@babylonjs/core";
 import { Particle } from "../../types";
 import { CelestialEntity, ParticleFilters } from "./types";
 import { simulateParticles } from "./ParticleSimulationEngine";
-import { setupBlackholeLensingPostProcess } from "./BlackholeLensingPostProcess";
 import { SupernovaFXInstance } from "./SupernovaFX";
 
 export interface RenderEngineContext {
@@ -15,7 +14,7 @@ export interface RenderEngineContext {
   rendererRef: React.MutableRefObject<BABYLON.Engine | null>;
   composerRef: React.MutableRefObject<BABYLON.DefaultRenderingPipeline | null>;
   pointsMaterialRef: React.MutableRefObject<BABYLON.ShaderMaterial | null>;
-  lensingPostProcessRef: React.MutableRefObject<BABYLON.PostProcess | null>;
+  lensingPostProcessRef?: React.MutableRefObject<BABYLON.PostProcess | null>;
   celestialEntitiesRef: React.MutableRefObject<CelestialEntity[]>;
   supernovaRef: React.MutableRefObject<{
     time: number;
@@ -62,6 +61,7 @@ export interface RenderEngineContext {
   updateCelestial3DMeshes: () => void;
   generateInterstellarScene: (width: number, height: number, forceInterstellar?: boolean) => void;
   mapParticlesToInterstellar: (width: number, height: number) => void;
+  startWormholeTransit: (targetPos?: BABYLON.Vector3, viewDir?: BABYLON.Vector3, bhRadius?: number) => Promise<void>;
   transitionStartTimeRef: React.MutableRefObject<number>;
   transitionActiveRef: React.MutableRefObject<boolean>;
   transitionStartPosRef: React.MutableRefObject<BABYLON.Vector3 | null>;
@@ -333,15 +333,15 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
     inputs.currentLock.z += (0 - inputs.currentLock.z) * 0.05;
   }
 
-  const cameraZ = Math.max(10.0, currentH / (2 * Math.tan((ctx.fovRef.current * Math.PI) / 360))) * 2.5;
+  const cameraZ = Math.max(10.0, currentH / (2 * Math.tan((ctx.fovRef.current * Math.PI) / 360)));
 
   let finalTargetX = inputs.currentCameraParallaxX;
   let finalTargetY = inputs.currentCameraParallaxY;
   let finalTargetZ = -cameraZ + inputs.currentCameraZDepthOffset;
 
   if (ctx.isInterstellarRef.current) {
-    const orbitAngle = time * 0.0022;
-    const pitchAngle = Math.sin(time * 0.0006) * 0.28 + 0.18;
+    const orbitAngle = time * 0.0018;
+    const pitchAngle = Math.sin(time * 0.0006) * 0.22 + 0.12;
 
     let maxSpread = 50;
     if (ctx.celestialEntitiesRef.current && ctx.celestialEntitiesRef.current.length > 0) {
@@ -362,12 +362,12 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
       }
     }
 
-    const dynamicRadius = Math.max(cameraZ * 0.5, maxSpread * 1.25) + cameraZ * Math.sin(time * 0.0012) * 0.15;
+    const dynamicRadius = Math.max(340, maxSpread * 1.15) + Math.sin(time * 0.0012) * 35;
     const currentRadius = dynamicRadius;
 
     const ox = currentRadius * Math.sin(orbitAngle) * Math.cos(pitchAngle);
     const oy = currentRadius * Math.sin(pitchAngle);
-    const oz = currentRadius * Math.cos(orbitAngle) * Math.cos(pitchAngle);
+    const oz = -currentRadius * Math.cos(orbitAngle) * Math.cos(pitchAngle);
 
     finalTargetX = ox + inputs.currentCameraParallaxX;
     finalTargetY = oy + inputs.currentCameraParallaxY;
@@ -406,6 +406,45 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
     finalTargetZ = finalTargetZ * (1 - ctx.screensaverOpacityRef.current) + oz * ctx.screensaverOpacityRef.current;
   }
 
+  // Camera Gravity & Auto-Spaghettification
+  if (ctx.cameraRef.current && ctx.celestialEntitiesRef.current && !ctx.isTransitActiveRef.current) {
+    let maxPull = 0;
+    let pullVec = new BABYLON.Vector3(0, 0, 0);
+
+    ctx.celestialEntitiesRef.current.forEach((entity) => {
+      if (entity.type === "blackhole" && !entity.isDestroyed) {
+        const wx = entity.x - currentW / 2;
+        const wy = -(entity.y - currentH / 2);
+        const wz = entity.z || 0;
+        const bhPos = new BABYLON.Vector3(wx, wy, wz);
+
+        const dist = BABYLON.Vector3.Distance(ctx.cameraRef.current!.position, bhPos);
+        const gravityRadius = entity.radius * 15.0; // Gravity well size
+
+        if (dist < gravityRadius) {
+          const pullFactor = 1.0 - (dist / gravityRadius);
+          const strength = Math.pow(pullFactor, 2.5) * 40.0; // Exponential pull
+          
+          const dir = dist > 0.001 ? bhPos.subtract(ctx.cameraRef.current!.position).normalize() : new BABYLON.Vector3(0, 0, 0);
+          pullVec.addInPlace(dir.scale(strength));
+          
+          if (pullFactor > maxPull) maxPull = pullFactor;
+
+          // Auto-trigger spaghettification once mid-way through the event horizon
+          if (dist < entity.radius * 0.95) {
+            ctx.startWormholeTransit(bhPos, dir, entity.radius);
+          }
+        }
+      }
+    });
+
+    if (maxPull > 0) {
+      finalTargetX += pullVec.x;
+      finalTargetY += pullVec.y;
+      finalTargetZ += pullVec.z;
+    }
+  }
+
   let isTransitioning = false;
   let transitionT = 0;
   const startPos = ctx.transitionStartPosRef.current;
@@ -438,7 +477,13 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
       const lockY = inputs.currentLock.y * inputs.currentLock.intensity;
       const lockZ = inputs.currentLock.z * inputs.currentLock.intensity;
 
-      camera.setTarget(new BABYLON.Vector3(lockX, lockY, lockZ));
+      const lookTarget = new BABYLON.Vector3(
+        lockX + Math.sin(inputs.currentCameraYaw) * 100,
+        lockY + Math.sin(-inputs.currentCameraPitch) * 100,
+        lockZ
+      );
+
+      camera.setTarget(lookTarget);
       camera.rotation.z = 0;
     } else {
       camera.position.x += (finalTargetX - camera.position.x) * 0.04 + shakeX;
@@ -449,11 +494,14 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
       const lockY = inputs.currentLock.y * inputs.currentLock.intensity;
       const lockZ = inputs.currentLock.z * inputs.currentLock.intensity;
 
-      camera.setTarget(new BABYLON.Vector3(lockX, lockY, lockZ));
+      const lookTarget = new BABYLON.Vector3(
+        lockX + Math.sin(inputs.currentCameraYaw) * 100,
+        lockY + Math.sin(-inputs.currentCameraPitch) * 100,
+        lockZ
+      );
 
-      camera.rotation.x += inputs.currentCameraPitch;
-      camera.rotation.y += inputs.currentCameraYaw;
-      camera.rotation.z *= 0.95;
+      camera.setTarget(lookTarget);
+      camera.rotation.z = 0;
     }
   }
 
@@ -476,15 +524,5 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
     if (pipeline.imageProcessing && pipeline.imageProcessing.vignetteEnabled) {
       pipeline.imageProcessing.vignetteWeight = 1.25 + musicAmpVal * 0.75;
     }
-  }
-
-  if (camera && ctx.sceneRef.current && ctx.rendererRef.current) {
-    setupBlackholeLensingPostProcess(
-      camera,
-      ctx.sceneRef.current,
-      ctx.rendererRef.current,
-      ctx.lensingPostProcessRef,
-      ctx.celestialEntitiesRef
-    );
   }
 }

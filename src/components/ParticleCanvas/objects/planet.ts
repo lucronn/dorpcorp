@@ -4,6 +4,8 @@ import {
   generateAdvancedPlanetTexture,
   generateProceduralCloudTexture,
   generateConcentricRingTexture,
+  generatePlanetBumpNormalTexture,
+  generatePlanetNightLightsTexture,
   parseColorToRgb,
 } from "../TextureUtils";
 
@@ -25,10 +27,22 @@ export function createPlanetMesh(
     entity.secondaryColor || entity.color,
     scene
   );
+  const bumpTex = generatePlanetBumpNormalTexture(scene);
+  const nightTex = generatePlanetNightLightsTexture(
+    entity.color,
+    entity.secondaryColor || entity.color,
+    scene
+  );
+
   const sphereMat = new BABYLON.StandardMaterial("sphereMat", scene);
   sphereMat.diffuseTexture = planetTex;
-  sphereMat.emissiveTexture = planetTex;
-  sphereMat.emissiveColor = new BABYLON.Color3(0.3, 0.3, 0.3);
+  sphereMat.bumpTexture = bumpTex;
+  
+  // Mix emissive texture to show city lights on the dark side of the planet
+  sphereMat.emissiveTexture = nightTex;
+  // Increase specular for a wet/shiny surface look on water parts (if any)
+  sphereMat.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
+  sphereMat.specularPower = 32;
 
   const sphereMesh = BABYLON.MeshBuilder.CreateSphere(
     "planet_sphere",
@@ -36,6 +50,7 @@ export function createPlanetMesh(
     scene
   );
   sphereMesh.material = sphereMat;
+  sphereMesh.renderingGroupId = 2;
   sphereMesh.parent = planetContainer;
 
   // Cloud Layer
@@ -54,6 +69,7 @@ export function createPlanetMesh(
     scene
   );
   cloudMesh.material = cloudMat;
+  cloudMesh.renderingGroupId = 2;
   cloudMesh.parent = planetContainer;
 
   // Rings
@@ -77,6 +93,7 @@ export function createPlanetMesh(
     );
     ringMesh.material = ringMat;
     ringMesh.rotation.x = Math.PI / 2.3;
+    ringMesh.renderingGroupId = 2;
     ringMesh.parent = planetContainer;
   }
 
@@ -104,6 +121,7 @@ export function createPlanetMesh(
   atmosphereGlowMat.opacityFresnelParameters = atmosFresnel;
 
   atmosphereGlowMesh.material = atmosphereGlowMat;
+  atmosphereGlowMesh.renderingGroupId = 2;
   atmosphereGlowMesh.parent = planetContainer;
 
   planetContainer.scaling.set(initScale, initScale, initScale);

@@ -309,8 +309,36 @@ export const generatePlanetBumpNormalTexture = (scene: BABYLON.Scene): BABYLON.D
   const ctx = texture.getContext() as CanvasRenderingContext2D;
   if (!ctx) return texture;
 
+  // Base normal (pointing straight out: R=128, G=128, B=255)
   ctx.fillStyle = "rgb(128, 128, 255)";
   ctx.fillRect(0, 0, width, height);
+
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const data = imgData.data;
+
+  // Generate procedural ridges, mountain chains, and impact craters
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4;
+      
+      // Terrain noise frequencies
+      const n1 = Math.sin(x * 0.08) * Math.cos(y * 0.08);
+      const n2 = Math.sin(x * 0.22 + y * 0.15) * 0.5;
+      const n3 = Math.sin(x * 0.45 - y * 0.35) * 0.25;
+      const heightVal = n1 + n2 + n3;
+      
+      // Compute normal derivatives
+      const nx = Math.cos(x * 0.08) * 0.08 * 18.0 + Math.cos(x * 0.22 + y * 0.15) * 0.22 * 12.0;
+      const ny = -Math.sin(y * 0.08) * 0.08 * 18.0 + Math.cos(x * 0.22 + y * 0.15) * 0.15 * 12.0;
+
+      data[idx] = Math.min(255, Math.max(0, 128 + nx * 20));     // Tangent X
+      data[idx + 1] = Math.min(255, Math.max(0, 128 + ny * 20)); // Tangent Y
+      data[idx + 2] = Math.min(255, Math.max(180, 255 - Math.abs(nx + ny) * 8)); // Normal Z
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
   texture.update();
   return texture;
 };
@@ -537,7 +565,7 @@ export const generateGalaxyTexture = (baseColor: string, secondaryColor: string,
 
 export const generateNebulaTexture = (baseColor: string, secondaryColor: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
   const size = 512;
-  const texture = new BABYLON.DynamicTexture("nebula_tex", size, scene, false);
+  const texture = new BABYLON.DynamicTexture("nebula_tex", size, scene, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
   const ctx = texture.getContext() as CanvasRenderingContext2D;
   if (!ctx) return texture;
 
@@ -547,31 +575,74 @@ export const generateNebulaTexture = (baseColor: string, secondaryColor: string,
   ctx.clearRect(0, 0, size, size);
   const center = size / 2;
 
-  // Draw 30 overlapping ultra-soft gaussian gas puffs
-  for (let i = 0; i < 30; i++) {
-    const cx = size * 0.25 + Math.random() * size * 0.5;
-    const cy = size * 0.25 + Math.random() * size * 0.5;
-    const rad = 60 + Math.random() * 110;
+  // 1. Broad soft ambient gas background layer
+  const bgGrad = ctx.createRadialGradient(center, center, 0, center, center, size * 0.46);
+  bgGrad.addColorStop(0.0, `rgba(${r1}, ${g1}, ${b1}, 0.22)`);
+  bgGrad.addColorStop(0.35, `rgba(${r2}, ${g2}, ${b2}, 0.12)`);
+  bgGrad.addColorStop(0.7, `rgba(${r1}, ${g1}, ${b1}, 0.04)`);
+  bgGrad.addColorStop(1.0, "rgba(0, 0, 0, 0.0)");
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, size, size);
 
-    const useSec = Math.random() > 0.4;
+  // 2. 65 Multi-scale turbulent billowing cloud puffs with organic anisotropic stretching
+  for (let i = 0; i < 65; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.pow(Math.random(), 1.4) * (size * 0.38);
+    const cx = center + Math.cos(angle) * dist;
+    const cy = center + Math.sin(angle) * dist;
+    const radX = 35 + Math.random() * 85;
+    const radY = 25 + Math.random() * 65;
+    const rotation = Math.random() * Math.PI * 2;
+
+    const useSec = Math.random() > 0.45;
     const cr = useSec ? r2 : r1;
     const cg = useSec ? g2 : g1;
     const cb = useSec ? b2 : b1;
 
-    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
-    grad.addColorStop(0.0, `rgba(${cr}, ${cg}, ${cb}, 0.35)`);
-    grad.addColorStop(0.35, `rgba(${cr}, ${cg}, ${cb}, 0.18)`);
-    grad.addColorStop(0.7, `rgba(${cr}, ${cg}, ${cb}, 0.05)`);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rotation);
+
+    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(radX, radY));
+    const peakAlpha = 0.25 + Math.random() * 0.20;
+    grad.addColorStop(0.0, `rgba(${cr}, ${cg}, ${cb}, ${peakAlpha})`);
+    grad.addColorStop(0.3, `rgba(${cr}, ${cg}, ${cb}, ${peakAlpha * 0.6})`);
+    grad.addColorStop(0.65, `rgba(${cr}, ${cg}, ${cb}, ${peakAlpha * 0.2})`);
     grad.addColorStop(1.0, `rgba(${cr}, ${cg}, ${cb}, 0.0)`);
 
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, radX, radY, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
   }
 
-  // Smooth radial outer mask to ensure zero sharp square borders on the texture
-  const outerMask = ctx.createRadialGradient(center, center, size * 0.25, center, center, size * 0.48);
+  // 3. Wispy filamentary ionization tendrils
+  for (let t = 0; t < 12; t++) {
+    const startAngle = Math.random() * Math.PI * 2;
+    const startDist = Math.random() * size * 0.15;
+    let currX = center + Math.cos(startAngle) * startDist;
+    let currY = center + Math.sin(startAngle) * startDist;
+
+    ctx.beginPath();
+    ctx.moveTo(currX, currY);
+    for (let seg = 0; seg < 6; seg++) {
+      const stepAngle = startAngle + (Math.random() - 0.5) * 1.5;
+      const stepLen = 20 + Math.random() * 30;
+      currX += Math.cos(stepAngle) * stepLen;
+      currY += Math.sin(stepAngle) * stepLen;
+      ctx.lineTo(currX, currY);
+    }
+    ctx.strokeStyle = `rgba(255, 255, 255, ${0.08 + Math.random() * 0.12})`;
+    ctx.lineWidth = 4 + Math.random() * 8;
+    ctx.lineCap = "round";
+    ctx.filter = "blur(4px)";
+    ctx.stroke();
+    ctx.filter = "none";
+  }
+
+  // 4. Smooth radial outer mask to ensure zero sharp square borders
+  const outerMask = ctx.createRadialGradient(center, center, size * 0.2, center, center, size * 0.48);
   outerMask.addColorStop(0.0, "rgba(0, 0, 0, 0.0)");
   outerMask.addColorStop(1.0, "rgba(0, 0, 0, 1.0)");
 
@@ -580,8 +651,21 @@ export const generateNebulaTexture = (baseColor: string, secondaryColor: string,
   ctx.fillRect(0, 0, size, size);
   ctx.globalCompositeOperation = "source-over";
 
+  // 5. Sub-pixel dither to eliminate 8-bit color banding
+  const imgData = ctx.getImageData(0, 0, size, size);
+  const data = imgData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] > 0) {
+      const noise = (Math.random() - 0.5) * 4.0;
+      data[i] = Math.min(255, Math.max(0, data[i] + noise));
+      data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + noise));
+      data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + noise));
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+
   texture.hasAlpha = true;
-  texture.update();
+  texture.update(true);
   return texture;
 };
 

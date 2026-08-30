@@ -24,7 +24,7 @@ export function createNeutronStarBirthEvent(
     vx: (star.vx || 0) * 0.5,
     vy: (star.vy || 0) * 0.5,
     mass: isNeutronStar ? star.mass * 0.6 : star.mass * 1.5,
-    scale: 0.05,
+    scale: 1.0,
     currentRadius: isNeutronStar ? 6 : 10,
     originalRadius: isNeutronStar ? 6 : 10,
     targetRadius: isNeutronStar ? 6 : 10,

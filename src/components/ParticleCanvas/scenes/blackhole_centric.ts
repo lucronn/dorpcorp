@@ -18,19 +18,19 @@ export function buildBlackholeCentricScene(
   const systemDesc = "A supermassive rotating black hole locking dozens of systems in an aggressive accretion orbit.";
   const systemTags = ["🕳 BLACK HOLE", "☄ ACCRETION DISK", "★ GRAVITY SHEAR"];
 
-  const bhRad = isMobile ? 45 : 75;
+  const bhRad = isMobile ? 20 : 28;
   entities.push({
     type: "blackhole",
     x: cx,
     y: cy,
     radius: bhRad,
-    color: "#ff6600",
+    color: "#ff7700",
     secondaryColor: "#f25f35",
     vx: 0,
     vy: 0,
     mass: bhRad * bhRad * 15,
     initialMass: bhRad * bhRad * 15,
-    scale: 0,
+    scale: 1.0,
     currentRadius: bhRad,
     originalRadius: bhRad,
     targetRadius: bhRad,
@@ -40,10 +40,10 @@ export function buildBlackholeCentricScene(
 
   const pCount = isMobile ? 1 : 2;
   for (let p = 0; p < pCount; p++) {
-    const orbitRad = (isMobile ? 500 : 850) + p * (isMobile ? 250 : 400);
-    const angle = Math.random() * Math.PI * 2;
-    const pRadius = (isMobile ? 12 : 22) + Math.random() * 12;
-    const orbitSpeed = 0.003 + Math.random() * 0.003;
+    const orbitRad = (isMobile ? 120 : 160) + p * (isMobile ? 70 : 95);
+    const angle = (p * Math.PI) + 0.45;
+    const pRadius = (isMobile ? 16 : 24) + p * 4;
+    const orbitSpeed = 0.004 + (1 - p * 0.3) * 0.002;
 
     entities.push({
       type: "planet",
@@ -51,9 +51,9 @@ export function buildBlackholeCentricScene(
       y: cy + Math.sin(angle) * orbitRad,
       radius: pRadius,
       color: p === 0 ? "#4deeea" : "#ffd778",
-      secondaryColor: "#00ffd2",
-      hasRings: Math.random() > 0.4,
-      ringColor: p === 0 ? "rgba(77, 238, 234, 0.45)" : "rgba(255, 215, 120, 0.4)",
+      secondaryColor: p === 0 ? "#00ffd2" : "#ff5e62",
+      hasRings: p === 1,
+      ringColor: "rgba(255, 215, 120, 0.65)",
       orbitRadius: orbitRad,
       orbitAngle: angle,
       orbitSpeed: orbitSpeed,
@@ -63,7 +63,7 @@ export function buildBlackholeCentricScene(
       vy: Math.cos(angle) * orbitRad * orbitSpeed * 1.5,
       mass: pRadius * pRadius,
       initialMass: pRadius * pRadius,
-      scale: 0,
+      scale: 1.0,
       currentRadius: pRadius,
       originalRadius: pRadius,
       targetRadius: pRadius,

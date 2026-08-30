@@ -32,6 +32,7 @@ export function createGalaxyMesh(
   );
   galMesh.material = galMat;
   galMesh.rotation.x = Math.PI / 3.8;
+  galMesh.renderingGroupId = 2;
   galMesh.parent = galaxyContainer;
 
   const coreTex = createCircularGlowTexture(entity.color, scene);
@@ -49,6 +50,7 @@ export function createGalaxyMesh(
     scene
   );
   coreMesh.material = coreMat;
+  coreMesh.renderingGroupId = 2;
   coreMesh.parent = galaxyContainer;
 
   // 3D Outer Galactic Bulge Coronal Halo
@@ -58,6 +60,7 @@ export function createGalaxyMesh(
     scene
   );
   haloMesh.material = coreMat;
+  haloMesh.renderingGroupId = 2;
   haloMesh.parent = galaxyContainer;
 
   galaxyContainer.scaling.set(initScale, initScale, initScale);

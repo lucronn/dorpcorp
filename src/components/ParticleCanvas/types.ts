@@ -30,6 +30,9 @@ export interface CelestialEntity {
   vx?: number;
   vy?: number;
   vz?: number;
+  wx?: number; // angular velocity X
+  wy?: number; // angular velocity Y
+  wz?: number; // angular velocity Z
   z?: number;
   orbitInclination?: number;
   mass?: number;

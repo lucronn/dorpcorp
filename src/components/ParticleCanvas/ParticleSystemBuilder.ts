@@ -120,11 +120,12 @@ export function buildParticleSystem(
   pointsMesh.setVerticesData(BABYLON.VertexBuffer.ColorKind, colors, true, 4);
   pointsMesh.setVerticesData("extraData", extras, true, 1);
 
-  const indices = new Int32Array(totalCount);
+  const indices = new Uint32Array(totalCount);
   for (let i = 0; i < totalCount; i++) {
     indices[i] = i;
   }
   pointsMesh.setIndices(indices);
+  pointsMesh.renderingGroupId = 1;
 
   if (glowLayer) {
     glowLayer.addExcludedMesh(pointsMesh);
@@ -146,14 +147,18 @@ export function buildParticleSystem(
     varying vec3 vPos;
     void main(void) {
       gl_Position = worldViewProjection * vec4(position, 1.0);
-      if (extraData > 2.5) {
-        gl_PointSize = pointSize * 0.85;
-      } else if (extraData > 1.5) {
-        gl_PointSize = pointSize * 0.8;
-      } else if (extraData > 0.5) {
+      if (extraData > 3.2) {
+        // Volumetric nebula gas cloud particles: large billowing puffs
+        gl_PointSize = pointSize * 3.2;
+      } else if (extraData > 2.5) {
         gl_PointSize = pointSize * 0.65;
+      } else if (extraData > 1.5) {
+        gl_PointSize = pointSize * 0.95;
+      } else if (extraData > 0.5) {
+        gl_PointSize = pointSize * 1.15;
       } else {
-        gl_PointSize = pointSize * 0.5;
+        // Ambient background stars: tiny subtle pinpricks
+        gl_PointSize = pointSize * 0.45;
       }
       vColor = color;
       vExtra = extraData;
@@ -168,7 +173,7 @@ export function buildParticleSystem(
     varying vec3 vPos;
     uniform sampler2D textureSampler;
     void main(void) {
-      if (vColor.a <= 0.01 || length(vColor.rgb) <= 0.001) {
+      if (vColor.a <= 0.005 || length(vColor.rgb) <= 0.001) {
         discard;
       }
       vec2 coord = gl_PointCoord - vec2(0.5);
@@ -177,41 +182,51 @@ export function buildParticleSystem(
       
       vec4 texColor = texture2D(textureSampler, gl_PointCoord);
       
-      // Soft Gaussian radial falloff for silky smooth particle edges
-      float radialGlow = exp(-dist * dist * 10.0);
+      // Soft Gaussian radial falloff (ultra-soft for voluminous clouds)
+      float radialGlow = vExtra > 3.2 ? exp(-dist * dist * 3.6) : exp(-dist * dist * 7.5);
       
       float alpha = vColor.a;
-      if (vExtra > 2.5) {
-        alpha *= 0.25;
+      if (vExtra > 3.2) {
+        // Volumetric gas cloud: misty overlapping transparency
+        alpha *= 0.38;
+      } else if (vExtra > 2.5) {
+        alpha *= 0.35;
       } else if (vExtra > 1.5) {
-        alpha *= 0.45;
+        alpha *= 0.60;
       } else if (vExtra > 0.5) {
-        alpha *= 0.92;
+        alpha *= 0.95;
       } else {
-        alpha *= 0.75;
+        // Ambient background stars: subtle transparency
+        alpha *= 0.30;
       }
       
       float finalAlpha = texColor.a * radialGlow * alpha;
-      if (finalAlpha <= 0.005) {
+      if (finalAlpha <= 0.002) {
         discard;
       }
-      gl_FragColor = vec4(vColor.rgb * texColor.rgb * finalAlpha, finalAlpha);
+      gl_FragColor = vec4(vColor.rgb * finalAlpha, finalAlpha);
     }
   `;
 
-  const pointsMaterial = new BABYLON.ShaderMaterial("pointsMat", scene, {
-    vertex: "customParticle",
-    fragment: "customParticle"
-  }, {
-    attributes: ["position", "color", "extraData"],
-    uniforms: ["worldViewProjection", "pointSize"],
-    samplers: ["textureSampler"],
-    needAlphaBlending: true,
-    needAlphaTesting: false
-  });
+  const pointsMaterial = new BABYLON.ShaderMaterial(
+    "custom_particle_mat",
+    scene,
+    {
+      vertex: "customParticle",
+      fragment: "customParticle",
+    },
+    {
+      attributes: ["position", "color", "extraData"],
+      uniforms: ["worldViewProjection", "pointSize"],
+      samplers: ["textureSampler"],
+      needAlphaBlending: true,
+      needAlphaTesting: true,
+    }
+  );
 
-  pointsMaterial.setTexture("textureSampler", circTex);
-  pointsMaterial.setFloat("pointSize", (isMobileDevice ? 3.0 : 4.0) * dpr);
+  const circleTex = createCircleTexture(scene);
+  pointsMaterial.setTexture("textureSampler", circleTex);
+  pointsMaterial.setFloat("pointSize", (isMobileDevice ? 2.6 : 3.4) * dpr);
   pointsMaterial.alphaMode = BABYLON.Engine.ALPHA_ONEONE;
   pointsMaterial.fillMode = 2;
 

@@ -80,204 +80,63 @@ export const computeCurlNoise = (x: number, y: number, time: number): { x: numbe
   return { x: vx * 12.0, y: vy * 12.0 };
 };
 
-export interface CollisionResult {
-  kineticEnergyDissipated: number;
-  contactPointX: number;
-  contactPointY: number;
-  contactPointZ: number;
-}
+/**
+ * Calculates the Roche limit between a massive primary body and a secondary body.
+ * If the distance is less than this limit, tidal forces will tear the secondary body apart.
+ */
+export const calculateRocheLimit = (radiusPrimary: number, massPrimary: number, massSecondary: number): number => {
+  // Physical Roche Limit heuristic for celestial fluid satellites:
+  // d ≈ (1.5 to 2.2) * R_primary, scaling softly with mass ratio
+  if (massSecondary <= 0 || radiusPrimary <= 0) return 0;
+  const ratio = Math.max(1, massPrimary / Math.max(1, massSecondary));
+  const massFactor = 1.35 + Math.min(0.85, Math.log10(ratio) * 0.22);
+  return radiusPrimary * massFactor;
+};
 
-// Enforces Conservation of Momentum & Energy during rigid elastic/inelastic 3D mesh collisions
-export const resolveCelestialCollision = (
-  e1: CelestialEntity,
-  e2: CelestialEntity,
-  restitution: number = 0.75
-): CollisionResult | null => {
-  const dx = e2.x - e1.x;
-  const dy = e2.y - e1.y;
-  const dz = (e2.z || 0) - (e1.z || 0);
-  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-  const colDist = e1.radius + e2.radius;
+/**
+ * Calculates the resulting angular velocity (spin) after an off-center impact.
+ */
+export const calculateAngularVelocity = (
+  mass: number,
+  radius: number,
+  impactVelocityX: number,
+  impactVelocityY: number,
+  impactVelocityZ: number,
+  contactNormalX: number,
+  contactNormalY: number,
+  contactNormalZ: number
+): { wx: number; wy: number; wz: number } => {
+  // Tangential velocity component (perpendicular to normal)
+  const dot = impactVelocityX * contactNormalX + impactVelocityY * contactNormalY + impactVelocityZ * contactNormalZ;
+  const tanX = impactVelocityX - dot * contactNormalX;
+  const tanY = impactVelocityY - dot * contactNormalY;
+  const tanZ = impactVelocityZ - dot * contactNormalZ;
 
-  if (dist >= colDist || dist === 0) return null;
+  // Moment of inertia for a solid sphere: I = 2/5 * m * r^2
+  const inertia = (2 / 5) * mass * radius * radius;
+  if (inertia === 0) return { wx: 0, wy: 0, wz: 0 };
 
-  // Unshackle both entities into full active 3D physics body simulation
-  e1.isPhysicsEnabled = true;
-  e2.isPhysicsEnabled = true;
+  // Torque approximation from tangential impulse (r x F)
+  // Angular velocity omega = L / I
+  // Where L = r x (m * v_tan)
+  // Cross product (r * N) x (m * v_tan)
+  const rx = contactNormalX * radius;
+  const ry = contactNormalY * radius;
+  const rz = contactNormalZ * radius;
+  
+  const mx = mass * tanX;
+  const my = mass * tanY;
+  const mz = mass * tanZ;
 
-  // Normalize contact axis
-  const nx = dx / dist;
-  const ny = dy / dist;
-  const nz = dz / dist;
-
-  // Approximate relative masses via radius cubics
-  const m1 = e1.mass || e1.radius * e1.radius * 2;
-  const m2 = e2.mass || e2.radius * e2.radius * 2;
-
-  // Retrieve velocities
-  const v1x = e1.vx || 0;
-  const v1y = e1.vy || 0;
-  const v1z = e1.vz || 0;
-  const v2x = e2.vx || 0;
-  const v2y = e2.vy || 0;
-  const v2z = e2.vz || 0;
-
-  const rvx = v2x - v1x;
-  const rvy = v2y - v1y;
-  const rvz = v2z - v1z;
-
-  const vn = rvx * nx + rvy * ny + rvz * nz;
-
-  // Always resolve position overlaps to eliminate visual sticking
-  const overlap = colDist - dist;
-  const correctionScale = (overlap / (1 / m1 + 1 / m2)) * 0.7;
-  e1.x -= (correctionScale / m1) * nx;
-  e1.y -= (correctionScale / m1) * ny;
-  e1.z = (e1.z || 0) - (correctionScale / m1) * nz;
-
-  e2.x += (correctionScale / m2) * nx;
-  e2.y += (correctionScale / m2) * ny;
-  e2.z = (e2.z || 0) + (correctionScale / m2) * nz;
-
-  // If already moving away along contact normal, position separation is sufficient
-  if (vn >= 0) {
-    return {
-      kineticEnergyDissipated: 0,
-      contactPointX: e1.x + nx * e1.radius,
-      contactPointY: e1.y + ny * e1.radius,
-      contactPointZ: (e1.z || 0) + nz * e1.radius,
-    };
-  }
-
-  // Calculate kinetic energy before collision: E_k = 0.5 * m * v^2
-  const keBefore = 0.5 * m1 * (v1x * v1x + v1y * v1y + v1z * v1z) +
-                   0.5 * m2 * (v2x * v2x + v2y * v2y + v2z * v2z);
-
-  // Coefficient of restitution collision impulse scalar
-  const impulse = -(1 + restitution) * vn / (1 / m1 + 1 / m2);
-
-  // Apply impulse vector to conserve momentum and bounce physically
-  e1.vx = v1x - (impulse / m1) * nx;
-  e1.vy = v1y - (impulse / m1) * ny;
-  e1.vz = v1z - (impulse / m1) * nz;
-
-  e2.vx = v2x + (impulse / m2) * nx;
-  e2.vy = v2y + (impulse / m2) * ny;
-  e2.vz = v2z + (impulse / m2) * nz;
-
-  // Apply tangential friction to impart spin/traction on bounce
-  const tangentX = rvx - vn * nx;
-  const tangentY = rvy - vn * ny;
-  const tangentZ = rvz - vn * nz;
-  const friction = 0.18;
-
-  e1.vx += friction * tangentX * (m2 / (m1 + m2));
-  e1.vy += friction * tangentY * (m2 / (m1 + m2));
-  e1.vz = (e1.vz || 0) + friction * tangentZ * (m2 / (m1 + m2));
-
-  e2.vx -= friction * tangentX * (m1 / (m1 + m2));
-  e2.vy -= friction * tangentY * (m1 / (m1 + m2));
-  e2.vz = (e2.vz || 0) - friction * tangentZ * (m1 / (m1 + m2));
-
-  // Calculate kinetic energy after collision
-  const keAfter = 0.5 * m1 * ((e1.vx || 0) * (e1.vx || 0) + (e1.vy || 0) * (e1.vy || 0) + (e1.vz || 0) * (e1.vz || 0)) +
-                  0.5 * m2 * ((e2.vx || 0) * (e2.vx || 0) + (e2.vy || 0) * (e2.vy || 0) + (e2.vz || 0) * (e2.vz || 0));
-
-  const kineticEnergyDissipated = Math.max(0, keBefore - keAfter);
+  const lx = ry * mz - rz * my;
+  const ly = rz * mx - rx * mz;
+  const lz = rx * my - ry * mx;
 
   return {
-    kineticEnergyDissipated,
-    contactPointX: e1.x + nx * e1.radius,
-    contactPointY: e1.y + ny * e1.radius,
-    contactPointZ: (e1.z || 0) + nz * e1.radius,
+    wx: lx / inertia,
+    wy: ly / inertia,
+    wz: lz / inertia
   };
 };
 
-type SpawnParticleFn = (
-  x: number,
-  y: number,
-  z: number,
-  vx: number,
-  vy: number,
-  color: string,
-  decayRate?: number
-) => void;
 
-export const createDustSplash = (
-  x: number,
-  y: number,
-  color: string,
-  count: number,
-  spawnP: SpawnParticleFn
-) => {
-  const safeCount = Math.min(30, count);
-  for (let i = 0; i < safeCount; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const speed = 0.1 + Math.random() * 0.3;
-    const vx = Math.cos(angle) * speed;
-    const vy = Math.sin(angle) * speed;
-    spawnP(x, y, (Math.random() - 0.5) * 10, vx, vy, color, 0.02);
-  }
-};
-
-export const createShatterDebris = (
-  x: number,
-  y: number,
-  color: string,
-  count: number,
-  spawnP: SpawnParticleFn
-) => {
-  const safeCount = Math.min(40, count);
-  for (let i = 0; i < safeCount; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const speed = 0.15 + Math.random() * 0.35;
-    const vx = Math.cos(angle) * speed;
-    const vy = Math.sin(angle) * speed;
-    spawnP(x, y, (Math.random() - 0.5) * 20, vx, vy, color, 0.025);
-  }
-};
-
-export const createSpaghettificationDebris = (
-  bh: CelestialEntity,
-  victim: CelestialEntity,
-  spawnP: SpawnParticleFn
-) => {
-  const count = Math.min(80, Math.floor(victim.radius * 2));
-  for (let i = 0; i < count; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const r = Math.random() * victim.radius;
-    const px = victim.x + Math.cos(angle) * r;
-    const py = victim.y + Math.sin(angle) * r;
-
-    const dx = px - bh.x;
-    const dy = py - bh.y;
-    const orbitAngle = Math.atan2(dy, dx) + Math.PI / 2;
-    const speed = 0.2 + Math.random() * 0.3;
-    const vx = Math.cos(orbitAngle) * speed + (bh.x - px) * 0.005;
-    const vy = Math.sin(orbitAngle) * speed + (bh.y - py) * 0.005;
-
-    spawnP(
-      px,
-      py,
-      (Math.random() - 0.5) * victim.radius,
-      vx,
-      vy,
-      victim.color || "#88aaff",
-      0.015
-    );
-  }
-};
-
-export const swallowEntity = (
-  bh: CelestialEntity,
-  victim: CelestialEntity
-) => {
-  victim.isSwallowing = true;
-  victim.destroyedBy = "blackhole";
-  const newMass = (bh.mass || 100) + (victim.mass || 50);
-  bh.mass = newMass;
-
-  // Blackhole target radius swells from ingested mass!
-  const targetRadius = Math.min(bh.radius * 1.5, Math.sqrt(newMass / 15));
-  bh.targetRadius = targetRadius;
-};

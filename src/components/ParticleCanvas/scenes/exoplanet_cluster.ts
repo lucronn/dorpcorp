@@ -18,11 +18,11 @@ export function buildExoplanetClusterScene(
   const systemDesc = "Three crystal exoplanets clustered in a co-orbital gravitational field.";
   const systemTags = ["🪐 ORBITAL TRIAD", "⚡ CONNECTOR HIGHS", "★ DEEP VOID"];
 
-  const r = isMobile ? 350 : 600;
+  const r = isMobile ? 180 : 290;
 
   for (let i = 0; i < 3; i++) {
     const angle = (i * Math.PI * 2) / 3;
-    const pRadius = (isMobile ? 14 : 24) + Math.random() * 8;
+    const pRadius = (isMobile ? 26 : 48) + (i % 2) * 8;
     const orbitSpeed = 0.0035;
 
     entities.push({
@@ -33,7 +33,7 @@ export function buildExoplanetClusterScene(
       color: i === 0 ? "#4deeea" : i === 1 ? "#ffd778" : "#ff5e62",
       secondaryColor: "#ffffff",
       hasRings: i === 0,
-      ringColor: "rgba(77, 238, 234, 0.35)",
+      ringColor: "rgba(77, 238, 234, 0.55)",
       orbitRadius: r,
       orbitAngle: angle,
       orbitSpeed: orbitSpeed,
@@ -42,7 +42,7 @@ export function buildExoplanetClusterScene(
       vx: -Math.sin(angle) * r * orbitSpeed * 1.5,
       vy: Math.cos(angle) * r * orbitSpeed * 1.5,
       mass: pRadius * pRadius,
-      scale: 0,
+      scale: 1.0,
       currentRadius: pRadius,
       originalRadius: pRadius,
       targetRadius: pRadius,

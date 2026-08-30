@@ -26,9 +26,9 @@ export interface EventManagerContext {
   scrollVelocityRef: React.MutableRefObject<number>;
   isTransitActiveRef: React.MutableRefObject<boolean>;
   sceneRef: React.MutableRefObject<BABYLON.Scene | null>;
-  startWormholeTransit: (targetPos?: BABYLON.Vector3, viewDir?: BABYLON.Vector3) => Promise<void>;
-  lensingPostProcessRef: React.MutableRefObject<BABYLON.PostProcess | null>;
-  wormholePostProcessRef: React.MutableRefObject<BABYLON.PostProcess | null>;
+  startWormholeTransit: (targetPos?: BABYLON.Vector3, viewDir?: BABYLON.Vector3, bhRadius?: number) => Promise<void>;
+  lensingPostProcessRef?: React.MutableRefObject<BABYLON.PostProcess | null>;
+  wormholePostProcessRef?: React.MutableRefObject<BABYLON.PostProcess | null>;
   activeSupernovaFxRef: React.MutableRefObject<any>;
   triggerSupernovaTransition?: (x?: number, y?: number) => void;
 }
@@ -268,14 +268,32 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
   }
 
   const triggerPlanetaryFlyby = (targetNode: any) => {
+    const scene = ctx.sceneRef.current;
     const camera = ctx.cameraRef.current;
-    if (!camera || ctx.isTransitActiveRef.current) return;
+    if (!camera || !scene || ctx.isTransitActiveRef.current) return;
     ctx.isTransitActiveRef.current = true;
     const targetPos = targetNode.getAbsolutePosition().clone();
-    const offset = new BABYLON.Vector3(250, 150, 350);
+    
+    // Choose an offset that looks cinematic
+    const dir = targetPos.subtract(camera.position).normalize();
+    const right = BABYLON.Vector3.Cross(dir, new BABYLON.Vector3(0, 1, 0)).normalize();
+    const offset = right.scale(300).add(new BABYLON.Vector3(0, 150, -350));
     const flyToPos = targetPos.add(offset);
 
-    BABYLON.Animation.CreateAndStartAnimation("camFly", camera, "position", 60, 120, camera.position, flyToPos, 0, new BABYLON.CubicEase(), () => {
+    // Create a sweeping bezier curve for the camera path
+    const controlPoint = camera.position.clone().add(flyToPos).scale(0.5).add(new BABYLON.Vector3(0, 400, 200));
+    const bezier = BABYLON.Curve3.CreateQuadraticBezier(camera.position, controlPoint, flyToPos, 60);
+    const points = bezier.getPoints();
+
+    const camAnim = new BABYLON.Animation("camFly", "position", 60, BABYLON.Animation.ANIMATIONTYPE_VECTOR3, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+    const keys = points.map((p, i) => ({ frame: i * 2, value: p })); // 120 frames total
+    camAnim.setKeys(keys);
+
+    const easing = new BABYLON.CubicEase();
+    easing.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEINOUT);
+    camAnim.setEasingFunction(easing);
+
+    scene.beginDirectAnimation(camera, [camAnim], 0, 120, false, 1, () => {
       ctx.isTransitActiveRef.current = false;
     });
     BABYLON.Animation.CreateAndStartAnimation("camTarget", camera, "target", 60, 120, camera.getTarget(), targetPos, 0, new BABYLON.CubicEase());
@@ -291,31 +309,57 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
         if (target && isUIElement(target)) {
           return;
         }
-        const pickResult = pointerInfo.pickInfo;
+        const scene = ctx.sceneRef.current;
+        const camera = ctx.cameraRef.current;
+        if (!scene || !camera) return;
+
+        // Optimized picking check: only pick meshes that are part of interactive groups
+        const pickPredicate = (mesh: BABYLON.AbstractMesh) => {
+            if (!mesh.isPickable || mesh.name === "hudPlane") return false;
+            // Ignore particle systems, shockwaves, debris
+            if (mesh.name.startsWith("sn_") || mesh.name.includes("debris") || mesh.name.includes("flare")) return false;
+            return true;
+        };
+
+        const pickResult = scene.pick(scene.pointerX, scene.pointerY, pickPredicate);
+
         if (pickResult && pickResult.hit && pickResult.pickedMesh) {
           const meshName = pickResult.pickedMesh.name;
           const parentNode = pickResult.pickedMesh.parent;
-          if (meshName !== "hudPlane") {
-            if (parentNode && (parentNode.name === "planet_group" || parentNode.name === "bh_group" || parentNode.name === "nebula_group" || parentNode.name === "galaxy_group" || parentNode.name === "star_group")) {
-              triggerPlanetaryFlyby(parentNode);
-              return;
+          
+          // Check if clicked a black hole
+          if ((parentNode && parentNode.name === "bh_group") || meshName.startsWith("event_horizon_")) {
+            const bhNode = parentNode?.name === "bh_group" ? parentNode : pickResult.pickedMesh;
+            const bhPos = bhNode.getAbsolutePosition();
+            const dir = bhPos.subtract(camera.position).normalize();
+            
+            // Get the physical radius of the event horizon core mesh
+            let coreMesh;
+            if (bhNode.name === "bh_group") {
+              coreMesh = bhNode.getChildMeshes().find(m => m.name.startsWith("event_horizon_core_3d"));
+            } else {
+              coreMesh = pickResult.pickedMesh;
             }
-            if (meshName.startsWith("planet_") || meshName === "ring_mesh" || meshName === "atmosphere_glow" || meshName.startsWith("event_horizon_") || meshName.startsWith("star_")) {
-              triggerPlanetaryFlyby(pickResult.pickedMesh);
-              return;
-            }
+            const bhRadius = coreMesh ? (coreMesh.getBoundingInfo().boundingSphere.radiusWorld) / 2.598 : 100;
+            
+            ctx.startWormholeTransit(bhPos, dir, bhRadius);
+            return;
+          }
+
+          if (parentNode && (parentNode.name === "planet_group" || parentNode.name === "nebula_group" || parentNode.name === "galaxy_group" || parentNode.name === "star_group")) {
+            triggerPlanetaryFlyby(parentNode);
+            return;
+          }
+          if (meshName.startsWith("planet_") || meshName === "ring_mesh" || meshName === "atmosphere_glow" || meshName.startsWith("star_")) {
+            triggerPlanetaryFlyby(pickResult.pickedMesh);
+            return;
           }
         }
+        
         if (!ctx.isInterstellarRef.current) {
-          const scene = ctx.sceneRef.current;
-          const camera = ctx.cameraRef.current;
-          if (scene && camera) {
-            const ray = scene.createPickingRay(scene.pointerX, scene.pointerY, BABYLON.Matrix.Identity(), camera);
-            const targetPoint = ray.origin.add(ray.direction.scale(1500));
-            ctx.startWormholeTransit(targetPoint, ray.direction);
-          } else {
-            ctx.startWormholeTransit();
-          }
+          const ray = scene.createPickingRay(scene.pointerX, scene.pointerY, BABYLON.Matrix.Identity(), camera);
+          const targetPoint = ray.origin.add(ray.direction.scale(1500));
+          ctx.startWormholeTransit(targetPoint, ray.direction);
         }
       }
     });
@@ -334,11 +378,11 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
       ctx.sceneRef.current.onPointerObservable.remove(pointerObserver);
     }
 
-    if (ctx.lensingPostProcessRef.current) {
+    if (ctx.lensingPostProcessRef && ctx.lensingPostProcessRef.current) {
       ctx.lensingPostProcessRef.current.dispose();
     }
 
-    if (ctx.wormholePostProcessRef.current) {
+    if (ctx.wormholePostProcessRef && ctx.wormholePostProcessRef.current) {
       ctx.wormholePostProcessRef.current.dispose();
     }
 

@@ -23,21 +23,26 @@ export default function App() {
     isTransitioning: false,
   });
   const [particleFilters, setParticleFilters] = useState<ParticleFilters>({
-    ambient: false,
+    ambient: true,
     celestial: true,
     bridges: true,
     tails: true,
     typography: true,
   });
   useEffect(() => {
+    let isLogging = false;
     const safeStringify = (val: any): string => {
       if (val === null || val === undefined) return String(val);
       if (typeof val !== 'object') return String(val);
+      if (val instanceof Error) return `${val.name}: ${val.message}`;
+      if (val._scene || val.parent || val.constructor?.name?.startsWith?.("BABYLON")) {
+        return `[Babylon:${val.name || val.constructor?.name || "Object"}]`;
+      }
       try {
         const seen = new WeakSet();
         return JSON.stringify(val, (key, value) => {
           if (typeof value === 'object' && value !== null) {
-            if (seen.has(value)) return '[Circular]';
+            if (seen.has(value) || value._scene || value.parent) return '[Circular/Engine]';
             seen.add(value);
           }
           return value;
@@ -50,26 +55,63 @@ export default function App() {
     const origLog = console.log;
     console.log = (...args) => {
       origLog(...args);
-      const msg = args.map(safeStringify).join(' ');
-      if (msg.includes("[DEBUG]") || msg.includes("Error")) {
-         setDebugLogs(prev => [...prev.slice(-15), msg]);
+      if (isLogging) return;
+      isLogging = true;
+      try {
+        const msg = args.map(safeStringify).join(' ');
+        if (msg.includes("[DEBUG]") || msg.includes("Error")) {
+          setDebugLogs(prev => [...prev.slice(-15), msg]);
+        }
+      } catch {
+        // ignore
+      } finally {
+        isLogging = false;
       }
     };
     
     const origError = console.error;
     console.error = (...args) => {
       origError(...args);
-      const msg = "[ERROR] " + args.map(safeStringify).join(' ');
-      setDebugLogs(prev => [...prev.slice(-15), msg]);
+      if (isLogging) return;
+      isLogging = true;
+      try {
+        const msg = "[ERROR] " + args.map(safeStringify).join(' ');
+        setDebugLogs(prev => [...prev.slice(-15), msg]);
+      } catch {
+        // ignore
+      } finally {
+        isLogging = false;
+      }
     };
 
-    window.onerror = (message, source, lineno, colno, error) => {
-      const msg = "[ERROR] " + message + " at " + source + ":" + lineno;
-      setDebugLogs(prev => [...prev.slice(-15), msg]);
+    window.onerror = (message, source, lineno) => {
+      if (isLogging) return;
+      isLogging = true;
+      try {
+        const msg = "[ERROR] " + message + " at " + source + ":" + lineno;
+        setDebugLogs(prev => [...prev.slice(-15), msg]);
+      } catch {
+        // ignore
+      } finally {
+        isLogging = false;
+      }
     };
     window.onunhandledrejection = (event) => {
-      const msg = "[ERROR] Unhandled Rejection: " + (event.reason ? event.reason.toString() : 'Unknown');
-      setDebugLogs(prev => [...prev.slice(-15), msg]);
+      if (isLogging) return;
+      isLogging = true;
+      try {
+        const msg = "[ERROR] Unhandled Rejection: " + (event.reason ? event.reason.toString() : 'Unknown');
+        setDebugLogs(prev => [...prev.slice(-15), msg]);
+      } catch {
+        // ignore
+      } finally {
+        isLogging = false;
+      }
+    };
+
+    return () => {
+      console.log = origLog;
+      console.error = origError;
     };
   }, []);
   const [sequenceInfo, setSequenceInfo] = useState<{

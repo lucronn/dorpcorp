@@ -7,16 +7,23 @@ import { CelestialEntity, ParticleCanvasProps, ParticleFilters } from "./Particl
 import { DebugObjectOverlay } from "./DebugObjectOverlay";
 import {
   resolveCelestialCollision,
+  mergeEntities,
   swallowEntity as _swallowEntity,
   createDustSplash as _createDustSplash,
   createShatterDebris as _createShatterDebris,
   createSpaghettificationDebris as _createSpaghettificationDebris,
+  spawnCollisionFlare as _spawnCollisionFlare,
 } from "./ParticleCanvas/CollisionEngine";
 import {
   fetchNextGeminiScene as _fetchNextGeminiScene,
   registerAndSaveSequence as _registerAndSaveSequence,
   generateInterstellarScene as _generateInterstellarScene,
 } from "./ParticleCanvas/SceneManager";
+import { buildBlackholeCentricScene } from "./ParticleCanvas/scenes/blackhole_centric";
+import { buildBinaryPlanetsScene } from "./ParticleCanvas/scenes/binary_planets";
+import { buildNebulaCradleScene } from "./ParticleCanvas/scenes/nebula_cradle";
+import { buildExoplanetClusterScene } from "./ParticleCanvas/scenes/exoplanet_cluster";
+import { buildSpiralGalaxyScene } from "./ParticleCanvas/scenes/spiral_galaxy";
 import {
   transitionToNewEntities as _transitionToNewEntities,
   mapParticlesToInterstellar as _mapParticlesToInterstellar,
@@ -28,7 +35,6 @@ import {
 import {
   spawnSupernovaFX,
   SupernovaFXInstance,
-  setupBlackholeLensingPostProcess,
   getSpacetimeFabricDistortion as _getSpacetimeFabricDistortion,
 } from "./ParticleCanvas/EffectsManager";
 import { updateHudTexture } from "./ParticleCanvas/HUDManager";
@@ -290,25 +296,15 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   };
 
   const internalTransitionSMRef = useRef<CosmicTransitionStateMachine>(new CosmicTransitionStateMachine());
-  const sm = transitionStateMachineRef ? transitionStateMachineRef.current || internalTransitionSMRef.current : internalTransitionSMRef.current;
+  const realSM = internalTransitionSMRef.current;
+  const onTransitionStateChangeRef = useRef(onTransitionStateChange);
+  onTransitionStateChangeRef.current = onTransitionStateChange;
 
-  useEffect(() => {
-    if (transitionStateMachineRef && !transitionStateMachineRef.current) {
-      transitionStateMachineRef.current = sm;
-    }
-    const unsubscribe = sm.subscribe((info) => {
-      if (onTransitionStateChange) {
-        onTransitionStateChange(info);
-      }
-    });
-    return unsubscribe;
-  }, [sm, onTransitionStateChange, transitionStateMachineRef]);
-
-  const triggerSupernovaTransition = (x?: number, y?: number) => {
+  const triggerSupernovaTransition = (x?: number, y?: number): Promise<void> => {
     const posX = x ?? window.innerWidth / 2;
     const posY = y ?? window.innerHeight / 2;
 
-    sm.executeBlackHoleToSupernovaTransition({
+    return realSM.executeBlackHoleToSupernovaTransition({
       x: posX,
       y: posY,
       onImplode: () => {
@@ -359,13 +355,35 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     });
   };
 
+  const triggerSupernovaRef = useRef(triggerSupernovaTransition);
+  triggerSupernovaRef.current = triggerSupernovaTransition;
+
+  useEffect(() => {
+    if (transitionStateMachineRef) {
+      transitionStateMachineRef.current = {
+        getInfo: () => realSM.getInfo(),
+        subscribe: (listener: any) => realSM.subscribe(listener),
+        executeBlackHoleToSupernovaTransition: (opts?: any) => {
+          return triggerSupernovaRef.current(opts?.x, opts?.y);
+        },
+      } as any;
+    }
+    const unsubscribe = realSM.subscribe((info) => {
+      if (onTransitionStateChangeRef.current) {
+        onTransitionStateChangeRef.current(info);
+      }
+    });
+    return unsubscribe;
+  }, []);
+
   const triggerCalmCosmicShift = () => {
     triggerSupernovaTransition(window.innerWidth / 2, window.innerHeight / 2);
   };
 
   const startWormholeTransit = async (
     targetPos?: BABYLON.Vector3,
-    viewDir?: BABYLON.Vector3
+    viewDir?: BABYLON.Vector3,
+    bhRadius?: number
   ) => {
     await _startWormholeTransit(
       {
@@ -388,7 +406,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         animationComplete,
       },
       targetPos,
-      viewDir
+      viewDir,
+      bhRadius
     );
   };
 
@@ -414,7 +433,9 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       activeWormholeRef,
       particlesRef,
       _swallowEntity,
-      (e1, e2) => resolveCelestialCollision(e1, e2, 0.75),
+      mergeEntities,
+      _createShatterDebris,
+      _spawnCollisionFlare,
       celestialMeshInstancesRef,
       mouseRef,
       cameraRef,
@@ -497,26 +518,28 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       cameraZRef.current
     );
     const engine = rendererRef.current!;
+    (window as any).__scene = scene;
+    (window as any).__engine = engine;
 
     // Postprocessing Composer setup for cinematic Bloom, ACES Tone Mapping, Chromatic Aberration, and Grain
     const pipeline = new BABYLON.DefaultRenderingPipeline("pipeline", true, scene, [camera]);
     pipeline.bloomEnabled = true;
-    pipeline.bloomThreshold = 0.82;
-    pipeline.bloomWeight = 0.12;
+    pipeline.bloomThreshold = 0.65; // Lowered to allow more bright stars to glow
+    pipeline.bloomWeight = 0.25;    // Increased for a softer, dreamier sci-fi feel
     pipeline.bloomKernel = 64;
     pipeline.bloomScale = 0.5;
 
     // Cinematic Chromatic Aberration
     pipeline.chromaticAberrationEnabled = true;
     if (pipeline.chromaticAberration) {
-      pipeline.chromaticAberration.aberrationAmount = 2.0;
-      pipeline.chromaticAberration.radialIntensity = 0.5;
+      pipeline.chromaticAberration.aberrationAmount = 3.0; // Slightly higher for space bending
+      pipeline.chromaticAberration.radialIntensity = 0.8;
     }
 
     // Subtle cosmic film grain
     pipeline.grainEnabled = true;
     if (pipeline.grain) {
-      pipeline.grain.intensity = 4.5;
+      pipeline.grain.intensity = 3.0; // Slightly less harsh grain
       pipeline.grain.animated = true;
     }
 
@@ -525,12 +548,13 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     if (pipeline.imageProcessing) {
       pipeline.imageProcessing.toneMappingEnabled = true;
       pipeline.imageProcessing.toneMappingType = BABYLON.ImageProcessingConfiguration.TONEMAPPING_ACES;
-      pipeline.imageProcessing.contrast = 1.15;
-      pipeline.imageProcessing.exposure = 1.06;
+      // High contrast deep space look, bright highlights, crushed blacks
+      pipeline.imageProcessing.contrast = 1.35; 
+      pipeline.imageProcessing.exposure = 1.25; 
       pipeline.imageProcessing.vignetteEnabled = true;
-      pipeline.imageProcessing.vignetteWeight = 1.25;
-      pipeline.imageProcessing.vignetteStretch = 0.9;
-      pipeline.imageProcessing.vignetteColor = new BABYLON.Color4(0.0, 0.0, 0.03, 1.0);
+      pipeline.imageProcessing.vignetteWeight = 1.5;
+      pipeline.imageProcessing.vignetteStretch = 0.85;
+      pipeline.imageProcessing.vignetteColor = new BABYLON.Color4(0.0, 0.0, 0.02, 1.0);
     }
 
     // Anti-aliasing FXAA
@@ -540,7 +564,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     // Dedicated GlowLayer to make emissive 3D celestial objects bloom softly
     const glowLayer = new BABYLON.GlowLayer("glowLayer", scene, {
       mainTextureRatio: 0.25,
-      blurKernelSize: 32,
+      blurKernelSize: 64, // Increased kernel size for smoother planetary glow
     });
     glowLayer.intensity = 0.35;
     glowLayerRef.current = glowLayer;
@@ -671,7 +695,28 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       try {
         const saved = localStorage.getItem("cosmic_debug_sequences");
         const list = saved ? JSON.parse(saved) : {};
-        const seq = list[id];
+        let seq = list[id];
+        if (!seq) {
+          const currentW = window.innerWidth;
+          const currentH = window.innerHeight;
+          const isMobile = currentW < 768;
+          if (id.includes("singularity") || id.includes("blackhole")) {
+            const sc = buildBlackholeCentricScene(currentW, currentH, isMobile);
+            seq = { id, archetype: "BLACKHOLE_CENTRIC", ...sc };
+          } else if (id.includes("binary")) {
+            const sc = buildBinaryPlanetsScene(currentW, currentH, isMobile);
+            seq = { id, archetype: "BINARY_PLANETS", ...sc };
+          } else if (id.includes("nebula")) {
+            const sc = buildNebulaCradleScene(currentW, currentH, isMobile);
+            seq = { id, archetype: "NEBULA_CRADLE", ...sc };
+          } else if (id.includes("exoplanet") || id.includes("cluster")) {
+            const sc = buildExoplanetClusterScene(currentW, currentH, isMobile);
+            seq = { id, archetype: "EXOPLANET_CLUSTER", ...sc };
+          } else if (id.includes("galaxy") || id.includes("spiral")) {
+            const sc = buildSpiralGalaxyScene(currentW, currentH, isMobile);
+            seq = { id, archetype: "SPIRAL_GALAXY", ...sc };
+          }
+        }
         if (!seq) {
           console.error(`[COSMIC DEBUG] Sequence with ID '${id}' not found in localStorage.`);
           return;
@@ -822,6 +867,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         updateCelestial3DMeshes,
         generateInterstellarScene,
         mapParticlesToInterstellar,
+        startWormholeTransit,
         transitionStartTimeRef,
         transitionActiveRef,
         transitionStartPosRef,

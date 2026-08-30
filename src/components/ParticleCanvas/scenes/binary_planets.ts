@@ -18,9 +18,9 @@ export function buildBinaryPlanetsScene(
   const systemDesc = "A dance of twin sister planets locked in mutual orbit, connected by a high-energy particle bridge.";
   const systemTags = ["🪐 TWIN PLANETS", "🌈 ENERGETIC BRIDGE", "☁ NEBULA SHIELD"];
 
-  const separation = isMobile ? 350 : 650;
-  const p1Radius = isMobile ? 25 : 45;
-  const p2Radius = isMobile ? 22 : 38;
+  const separation = isMobile ? 90 : 135;
+  const p1Radius = isMobile ? 32 : 48;
+  const p2Radius = isMobile ? 28 : 42;
 
   entities.push({
     type: "planet",
@@ -30,7 +30,7 @@ export function buildBinaryPlanetsScene(
     color: "#00ffd2",
     secondaryColor: "#20c997",
     hasRings: true,
-    ringColor: "rgba(0,255,210,0.35)",
+    ringColor: "rgba(0,255,210,0.55)",
     orbitRadius: separation,
     orbitAngle: Math.PI,
     orbitSpeed: 0.004,
@@ -40,7 +40,7 @@ export function buildBinaryPlanetsScene(
     vy: Math.cos(Math.PI) * separation * 0.004 * 1.5,
     mass: p1Radius * p1Radius,
     initialMass: p1Radius * p1Radius,
-    scale: 0,
+    scale: 1.0,
     currentRadius: p1Radius,
     originalRadius: p1Radius,
     targetRadius: p1Radius,
@@ -65,7 +65,7 @@ export function buildBinaryPlanetsScene(
     vy: Math.cos(0) * separation * 0.004 * 1.5,
     mass: p2Radius * p2Radius,
     initialMass: p2Radius * p2Radius,
-    scale: 0,
+    scale: 1.0,
     currentRadius: p2Radius,
     originalRadius: p2Radius,
     targetRadius: p2Radius,
@@ -83,7 +83,7 @@ export function buildBinaryPlanetsScene(
     vx: 0,
     vy: 0,
     mass: nebRad * nebRad * 0.02,
-    scale: 0,
+    scale: 1.0,
     currentRadius: nebRad,
     originalRadius: nebRad,
     targetRadius: nebRad,

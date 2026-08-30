@@ -32,36 +32,17 @@ export function spawnSupernovaFX(
   // 2. Core Sphere (The Singularity that explodes)
   const coreMesh = BABYLON.MeshBuilder.CreateSphere("sn_core", { segments: 64, diameter: 2 }, scene);
   coreMesh.position = worldPos.clone();
+  coreMesh.renderingGroupId = 2;
   const coreMat = new BABYLON.StandardMaterial("sn_core_mat", scene);
   coreMat.emissiveColor = new BABYLON.Color3(0, 0.8, 1.0);
   coreMat.disableLighting = true;
   coreMesh.material = coreMat;
   disposables.push(coreMesh, coreMat);
 
-  // 3. Volumetric Light Scattering (True 3D God Rays)
-  const camera = scene.activeCamera;
-  let godrays: BABYLON.VolumetricLightScatteringPostProcess | null = null;
-  if (camera) {
-    godrays = new BABYLON.VolumetricLightScatteringPostProcess(
-      "sn_godrays", 
-      1.0, 
-      camera, 
-      coreMesh, 
-      128, 
-      BABYLON.Texture.BILINEAR_SAMPLINGMODE, 
-      scene.getEngine(), 
-      false
-    );
-    godrays.exposure = 0.0;
-    godrays.decay = 0.96;
-    godrays.weight = 0.98;
-    godrays.density = 0.96;
-    disposables.push(godrays);
-  }
-
-  // 4. 3D Spherical Shockwave Bubble (Custom Fresnel Shader)
+  // 4. 3D Spherical Shockwave Bubble (Custom Fresnel Shader with Chromatic Dispersion)
   const shockwave = BABYLON.MeshBuilder.CreateSphere("sn_shockwave", { segments: 128, diameter: 1 }, scene);
   shockwave.position = worldPos.clone();
+  shockwave.renderingGroupId = 2;
   const swMat = new BABYLON.ShaderMaterial("sn_sw_mat", scene, {
     vertexSource: `
       precision highp float;
@@ -89,8 +70,14 @@ export function spawnSupernovaFX(
         vec3 viewDirectionW = normalize(cameraPosition - vPositionW);
         float fresnelTerm = dot(viewDirectionW, vNormalW);
         fresnelTerm = clamp(1.0 - fresnelTerm, 0., 1.);
-        fresnelTerm = pow(fresnelTerm, 3.5);
-        gl_FragColor = vec4(color * fresnelTerm * 2.5, fresnelTerm * alphaMap);
+        fresnelTerm = pow(fresnelTerm, 3.2);
+        
+        // Chromatic split at wavefront
+        vec3 edgeGlow = color * fresnelTerm * 3.0;
+        edgeGlow.r += pow(fresnelTerm, 4.0) * 0.5;
+        edgeGlow.b += pow(fresnelTerm, 2.5) * 0.8;
+        
+        gl_FragColor = vec4(edgeGlow, fresnelTerm * alphaMap);
       }
     `
   }, {
@@ -99,7 +86,7 @@ export function spawnSupernovaFX(
     needAlphaBlending: true
   });
   
-  swMat.setColor3("color", new BABYLON.Color3(0.0, 0.8, 1.0));
+  swMat.setColor3("color", new BABYLON.Color3(0.2, 0.85, 1.0));
   swMat.setFloat("alphaMap", 0.0);
   swMat.backFaceCulling = false;
   swMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
@@ -247,12 +234,7 @@ export function spawnSupernovaFX(
         coreMesh.scaling.setAll(scale);
         
         coreMat.emissiveColor = new BABYLON.Color3(p, 0.8 + p * 0.2, 1.0);
-        
         light.intensity = p * 80.0;
-        
-        if (godrays) {
-          godrays.exposure = p * 0.6;
-        }
         return;
       }
 
@@ -271,26 +253,25 @@ export function spawnSupernovaFX(
       const detProgress = detElapsed / explosionDurationMs;
 
       const intensityCurve = Math.max(0, Math.pow(1.0 - detProgress, 3.5));
-      light.intensity = intensityCurve * 2000.0; 
+      light.intensity = intensityCurve * 2200.0;
       
-      if (godrays) {
-        godrays.exposure = intensityCurve * 2.5;
-        godrays.decay = 0.96815 - (detProgress * 0.05); 
-      }
-      
-      const coreScale = Math.max(0.01, 20.0 * intensityCurve);
+      const coreScale = Math.max(0.01, 22.0 * intensityCurve);
       coreMesh.scaling.setAll(coreScale);
 
       if (detProgress < 0.2) {
-        coreMat.emissiveColor = new BABYLON.Color3(1.0, 1.0, 1.0);
+        const c = new BABYLON.Color3(1.0, 1.0, 1.0);
+        coreMat.emissiveColor = c;
+        light.diffuse = new BABYLON.Color3(0.9, 0.96, 1.0);
         swMat.setColor3("color", new BABYLON.Color3(1.0, 1.0, 1.0));
       } else if (detProgress < 0.5) {
         const t = (detProgress - 0.2) / 0.3;
         coreMat.emissiveColor = new BABYLON.Color3(1.0, 1.0 - t * 0.4, 1.0 - t);
+        light.diffuse = new BABYLON.Color3(1.0, 0.85 - t * 0.3, 0.6 - t * 0.4);
         swMat.setColor3("color", new BABYLON.Color3(1.0 - t * 0.4, 0.8 - t * 0.3, 1.0 - t * 0.5));
       } else {
         const t = (detProgress - 0.5) / 0.5;
         coreMat.emissiveColor = new BABYLON.Color3(1.0 - t * 0.8, 0.6 - t * 0.6, 0.0);
+        light.diffuse = new BABYLON.Color3(0.8 - t * 0.6, 0.3 - t * 0.3, 0.1);
         swMat.setColor3("color", new BABYLON.Color3(0.6 - t * 0.4, 0.5 - t * 0.5, 0.5 - t * 0.5));
       }
 
@@ -300,6 +281,7 @@ export function spawnSupernovaFX(
       const swAlpha = Math.max(0, Math.pow(1.0 - detProgress, 1.8) * 0.85);
       swMat.setFloat("alphaMap", swAlpha);
       
+      const camera = scene.activeCamera;
       if (camera) {
         swMat.setVector3("cameraPosition", camera.position);
       }

@@ -10,9 +10,9 @@ export interface WormholeTransitParams {
   transitStartTimeRef: React.MutableRefObject<number>;
   transitTargetPosRef: React.MutableRefObject<BABYLON.Vector3 | null>;
   transitDirRef: React.MutableRefObject<BABYLON.Vector3 | null>;
-  wormholePostProcessRef: React.MutableRefObject<BABYLON.PostProcess | null>;
-  wormholeTimeRef: React.MutableRefObject<number>;
-  wormholeIntensityRef: React.MutableRefObject<number>;
+  wormholePostProcessRef?: React.MutableRefObject<BABYLON.PostProcess | null>;
+  wormholeTimeRef?: React.MutableRefObject<number>;
+  wormholeIntensityRef?: React.MutableRefObject<number>;
   fovRef: React.MutableRefObject<number>;
   cameraZRef: React.MutableRefObject<number>;
   isInterstellarRef: React.MutableRefObject<boolean>;
@@ -25,7 +25,8 @@ export interface WormholeTransitParams {
 export async function startWormholeTransit(
   params: WormholeTransitParams,
   targetPos?: BABYLON.Vector3,
-  viewDir?: BABYLON.Vector3
+  viewDir?: BABYLON.Vector3,
+  bhRadius?: number
 ): Promise<void> {
   const {
     cameraRef,
@@ -61,70 +62,7 @@ export async function startWormholeTransit(
   transitDirRef.current = viewDir || null;
 
   try {
-    if (!wormholePostProcessRef.current && camera) {
-      BABYLON.Effect.ShadersStore["wormholePixelShader"] = `
-        precision highp float;
-        varying vec2 vUV;
-        uniform sampler2D textureSampler;
-        uniform float time;
-        uniform float intensity;
-
-        float hash(vec2 p) { return fract(1e4 * sin(17.0 * p.x + p.y * 0.1) * (0.1 + abs(sin(p.y * 13.0 + p.x)))); }
-
-        void main(void) {
-          if (intensity <= 0.0) {
-            gl_FragColor = texture2D(textureSampler, vUV);
-            return;
-          }
-          vec2 uv = vUV;
-          vec2 center = vec2(0.5);
-          vec2 dir = center - uv;
-          float dist = length(dir);
-
-          float pull = (1.0 - smoothstep(0.0, 0.5, dist)) * intensity * 1.5;
-          float angle = pull * time * 2.0;
-          float s = sin(angle);
-          float c = cos(angle);
-          mat2 rot = mat2(c, -s, s, c);
-
-          vec2 swirledUV = center + rot * (uv - center) * (1.0 - pull * 0.3);
-
-          if (dist > 0.0001) {
-            dir = dir / dist;
-          } else {
-            dir = vec2(0.0);
-          }
-
-          float blurAmount = min(time * 0.015, 0.05) * intensity + pull * 0.04;
-          vec4 sum = vec4(0.0);
-          float samples = 8.0;
-          for (float i = 0.0; i < 8.0; i++) {
-            sum += texture2D(textureSampler, swirledUV + dir * (i / samples) * blurAmount);
-          }
-          sum /= samples;
-
-          vec3 eventHorizonGlow = vec3(0.1, 0.5, 1.0) * pow(pull, 3.0) * 1.5;
-          vec4 finalColor = mix(texture2D(textureSampler, uv), sum, intensity);
-          finalColor.rgb += eventHorizonGlow;
-
-          gl_FragColor = finalColor;
-        }
-      `;
-
-      const wormholePP = new BABYLON.PostProcess("WormholePP", "wormhole", ["time", "intensity"], null, 1.0, camera);
-      wormholePP.onApply = (effect) => {
-        wormholeTimeRef.current += 0.016;
-        effect.setFloat("time", wormholeTimeRef.current);
-        effect.setFloat("intensity", wormholeIntensityRef.current);
-      };
-      wormholePostProcessRef.current = wormholePP;
-    }
-
-    wormholeTimeRef.current = 0.0;
-    wormholeIntensityRef.current = 1.0;
-
-    BABYLON.Animation.CreateAndStartAnimation("fovAnim", camera, "fov", 60, 60, camera.fov, 1.6, 0, new BABYLON.QuadraticEase());
-
+    // 3D Camera and Relativistic Tunnel Transit (Pure 3D geometry and motion)
     const origCameraPos = camera.position.clone();
     const dir = viewDir ? viewDir.normalize() : new BABYLON.Vector3(0, 0, 1);
     const lookAtPoint = origCameraPos.add(dir.scale(2000));
@@ -142,6 +80,7 @@ export async function startWormholeTransit(
     }
     let tunnelMesh: BABYLON.Mesh | null = BABYLON.MeshBuilder.CreateTube("wormhole_tunnel", { path, radius: 35, sideOrientation: BABYLON.Mesh.BACKSIDE }, scene);
     tunnelMesh.metadata = { dir: dirForPath };
+    tunnelMesh.renderingGroupId = 2;
 
     let flyingObjects: BABYLON.Mesh[] = [];
 
@@ -149,6 +88,7 @@ export async function startWormholeTransit(
     const mouthMesh = BABYLON.MeshBuilder.CreateTorus("wormhole_mouth", { diameter: 72, thickness: 3.5, tessellation: 64 }, scene);
     mouthMesh.position = tunnelStartPos;
     mouthMesh.lookAt(origCameraPos);
+    mouthMesh.renderingGroupId = 2;
     const mouthMat = new BABYLON.PBRMaterial("mouthMat", scene);
     mouthMat.emissiveColor = new BABYLON.Color3(0.0, 0.9, 1.0);
     mouthMat.albedoColor = new BABYLON.Color3(0.05, 0.0, 0.2);
@@ -160,6 +100,7 @@ export async function startWormholeTransit(
     const vortexDisc = BABYLON.MeshBuilder.CreateDisc("vortex_disc", { radius: 35, tessellation: 64 }, scene);
     vortexDisc.position = tunnelStartPos.add(dirForPath.scale(0.5));
     vortexDisc.lookAt(origCameraPos);
+    vortexDisc.renderingGroupId = 2;
 
     const vortexMaterial = new BABYLON.StandardMaterial("vortexMat", scene);
     const vTex = generateAccretionDiskTexture("#00ccff", "#9900ff", scene);
@@ -200,11 +141,37 @@ export async function startWormholeTransit(
       const radialOffset = new BABYLON.Vector3((Math.random() - 0.5) * 50, (Math.random() - 0.5) * 50, (Math.random() - 0.5) * 50);
       mesh.position = origCameraPos.add(dirForObjs.scale(forwardOffset)).add(radialOffset);
       mesh.material = wispMat;
+      mesh.renderingGroupId = 2;
       flyingObjects.push(mesh);
+    }
+
+    let hasCrossedEventHorizon = false;
+    let transitionTargetIntensity = 0.0;
+
+    // If there is no black hole, trigger effects instantly
+    if (!bhRadius) {
+      hasCrossedEventHorizon = true;
+      transitionTargetIntensity = 1.0;
+      BABYLON.Animation.CreateAndStartAnimation("fovAnim", camera, "fov", 60, 60, camera.fov, 1.6, 0, new BABYLON.QuadraticEase());
     }
 
     let transitObserver: BABYLON.Observer<BABYLON.Scene> | null = scene.onBeforeRenderObservable.add(() => {
       if (isTransitActiveRef.current) {
+        
+        if (bhRadius && targetPos && !hasCrossedEventHorizon) {
+          const dist = BABYLON.Vector3.Distance(camera.position, targetPos);
+          // Mid-way through event horizon: bhRadius * 1.3 (event horizon is ~bhRadius*2.6)
+          if (dist < bhRadius * 1.3) {
+            hasCrossedEventHorizon = true;
+            transitionTargetIntensity = 1.0;
+            // Begin FOV stretch now!
+            BABYLON.Animation.CreateAndStartAnimation("fovAnim", camera, "fov", 60, 60, camera.fov, 1.6, 0, new BABYLON.QuadraticEase());
+          }
+        }
+        
+        if (wormholeIntensityRef) {
+          wormholeIntensityRef.current += (transitionTargetIntensity - wormholeIntensityRef.current) * 0.08;
+        }
         const moveDir = tunnelMesh && tunnelMesh.metadata && tunnelMesh.metadata.dir ? tunnelMesh.metadata.dir : new BABYLON.Vector3(0, 0, 1);
         flyingObjects.forEach((m) => {
           if (m && !m.isDisposed) {
@@ -236,7 +203,9 @@ export async function startWormholeTransit(
         camera.position.set(0, 0, -cameraZ);
         camera.setTarget(BABYLON.Vector3.Zero());
 
-        wormholeIntensityRef.current = 0.0;
+        if (wormholeIntensityRef) {
+          wormholeIntensityRef.current = 0.0;
+        }
 
         if (tunnelMesh) {
           tunnelMesh.dispose();

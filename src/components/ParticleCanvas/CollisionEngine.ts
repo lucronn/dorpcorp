@@ -1,6 +1,7 @@
 import * as BABYLON from "@babylonjs/core";
 import { CelestialEntity, Particle } from "./types";
 import { audio } from "../../utils/audio";
+import { calculateAngularVelocity } from "./PhysicsUtils";
 
 export interface CollisionResult {
   kineticEnergyDissipated: number;
@@ -45,9 +46,9 @@ export function resolveCelestialCollision(
   const ny = dy / dist;
   const nz = dz / dist;
 
-  // Approximate relative masses via radius cubics
-  const m1 = e1.mass || e1.radius * e1.radius * 2;
-  const m2 = e2.mass || e2.radius * e2.radius * 2;
+  // Approximate relative masses via radius cubics (spherical volume)
+  const m1 = e1.mass || Math.pow(e1.radius, 3);
+  const m2 = e2.mass || Math.pow(e2.radius, 3);
 
   // Retrieve velocities
   const v1x = e1.vx || 0;
@@ -115,6 +116,20 @@ export function resolveCelestialCollision(
   e2.vy -= friction * tangentY * (m1 / (m1 + m2));
   e2.vz = (e2.vz || 0) - friction * tangentZ * (m1 / (m1 + m2));
 
+  // Calculate and apply resulting angular velocities (spin)
+  
+  // Calculate spin for e1
+  const spin1 = calculateAngularVelocity(m1, e1.radius, v2x - v1x, v2y - v1y, v2z - v1z, nx, ny, nz);
+  e1.wx = (e1.wx || 0) + spin1.wx;
+  e1.wy = (e1.wy || 0) + spin1.wy;
+  e1.wz = (e1.wz || 0) + spin1.wz;
+
+  // Calculate spin for e2
+  const spin2 = calculateAngularVelocity(m2, e2.radius, v1x - v2x, v1y - v2y, v1z - v2z, -nx, -ny, -nz);
+  e2.wx = (e2.wx || 0) + spin2.wx;
+  e2.wy = (e2.wy || 0) + spin2.wy;
+  e2.wz = (e2.wz || 0) + spin2.wz;
+
   // Calculate kinetic energy after collision
   const keAfter =
     0.5 *
@@ -150,6 +165,39 @@ export function swallowEntity(bh: CelestialEntity, victim: CelestialEntity): voi
   // Black hole target radius swells from ingested mass
   const targetRadius = Math.min(bh.radius * 1.5, Math.sqrt(newMass / 15));
   bh.targetRadius = targetRadius;
+}
+
+/**
+ * Merges two colliding celestial entities into one by conserving mass and momentum.
+ * e2 is absorbed by e1.
+ */
+export function mergeEntities(e1: CelestialEntity, e2: CelestialEntity): { contactPointX: number; contactPointY: number; contactPointZ: number } {
+  e2.isSwallowing = true;
+  e2.destroyedBy = "collision";
+  
+  const m1 = e1.mass || Math.pow(e1.radius, 3);
+  const m2 = e2.mass || Math.pow(e2.radius, 3);
+  const newMass = m1 + m2;
+  e1.mass = newMass;
+
+  const contactPointX = (e1.x + e2.x) / 2;
+  const contactPointY = (e1.y + e2.y) / 2;
+  const contactPointZ = ((e1.z || 0) + (e2.z || 0)) / 2;
+
+  // Conservation of momentum
+  const v1x = e1.vx || 0;
+  const v1y = e1.vy || 0;
+  const v2x = e2.vx || 0;
+  const v2y = e2.vy || 0;
+  e1.vx = (m1 * v1x + m2 * v2x) / newMass;
+  e1.vy = (m1 * v1y + m2 * v2y) / newMass;
+  
+  // Combine volumes to get the new target radius
+  const volume1 = Math.pow(e1.radius, 3);
+  const volume2 = Math.pow(e2.radius, 3);
+  e1.targetRadius = Math.cbrt(volume1 + volume2);
+
+  return { contactPointX, contactPointY, contactPointZ };
 }
 
 /**

@@ -121,10 +121,10 @@ export function transitionToNewEntities(
       ...target,
       x: spawnX,
       y: spawnY,
-      z: -200,
+      z: 0,
       startX: spawnX,
       startY: spawnY,
-      startZ: -200,
+      startZ: 0,
       scale: 0.0,
       startScale: 0.0,
       targetScale: 1.0,
@@ -204,8 +204,8 @@ export function generateInterstellarSceneLogic(
           vx: entity.vx !== undefined ? entity.vx : 0,
           vy: entity.vy !== undefined ? entity.vy : 0,
           vz: entity.vz !== undefined ? entity.vz : 0,
-          mass: entity.mass !== undefined ? entity.mass : entity.radius * entity.radius,
-          initialMass: entity.initialMass !== undefined ? entity.initialMass : entity.radius * entity.radius,
+          mass: entity.mass !== undefined ? entity.mass : Math.pow(entity.radius, 3),
+          initialMass: entity.initialMass !== undefined ? entity.initialMass : Math.pow(entity.radius, 3),
           scale: entity.scale !== undefined ? entity.scale : 0.05,
           currentRadius: Math.min(entity.currentRadius !== undefined ? entity.currentRadius : entity.radius || 20, 120),
           originalRadius: Math.min(entity.originalRadius !== undefined ? entity.originalRadius : entity.radius || 20, 120),
@@ -228,8 +228,8 @@ export function generateInterstellarSceneLogic(
           secondaryColor: bhEntity.secondaryColor || bhEntity.color,
           vx: 0,
           vy: 0,
-          mass: Math.min(bhEntity.radius || 30, 120) * Math.min(bhEntity.radius || 30, 120) * 15,
-          initialMass: Math.min(bhEntity.radius || 30, 120) * Math.min(bhEntity.radius || 30, 120) * 15,
+          mass: Math.pow(Math.min(bhEntity.radius || 30, 120), 3) * 15,
+          initialMass: Math.pow(Math.min(bhEntity.radius || 30, 120), 3) * 15,
           scale: 0,
           currentRadius: Math.min(bhEntity.radius || 30, 120),
           originalRadius: Math.min(bhEntity.radius || 30, 120),
@@ -241,7 +241,7 @@ export function generateInterstellarSceneLogic(
 
       const otherEntities = geminiData.entities.filter((e: any) => e.type !== "blackhole");
       otherEntities.forEach((entity: any, idx: number) => {
-        const orbitRad = (isMobile ? 350 : 600) + idx * (isMobile ? 180 : 320);
+        const orbitRad = (isMobile ? 95 : 160) + idx * (isMobile ? 65 : 95);
         const angle = Math.random() * Math.PI * 2;
         const orbitSpeed = 0.0012 + Math.random() * 0.0012;
 
