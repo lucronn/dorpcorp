@@ -12,6 +12,9 @@ import {
 } from "../src/components/ParticleCanvas/PhysicsUtils";
 import { CelestialEntity } from "../src/components/ParticleCanvas/types";
 import { createNeutronStarBirthEvent } from "../src/components/ParticleCanvas/scenes/neutronstarbirth";
+import { calculateForwardTrajectory } from "../src/components/ParticleCanvas/SlingshotEngine";
+import { createInitialTdeState, triggerTidalDisruptionEvent } from "../src/components/ParticleCanvas/TidalDisruptionEngine";
+import { audio } from "../src/utils/audio";
 import { getProceduralFallbackSystem, startServer } from "../server";
 
 let totalTests = 0;
@@ -189,6 +192,67 @@ async function runAllTests() {
     assert.equal(supernovaSoundPlayed, true, "Must trigger supernova audio event");
   });
 
+  runTest("calculateForwardTrajectory: produces deterministic, sub-lightspeed trajectory with event horizon capture", () => {
+    const bh: CelestialEntity = {
+      type: "blackhole",
+      x: 300,
+      y: 300,
+      radius: 50,
+      color: "#ff8844",
+      mass: 50000,
+    };
+
+    // 1. Determinism check: running with same inputs produces identical coordinates
+    const traj1 = calculateForwardTrajectory(100, 100, 80, 80, [bh], 60);
+    const traj2 = calculateForwardTrajectory(100, 100, 80, 80, [bh], 60);
+    assert.equal(traj1.length, traj2.length, "Trajectory point count must be identical");
+    assert.deepEqual(traj1, traj2, "Trajectory calculation must be deterministic");
+
+    // 2. Velocity cap check: no point exceeds speedOfLightSim = 55.0
+    traj1.forEach((pt) => {
+      assert.ok(pt.speed <= 55.01, `Speed ${pt.speed} must not exceed relativistic ceiling of 55.0`);
+    });
+
+    // 3. Horizon capture check: trajectory aimed directly at the singularity flags horizon boundary
+    const captureTraj = calculateForwardTrajectory(280, 280, 260, 260, [bh], 80);
+    const hasCaptured = captureTraj.some((pt) => pt.isHorizonBound);
+    assert.ok(hasCaptured, "Direct trajectory towards black hole must trigger event horizon capture");
+  });
+
+  runTest("TidalDisruptionEngine: validates quiescent initial state and hyperbolic inbound trajectory trigger", () => {
+    const tde = createInitialTdeState();
+    assert.equal(tde.stage, "IDLE");
+    assert.equal(tde.isActive, false);
+    assert.equal(tde.starMass, 1.0);
+    assert.equal(tde.shredDissipation, 0.0);
+
+    const entities: CelestialEntity[] = [
+      {
+        type: "blackhole",
+        x: 600,
+        y: 400,
+        radius: 65,
+        color: "#ff8844",
+      },
+    ];
+
+    const triggered = triggerTidalDisruptionEvent(tde, entities, 1200, 800);
+    assert.equal(triggered, true, "TDE must trigger successfully");
+    assert.equal(tde.isActive, true, "TDE state must become active");
+    assert.equal(tde.stage, "STAR_APPROACH", "TDE stage must be STAR_APPROACH");
+    assert.ok(tde.starVx !== 0 || tde.starVy !== 0, "Rogue star must have non-zero approach velocity");
+
+    // Re-triggering while active must be safely rejected
+    const retriggered = triggerTidalDisruptionEvent(tde, entities, 1200, 800);
+    assert.equal(retriggered, false, "Must reject triggering while TDE is already active");
+  });
+
+  runTest("AudioEngine: disposes timers and audio context cleanly", () => {
+    assert.doesNotThrow(() => {
+      audio.dispose();
+    });
+  });
+
   console.log("\n==> Testing Static Assets & Build Artifacts");
 
   runTest("Static Assets: verifies favicon.svg, index.html metadata, and bundle readiness", () => {
@@ -204,6 +268,18 @@ async function runAllTests() {
     assert.ok(indexContent.includes("/favicon.svg"), "index.html must reference /favicon.svg");
     assert.ok(indexContent.includes('name="theme-color"'), "index.html must specify theme-color");
     assert.ok(indexContent.includes("<title>Curtis Click"), "index.html must have portfolio title");
+
+    // Build artifact checks if dist exists
+    const distPath = path.join(projectRoot, "dist");
+    if (fs.existsSync(distPath)) {
+      const serverBundle = path.join(distPath, "server.cjs");
+      assert.ok(fs.existsSync(serverBundle), "dist/server.cjs must exist after build");
+      const stat = fs.statSync(serverBundle);
+      assert.ok(stat.size > 5000, `dist/server.cjs must be bundled (>5KB, got ${stat.size}B)`);
+
+      const distHtml = path.join(distPath, "index.html");
+      assert.ok(fs.existsSync(distHtml), "dist/index.html must exist after build");
+    }
   });
 
   console.log("\n==> Testing HTTP Server Endpoints & Integration");
@@ -285,6 +361,18 @@ async function runAllTests() {
     } as any);
     assert.equal(res.status, 200);
     assert.equal(res.body.ok, true);
+  });
+
+  await runTest("startServer: rejects cleanly on port conflict without crashing", async () => {
+    // testPort is already bound by the active test server instance
+    await assert.rejects(
+      async () => {
+        await startServer(testPort);
+      },
+      (err: any) => {
+        return err && err.code === "EADDRINUSE";
+      }
+    );
   });
 
   // Close test server

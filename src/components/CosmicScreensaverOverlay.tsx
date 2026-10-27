@@ -97,16 +97,16 @@ export const CosmicScreensaverOverlay: React.FC<CosmicScreensaverOverlayProps> =
 
     if (archetype === "BLACKHOLE_CENTRIC") {
       setEventNotification("Tidal Disruption Event: Stellar Shredding Detected");
-      canvasApi.triggerTDE();
+      canvasApi.triggerTDE?.();
     } else if (archetype === "STELLAR_PULSAR") {
       setEventNotification("Relativistic Jet Flare: Synchrotron Pulse Shockwave");
-      canvasApi.triggerPulsarShockwave();
+      canvasApi.triggerPulsarShockwave?.();
     } else if (archetype === "BINARY_PLANETS") {
       setEventNotification("Gravitational Slingshot: Interplanetary Probe Trajectory");
-      canvasApi.launchProbe();
+      canvasApi.launchProbe?.();
     } else {
       setEventNotification("Cosmic Wavefront: High-Energy Particle Surge");
-      canvasApi.launchProbe();
+      canvasApi.launchProbe?.();
     }
 
     setTimeout(() => {

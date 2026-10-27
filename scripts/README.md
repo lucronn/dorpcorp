@@ -6,7 +6,7 @@ This directory contains test suites, utility scripts, and archived development a
 
 | Script | Purpose |
 |---|---|
-| [`test-integrity.ts`](file:///home/corp/curtis-click-portfolio/scripts/test-integrity.ts) | Automated test suite that executes typechecking, validates procedural cosmic generation across 50 iterations and all 5 archetypes, verifies 3D scene definitions and remnant mass safety, checks build artifacts and static assets, and tests live HTTP server `/health` and 404 behavior. Run via `npm test`. |
+| [`test-integrity.ts`](file:///home/corp/curtis-click-portfolio/scripts/test-integrity.ts) | Automated 19-test integrity test suite that validates physics & color utilities (hex normalization, NaN-free blending, value noise, fBm, curl noise, and momentum/overlap resolution), procedural cosmic generation across 50 iterations and 5 archetypes, neutron star collapse semantics, deterministic slingshot trajectories with event horizon capture, tidal disruption initial state & hyperbolic approach, Web Audio engine disposal, build artifacts, HTTP server probes, and graceful port conflict rejection. Run via `npm test`. |
 
 ## Legacy Scripts (`scripts/legacy/`)
 

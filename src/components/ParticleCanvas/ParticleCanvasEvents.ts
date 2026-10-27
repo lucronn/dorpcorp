@@ -783,24 +783,12 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
 
     if (pointerObserver && ctx.sceneRef.current) {
       ctx.sceneRef.current.onPointerObservable.remove(pointerObserver);
-    }
-
-    if (ctx.lensingPostProcessRef.current) {
-      ctx.lensingPostProcessRef.current.dispose();
-    }
-
-    if (ctx.wormholePostProcessRef.current) {
-      ctx.wormholePostProcessRef.current.dispose();
+      pointerObserver = null;
     }
 
     if (ctx.activeSupernovaFxRef.current) {
       ctx.activeSupernovaFxRef.current.dispose();
       ctx.activeSupernovaFxRef.current = null;
-    }
-
-    if (ctx.rendererRef.current) {
-      ctx.rendererRef.current.stopRenderLoop();
-      ctx.rendererRef.current.dispose();
     }
   };
 

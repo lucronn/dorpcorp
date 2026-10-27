@@ -28,7 +28,7 @@ Interactive 3D developer portfolio and cosmic web visualizer built with React 19
 | `npm run dev` | `tsx server.ts` | Start development server with Vite middleware |
 | `npm run build` | `vite build && esbuild server.ts ...` | Build client assets to `dist/` and server to `dist/server.cjs` |
 | `npm run lint` | `tsc --noEmit` | Run TypeScript type checking without emitting files |
-| `npm test` | `tsc --noEmit && tsx scripts/test-integrity.ts` | Execute TypeScript check and the automated 13-test integrity test suite |
+| `npm test` | `tsc --noEmit && tsx scripts/test-integrity.ts` | Execute TypeScript check and the automated 19-test integrity test suite |
 | `npm start` | `node dist/server.cjs` | Run the compiled production server on port 8080 (or `$PORT`) |
 | `npm run clean` | `rm -rf dist server.js client_errors.log` | Clean build outputs and local log files |
 
@@ -41,6 +41,8 @@ The server exposes lightweight health check endpoints for container orchestrator
 - `POST /api/generate-cosmic-scene` — Generates a dynamic cosmic system via Gemini 2.5 Flash or procedural fallback
 - `POST /api/log-error` — Ingests client-side telemetry and error logs
 - `ALL /api/*` — 404 handler preventing unmatched API requests from serving client HTML
+
+The HTTP server includes automatic port collision detection (`EADDRINUSE`) with clean diagnostics advising how to override the target port using the `PORT` environment variable (e.g., `PORT=3000 npm run dev`).
 
 ## Environment Configuration
 
@@ -62,12 +64,14 @@ NODE_ENV=production
 
 ## Docker Deployment
 
+The application features a reproducible multi-stage Docker build (`builder` compiles assets and server bundles; `runner` deploys a minimal `node:22-slim` container with production-only dependencies):
+
 Build the container image:
 ```bash
 docker build -t curtis-click-portfolio .
 ```
 
-Run locally on port 8080:
+Run locally on port 8080 (or customize via `-e PORT=...`):
 ```bash
 docker run -p 8080:8080 --env-file .env.example curtis-click-portfolio
 ```

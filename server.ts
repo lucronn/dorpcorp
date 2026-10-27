@@ -1,4 +1,5 @@
 import express from "express";
+import http from "http";
 import path from "path";
 import fs from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
@@ -311,8 +312,26 @@ export async function startServer(portOverride?: number) {
     });
   }
 
-  const server = app.listen(PORT, "0.0.0.0");
-  await new Promise<void>((resolve) => server.once("listening", resolve));
+  const server = http.createServer(app);
+  await new Promise<void>((resolve, reject) => {
+    const onError = (err: any) => {
+      if (err.code === "EADDRINUSE") {
+        console.error(`\n❌ [Server Error] Port ${PORT} is already in use by another process.`);
+        console.error(`   You can specify an alternate port via the PORT environment variable:`);
+        console.error(`   Example: PORT=3000 npm run dev  (or PORT=3000 npm start)\n`);
+      } else {
+        console.error(`\n❌ [Server Error] Failed to bind HTTP server to 0.0.0.0:${PORT}:`, err);
+      }
+      reject(err);
+    };
+
+    server.once("error", onError);
+    server.listen(PORT, "0.0.0.0", () => {
+      server.removeListener("error", onError);
+      resolve();
+    });
+  });
+
   const boundAddress = server.address();
   const actualPort = typeof boundAddress === "object" && boundAddress ? boundAddress.port : PORT;
   console.log(`Server running on http://localhost:${actualPort}`);
@@ -344,5 +363,7 @@ const isDirectRun = Boolean(
 );
 
 if (isDirectRun && process.env.NODE_ENV !== "test") {
-  startServer();
+  startServer().catch((_err) => {
+    process.exit(1);
+  });
 }

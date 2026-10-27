@@ -44,7 +44,8 @@ export function calculateForwardTrajectory(
   pullX: number,
   pullY: number,
   celestialEntities: CelestialEntity[],
-  steps: number = 75
+  steps: number = 75,
+  initialVz: number = 0.0
 ): SlingshotTrajectoryPoint[] {
   const points: SlingshotTrajectoryPoint[] = [];
   
@@ -52,7 +53,7 @@ export function calculateForwardTrajectory(
   const launchSpeedMultiplier = 0.095;
   let vx = (originX - pullX) * launchSpeedMultiplier;
   let vy = (originY - pullY) * launchSpeedMultiplier;
-  let vz = (Math.random() - 0.5) * 2.0;
+  let vz = initialVz;
 
   // Cap maximum launch speed
   const maxLaunchSpeed = 38.0;

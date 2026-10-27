@@ -1113,17 +1113,41 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       });
       collisionFlaresRef.current = [];
 
+      // 1. Remove event listeners and pointer observers
       cleanupEvents();
-      composerRef.current?.dispose();
-      activeTdeFxRef.current?.dispose();
+
+      // 2. Dispose all post-processes and rendering pipelines while scene and engine are still active
+      lensingPostProcessRef.current?.dispose();
+      wormholePostProcessRef.current?.dispose();
       dofPostProcessRef.current?.dispose();
       shatterPostProcessRef.current?.dispose();
+      activeTdeFxRef.current?.dispose();
+      composerRef.current?.dispose();
+
+      // 3. Dispose the scene (frees meshes, materials, and textures)
       if (sceneRef.current) {
         sceneRef.current.dispose();
       }
+
+      // 4. Terminate render loop and dispose the engine last
+      if (rendererRef.current) {
+        rendererRef.current.stopRenderLoop();
+        rendererRef.current.dispose();
+      }
+
+      // 5. Clean up window globals
+      delete (window as any).triggerTDE;
       delete (window as any).activateSequence;
       delete (window as any).__cosmicCanvas;
       delete (window as any).__onSelectedEntityChange;
+      delete (window as any).__cinematicMode;
+      delete (window as any).__cinematicCameraMode;
+      delete (window as any).__cinematicSpeedMultiplier;
+      delete (window as any).__anamorphicFlare;
+      delete (window as any).__dofEnabled;
+      delete (window as any).__targetHorizonZoom;
+      delete (window as any).__hawkingActive;
+      delete (window as any).__hawkingIntensity;
     };
   }, []);
 

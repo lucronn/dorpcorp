@@ -21,6 +21,7 @@ class AudioEngine {
 
   // Scheduler state
   private schedulerTimer: ReturnType<typeof setInterval> | null = null;
+  private warmthTimer: ReturnType<typeof setInterval> | null = null;
   private nextBeatTime: number = 0;
   private currentBeatIndex: number = 0;
   private currentChordIndex: number = 0;
@@ -205,7 +206,7 @@ class AudioEngine {
     this.schedulerTimer = setInterval(() => this.scheduleNextBeats(), 25);
 
     // Warmth decay back to serene calm
-    setInterval(() => {
+    this.warmthTimer = setInterval(() => {
       this.interactionWarmth = Math.max(0, this.interactionWarmth - 0.02);
     }, 150);
   }
@@ -891,6 +892,29 @@ class AudioEngine {
 
     osc.start(now);
     osc.stop(now + 0.42);
+  }
+
+  dispose() {
+    if (this.schedulerTimer) {
+      clearInterval(this.schedulerTimer);
+      this.schedulerTimer = null;
+    }
+    if (this.warmthTimer) {
+      clearInterval(this.warmthTimer);
+      this.warmthTimer = null;
+    }
+    this.droneOscs.forEach(({ osc, gain }) => {
+      try {
+        osc.stop();
+        osc.disconnect();
+        gain.disconnect();
+      } catch (_) {}
+    });
+    this.droneOscs = [];
+    if (this.ctx && this.ctx.state !== "closed") {
+      this.ctx.close().catch(() => {});
+    }
+    this.isInitialized = false;
   }
 }
 
