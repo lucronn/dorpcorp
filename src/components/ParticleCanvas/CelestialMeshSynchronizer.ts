@@ -180,7 +180,7 @@ export function updateCelestial3DMeshes(
     const musicAmp = audio.getMusicAmplitude ? audio.getMusicAmplitude() : 0;
     const musicBands = audio.getFrequencyBands ? audio.getFrequencyBands() : { bass: 0, mid: 0, treble: 0 };
 
-    if (isInterstellarRef.current && sceneAge > 240.0 && !supernovaRef.current && !(window as any).__screensaverManaged) {
+    if (isInterstellarRef.current && sceneAge > 240.0 && !supernovaRef.current && !(typeof window !== "undefined" && (window as any).__screensaverManaged)) {
       triggerCalmCosmicShift();
     }
 
@@ -544,7 +544,7 @@ export function updateCelestial3DMeshes(
 
         // Update subtle shimmering Hawking Radiation quantum particle effect
         if (inst.hawkingSystem && typeof inst.hawkingSystem.update === "function") {
-          const isCinematic = (window as any).__cinematicMode === true;
+          const isCinematic = typeof window !== "undefined" && (window as any).__cinematicMode === true;
           let camProximity = 0;
           if (cameraRef.current) {
             const camDist = BABYLON.Vector3.Distance(

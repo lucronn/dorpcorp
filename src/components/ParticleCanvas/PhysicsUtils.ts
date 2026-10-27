@@ -40,6 +40,7 @@ export const blendHexColors = (c1: string, c2: string, weight: number): string =
 
 // Procedural 2D Value Noise function
 export const valueNoise2D = (x: number, y: number): number => {
+  if (!isFinite(x) || !isFinite(y)) return 0.5;
   const X = Math.floor(x);
   const Y = Math.floor(y);
   const fx = x - X;
@@ -68,10 +69,12 @@ export const valueNoise2D = (x: number, y: number): number => {
 
 // Fractional Brownian Motion (fBm) with multiple noise octaves
 export const fBmNoise2D = (x: number, y: number, octaves: number = 4): number => {
+  if (!isFinite(x) || !isFinite(y)) return 0.5;
+  const safeOctaves = isFinite(octaves) && octaves > 0 ? Math.min(8, Math.floor(octaves)) : 4;
   let value = 0.0;
   let amplitude = 0.5;
   let frequency = 1.0;
-  for (let i = 0; i < octaves; i++) {
+  for (let i = 0; i < safeOctaves; i++) {
     value += amplitude * valueNoise2D(x * frequency, y * frequency);
     frequency *= 2.0;
     amplitude *= 0.5;
@@ -81,6 +84,9 @@ export const fBmNoise2D = (x: number, y: number, octaves: number = 4): number =>
 
 // Compute Curl Noise (2D vector field with zero divergence) for continuous fluid flow
 export const computeCurlNoise = (x: number, y: number, time: number): { x: number; y: number } => {
+  if (!isFinite(x) || !isFinite(y) || !isFinite(time)) {
+    return { x: 0, y: 0 };
+  }
   const eps = 0.1;
   const scale = 0.0035;
 

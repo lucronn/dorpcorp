@@ -125,6 +125,9 @@ export const createCircularGlowTexture = (colorStr: string, scene: BABYLON.Scene
 
 /** Accretion Disk texture for Black Holes with a dark inner event horizon hole and smooth soft outer radial decay */
 export const generateAccretionDiskTexture = (colorStr: string, secondaryStr: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
+  if (!isCanvasSupported()) {
+    return createFallbackDynamicTexture("accretion_disk_tex", scene);
+  }
   const size = 1024;
   const texture = new BABYLON.DynamicTexture("accretion_disk_tex", size, scene, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
   const ctx = texture.getContext() as CanvasRenderingContext2D;
@@ -225,6 +228,9 @@ export const generateRelativisticJetTexture = (
   secondaryStr: string,
   scene: BABYLON.Scene
 ): BABYLON.DynamicTexture => {
+  if (!isCanvasSupported()) {
+    return createFallbackDynamicTexture("rel_jet_tex", scene);
+  }
   const width = 256;
   const height = 1024;
   const texture = new BABYLON.DynamicTexture(
@@ -274,6 +280,9 @@ export const generateRelativisticJetTexture = (
 
 /** Crisp, razor-thin Photon Ring halo surrounding a Black Hole's pitch-black event horizon silhouette */
 export const generatePhotonRingTexture = (colorStr: string, secondaryStr: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
+  if (!isCanvasSupported()) {
+    return createFallbackDynamicTexture("photon_ring_tex", scene);
+  }
   const size = 1024;
   const texture = new BABYLON.DynamicTexture("photon_ring_tex", size, scene, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
   const ctx = texture.getContext() as CanvasRenderingContext2D;
@@ -335,6 +344,9 @@ export const generatePhotonRingTexture = (colorStr: string, secondaryStr: string
 };
 
 export const generateAdvancedPlanetTexture = (colorHex: string, secondaryHex: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
+  if (!isCanvasSupported()) {
+    return createFallbackDynamicTexture("planet_adv_tex", scene);
+  }
   const width = 512;
   const height = 256;
   const texture = new BABYLON.DynamicTexture("planet_adv_tex", { width, height }, scene, false);
@@ -375,6 +387,9 @@ export const generateAdvancedPlanetTexture = (colorHex: string, secondaryHex: st
 };
 
 export const generatePlanetNightLightsTexture = (colorHex: string, secondaryHex: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
+  if (!isCanvasSupported()) {
+    return createFallbackDynamicTexture("planet_night_tex", scene);
+  }
   const width = 512;
   const height = 256;
   const texture = new BABYLON.DynamicTexture("planet_night_tex", { width, height }, scene, false);
@@ -400,6 +415,9 @@ export const generatePlanetNightLightsTexture = (colorHex: string, secondaryHex:
 };
 
 export const generatePlanetBumpNormalTexture = (scene: BABYLON.Scene): BABYLON.DynamicTexture => {
+  if (!isCanvasSupported()) {
+    return createFallbackDynamicTexture("planet_bump_tex", scene);
+  }
   const width = 256;
   const height = 128;
   const texture = new BABYLON.DynamicTexture("planet_bump_tex", { width, height }, scene, false);
@@ -413,6 +431,9 @@ export const generatePlanetBumpNormalTexture = (scene: BABYLON.Scene): BABYLON.D
 };
 
 export const generateProceduralCloudTexture = (colorHex: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
+  if (!isCanvasSupported()) {
+    return createFallbackDynamicTexture("cloud_tex", scene);
+  }
   const width = 512;
   const height = 256;
   const texture = new BABYLON.DynamicTexture("cloud_tex", { width, height }, scene, false);
@@ -444,6 +465,9 @@ export const generateProceduralCloudTexture = (colorHex: string, scene: BABYLON.
 };
 
 export const generateAuroraTexture = (colorHex: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
+  if (!isCanvasSupported()) {
+    return createFallbackDynamicTexture("aurora_tex", scene);
+  }
   const size = 256;
   const texture = new BABYLON.DynamicTexture("aurora_tex", size, scene, false);
   const ctx = texture.getContext() as CanvasRenderingContext2D;
@@ -468,6 +492,9 @@ export const generateAuroraTexture = (colorHex: string, scene: BABYLON.Scene): B
 };
 
 export const generateStarTexture = (baseColor: string, secondaryColor: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
+  if (!isCanvasSupported()) {
+    return createFallbackDynamicTexture("star_surface_tex", scene);
+  }
   const size = 512;
   const texture = new BABYLON.DynamicTexture("star_surface_tex", size, scene, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
   const ctx = texture.getContext() as CanvasRenderingContext2D;
@@ -514,6 +541,9 @@ export const generateStarTexture = (baseColor: string, secondaryColor: string, s
 };
 
 export const generateConcentricRingTexture = (ringColor: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
+  if (!isCanvasSupported()) {
+    return createFallbackDynamicTexture("ring_tex", scene);
+  }
   const size = 512;
   const texture = new BABYLON.DynamicTexture("ring_tex", size, scene, false);
   const ctx = texture.getContext() as CanvasRenderingContext2D;
@@ -555,6 +585,9 @@ export const generateConcentricRingTexture = (ringColor: string, scene: BABYLON.
 };
 
 export const generateDistortedLightwaveTexture = (baseColor: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
+  if (!isCanvasSupported()) {
+    return createFallbackDynamicTexture("lightwave_tex", scene);
+  }
   const size = 256;
   const texture = new BABYLON.DynamicTexture("lightwave_tex", size, scene, false);
   const ctx = texture.getContext() as CanvasRenderingContext2D;
@@ -579,6 +612,9 @@ export const generateDistortedLightwaveTexture = (baseColor: string, scene: BABY
 };
 
 export const generateGalaxyTexture = (baseColor: string, secondaryColor: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
+  if (!isCanvasSupported()) {
+    return createFallbackDynamicTexture("galaxy_tex", scene);
+  }
   const size = 512;
   const texture = new BABYLON.DynamicTexture("galaxy_tex", size, scene, false);
   const ctx = texture.getContext() as CanvasRenderingContext2D;
@@ -633,6 +669,9 @@ export const generateGalaxyTexture = (baseColor: string, secondaryColor: string,
 };
 
 export const generateNebulaTexture = (baseColor: string, secondaryColor: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
+  if (!isCanvasSupported()) {
+    return createFallbackDynamicTexture("nebula_tex", scene);
+  }
   const size = 512;
   const texture = new BABYLON.DynamicTexture("nebula_tex", size, scene, false);
   const ctx = texture.getContext() as CanvasRenderingContext2D;
@@ -695,6 +734,9 @@ export const blendColorsHex = (color1: string, color2: string, weight1: number =
 
 /** High-Energy Supernova Core Glow & Optical Flash Texture */
 export const generateSupernovaCoreFlareTexture = (scene: BABYLON.Scene): BABYLON.DynamicTexture => {
+  if (!isCanvasSupported()) {
+    return createFallbackDynamicTexture("sn_core_flare_tex", scene);
+  }
   const size = 512;
   const texture = new BABYLON.DynamicTexture("sn_core_flare_tex", size, scene, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
   const ctx = texture.getContext() as CanvasRenderingContext2D;
@@ -757,6 +799,9 @@ export const generateSupernovaCoreFlareTexture = (scene: BABYLON.Scene): BABYLON
 
 /** Anamorphic Lens Flare & 4-Point Optical Diffraction Starburst */
 export const generateAnamorphicSpikeTexture = (scene: BABYLON.Scene): BABYLON.DynamicTexture => {
+  if (!isCanvasSupported()) {
+    return createFallbackDynamicTexture("sn_anamorphic_tex", scene);
+  }
   const size = 512;
   const texture = new BABYLON.DynamicTexture("sn_anamorphic_tex", size, scene, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
   const ctx = texture.getContext() as CanvasRenderingContext2D;
@@ -828,6 +873,9 @@ export const generateSupernovaPhotonicRingTexture = (
   secondaryColor: string,
   scene: BABYLON.Scene
 ): BABYLON.DynamicTexture => {
+  if (!isCanvasSupported()) {
+    return createFallbackDynamicTexture("sn_photonic_ring_tex", scene);
+  }
   const size = 512;
   const texture = new BABYLON.DynamicTexture("sn_photonic_ring_tex", size, scene, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
   const ctx = texture.getContext() as CanvasRenderingContext2D;

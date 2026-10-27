@@ -235,8 +235,10 @@ export function updateTidalDisruption(
       tde.compressionFlash = 1.0;
       tde.statusMessage = "ROCHE LIMIT BREACHED: STELLAR CORE DISRUPTED INTO TIDAL DEBRIS STREAM";
       audio.playTidalDisruption("spaghettify");
-      cameraShakeRef.current = 24.0;
-      ripplesRef.current.push({ x: tde.starX, y: tde.starY, life: 1.0 });
+      if (cameraShakeRef) cameraShakeRef.current = 24.0;
+      if (Array.isArray(ripplesRef?.current)) {
+        ripplesRef.current.push({ x: tde.starX, y: tde.starY, life: 1.0 });
+      }
 
       // Disintegrate the star into 16 glowing stellar fragments with varied masses and orbits
       const fragmentColors = ["#ffffff", "#fff9c4", "#ffd54f", "#ff9800", "#ff5722", "#4deeea"];
@@ -326,7 +328,9 @@ export function updateTidalDisruption(
 
       if (fdist <= bhRadius * 1.12) {
         // Swallowed by event horizon
-        ripplesRef.current.push({ x: frag.x, y: frag.y, life: 0.6 });
+        if (Array.isArray(ripplesRef?.current)) {
+          ripplesRef.current.push({ x: frag.x, y: frag.y, life: 0.6 });
+        }
         continue;
       }
 
@@ -382,8 +386,10 @@ export function updateTidalDisruption(
       tde.grbBeamIntensity = 1.0;
       tde.grbShockwaveRadius = 24;
       audio.playTidalDisruption("grb");
-      cameraShakeRef.current = 28.0;
-      ripplesRef.current.push({ x: cx, y: cy, life: 1.0 });
+      if (cameraShakeRef) cameraShakeRef.current = 28.0;
+      if (Array.isArray(ripplesRef?.current)) {
+        ripplesRef.current.push({ x: cx, y: cy, life: 1.0 });
+      }
 
       // Initialize relativistic jet knots along north & south polar axes
       tde.jetKnots = [];
@@ -400,7 +406,9 @@ export function updateTidalDisruption(
   } else if (tde.stage === "GRB_DETONATION") {
     // Expand polar GRB shockwave rings & advance relativistic knots
     tde.grbShockwaveRadius += 30;
-    cameraShakeRef.current = Math.max(cameraShakeRef.current, 14.0);
+    if (cameraShakeRef) {
+      cameraShakeRef.current = Math.max(cameraShakeRef.current || 0, 14.0);
+    }
 
     // Advance relativistic shock knots along the jet
     tde.jetKnots.forEach((knot) => {

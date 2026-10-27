@@ -38,6 +38,26 @@ import { isIgnoredErrorMessage, reportClientError, resetTelemetryThrottling } fr
 import { CosmicTransitionStateMachine, triggerCalmCosmicShift } from "../src/components/ParticleCanvas/TransitionManager";
 import { drawStageLayoutTemplate, particleText, generateTargetsForStage } from "../src/components/ParticleCanvas/ParticleUtils";
 import { isUIElement, setupParticleCanvasEvents } from "../src/components/ParticleCanvas/ParticleCanvasEvents";
+import {
+  createCircleTexture,
+  createCircularGlowTexture,
+  generateAccretionDiskTexture,
+  generateRelativisticJetTexture,
+  generatePhotonRingTexture,
+  generateAdvancedPlanetTexture,
+  generatePlanetNightLightsTexture,
+  generatePlanetBumpNormalTexture,
+  generateProceduralCloudTexture,
+  generateAuroraTexture,
+  generateStarTexture,
+  generateConcentricRingTexture,
+  generateDistortedLightwaveTexture,
+  generateGalaxyTexture,
+  generateNebulaTexture,
+  generateSupernovaCoreFlareTexture,
+  generateAnamorphicSpikeTexture,
+  generateSupernovaPhotonicRingTexture,
+} from "../src/components/ParticleCanvas/TextureUtils";
 
 let totalTests = 0;
 let passedTests = 0;
@@ -108,6 +128,22 @@ async function runAllTests() {
     const vec = computeCurlNoise(100, 200, 1.5);
     assert.ok(typeof vec.x === "number" && !isNaN(vec.x) && isFinite(vec.x));
     assert.ok(typeof vec.y === "number" && !isNaN(vec.y) && isFinite(vec.y));
+  });
+
+  runTest("valueNoise2D and fBmNoise2D: defends against non-finite or NaN coordinates and negative octaves", () => {
+    assert.equal(valueNoise2D(NaN, 50), 0.5);
+    assert.equal(valueNoise2D(50, Infinity), 0.5);
+    assert.equal(fBmNoise2D(NaN, 50), 0.5);
+    const fbmNeg = fBmNoise2D(50, 50, -2);
+    assert.ok(typeof fbmNeg === "number" && isFinite(fbmNeg));
+    const fbmNan = fBmNoise2D(50, 50, NaN);
+    assert.ok(typeof fbmNan === "number" && isFinite(fbmNan));
+  });
+
+  runTest("computeCurlNoise: safely returns zero divergence vector on non-finite coordinates or time", () => {
+    assert.deepEqual(computeCurlNoise(NaN, 100, 0), { x: 0, y: 0 });
+    assert.deepEqual(computeCurlNoise(100, Infinity, 0), { x: 0, y: 0 });
+    assert.deepEqual(computeCurlNoise(100, 100, NaN), { x: 0, y: 0 });
   });
 
   runTest("resolveCelestialCollision: separates overlapping bodies and conserves momentum", () => {
@@ -772,6 +808,20 @@ async function runAllTests() {
     });
   });
 
+  runTest("TidalDisruptionEngine: defends against null ripplesRef and null cameraShakeRef", () => {
+    const tde = createInitialTdeState();
+    tde.isActive = true;
+    tde.stage = "ROCHE_RUPTURE";
+    tde.starX = 500;
+    tde.starY = 500;
+    tde.starRadius = 20;
+    const bh: CelestialEntity = { type: "blackhole", x: 500, y: 500, radius: 60, color: "#ff8800" };
+
+    assert.doesNotThrow(() => {
+      updateTidalDisruption(tde, [bh], 1920, 1080, null as any, null as any);
+    });
+  });
+
   runTest("AudioEngine: handles modulation bounds, mute toggles, and clean disposal", () => {
     assert.equal(audio.getMuteState(), true, "Audio should initially be muted");
     audio.setMute(false);
@@ -982,6 +1032,57 @@ async function runAllTests() {
     engine.dispose();
   });
 
+  runTest("HawkingRadiationEngine: accurately incorporates scale factor in Schwarzschild emitter radius", () => {
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    const node = new BABYLON.TransformNode("bh_node", scene);
+    const scaledBh: CelestialEntity = {
+      type: "blackhole",
+      x: 0,
+      y: 0,
+      radius: 50,
+      scale: 1.8,
+      color: "#ffaa00",
+    };
+    const hawking = createHawkingRadiationSystem(node, scaledBh, scene);
+    assert.ok(hawking.system);
+    assert.doesNotThrow(() => {
+      hawking.update(0.8, true, 16.666);
+    });
+    hawking.dispose();
+    scene.dispose();
+    engine.dispose();
+  });
+
+  runTest("TextureUtils: validates universal headless / SSR fallback dynamic textures across all 18 generators", () => {
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+
+    assert.doesNotThrow(() => {
+      createCircleTexture(scene);
+      createCircularGlowTexture("#ffffff", scene);
+      generateAccretionDiskTexture("#ff8844", "#ffffff", scene);
+      generateRelativisticJetTexture("#ff8844", "#ffffff", scene);
+      generatePhotonRingTexture("#ff8844", "#ffffff", scene);
+      generateAdvancedPlanetTexture("#2255aa", "#44aa44", scene);
+      generatePlanetNightLightsTexture("#ffffff", "#ffd778", scene);
+      generatePlanetBumpNormalTexture(scene);
+      generateProceduralCloudTexture("#ffffff", scene);
+      generateAuroraTexture("#00ffd2", scene);
+      generateStarTexture("#ffffff", "#aaccff", scene);
+      generateConcentricRingTexture("rgba(200,200,200,0.4)", scene);
+      generateDistortedLightwaveTexture("#ffffff", scene);
+      generateGalaxyTexture("#aaccff", "#ffffff", scene);
+      generateNebulaTexture("#ff4466", "#4488ff", scene);
+      generateSupernovaCoreFlareTexture(scene);
+      generateAnamorphicSpikeTexture(scene);
+      generateSupernovaPhotonicRingTexture("#ffffff", "#ff8844", scene);
+    });
+
+    scene.dispose();
+    engine.dispose();
+  });
+
   runTest("ParticleCanvasEvents: validates SSR safety and clean teardown in headless environments", () => {
     assert.doesNotThrow(() => {
       const cleanup = setupParticleCanvasEvents({} as any);
@@ -1131,7 +1232,7 @@ async function runAllTests() {
         }
       );
       req.on("error", reject);
-      if (options.headers?.["Content-Type"] === "application/json" && (options as any).body) {
+      if ((options as any).body) {
         req.write((options as any).body);
       }
       req.end();
@@ -1211,6 +1312,26 @@ async function runAllTests() {
     assert.equal(res.body.ok, true);
   });
 
+  await runTest("POST /api/log-error: handles malformed JSON with clean 400 error response", async () => {
+    const res = await makeRequest("/api/log-error", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: '{"invalidJson": unquoted}',
+    } as any);
+    assert.equal(res.status, 400);
+    assert.equal(res.body.error, "Invalid JSON payload");
+  });
+
+  await runTest("POST /api/log-error: accepts text/plain beacon diagnostic payloads", async () => {
+    const res = await makeRequest("/api/log-error", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: "Text/plain uncaught diagnostic error",
+    } as any);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+  });
+
   runTest("getProceduralFallbackSystem: handles unknown archetype by defaulting to valid one", () => {
     const fallback = getProceduralFallbackSystem("NON_EXISTENT_ARCHETYPE");
     const validArchetypes = [
@@ -1222,6 +1343,21 @@ async function runAllTests() {
       "STELLAR_PULSAR",
     ];
     assert.ok(validArchetypes.includes(fallback.archetype), `Archetype must be valid, got ${fallback.archetype}`);
+  });
+
+  await runTest("startServer: supports PORT=0 for dynamic ephemeral port allocation", async () => {
+    const origPort = process.env.PORT;
+    process.env.PORT = "0";
+    const ephemeral = await startServer();
+    const addr = ephemeral.server.address();
+    assert.ok(addr && typeof addr === "object");
+    assert.ok(addr.port > 0, `Ephemeral port must be > 0, got ${addr.port}`);
+    await new Promise<void>((resolve) => ephemeral.server.close(() => resolve()));
+    if (origPort !== undefined) {
+      process.env.PORT = origPort;
+    } else {
+      delete process.env.PORT;
+    }
   });
 
   await runTest("startServer: rejects cleanly on port conflict without crashing", async () => {

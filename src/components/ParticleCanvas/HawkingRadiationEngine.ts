@@ -31,7 +31,8 @@ export function createHawkingRadiationSystem(
 
   // Spherical shell emitter located precisely around the Schwarzschild radius (r_s to 1.15 * r_s)
   const baseRad = isFinite(entity?.radius) && entity.radius > 0 ? entity.radius : 60;
-  const rs = baseRad * 0.95;
+  const scale = entity?.scale !== undefined && isFinite(entity.scale) && entity.scale > 0 ? entity.scale : 1.0;
+  const rs = baseRad * scale * 0.95;
   const emitter = ps.createSphereEmitter(rs * 1.15, 0.95);
   ps.particleEmitterType = emitter;
 

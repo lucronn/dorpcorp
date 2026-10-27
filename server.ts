@@ -185,9 +185,25 @@ export function getProceduralFallbackSystem(requestedArchetype?: string) {
 
 export async function startServer(portOverride?: number) {
   const app = express();
-  const PORT = portOverride !== undefined ? portOverride : (Number(process.env.PORT) || 8080);
+  const envPort = process.env.PORT !== undefined ? Number(process.env.PORT) : NaN;
+  const PORT =
+    portOverride !== undefined
+      ? portOverride
+      : (!isNaN(envPort) && envPort >= 0 ? envPort : 8080);
 
   app.use(express.json());
+  app.use(express.text({ type: "text/plain" }));
+
+  // JSON Body-parser & API Error Handling Middleware
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err instanceof SyntaxError && "body" in err) {
+      return res.status(400).json({ error: "Invalid JSON payload" });
+    }
+    if (req.path.startsWith("/api/")) {
+      return res.status(err?.status || 500).json({ error: err?.message || "Internal server error" });
+    }
+    next(err);
+  });
 
   // Safe client-side lazy-initialization block to guard against startup crashes if key is missing
   let ai: GoogleGenAI | null = null;
@@ -230,7 +246,7 @@ export async function startServer(portOverride?: number) {
 
   // Client error logging endpoint with size bounding and string sanitization
   app.post("/api/log-error", (req, res) => {
-    let rawError = req.body?.error;
+    let rawError = typeof req.body === "string" ? req.body : req.body?.error;
     if (typeof rawError !== "string" && rawError !== undefined && rawError !== null) {
       try {
         rawError = JSON.stringify(rawError);
@@ -245,7 +261,7 @@ export async function startServer(portOverride?: number) {
 
     console.log("CLIENT ERROR:", sanitizedError);
     try {
-      const logFile = "client_errors.log";
+      const logFile = path.resolve(process.cwd(), "client_errors.log");
       const maxLogBytes = 1024 * 1024; // 1MB threshold
 
       // Check file size and truncate/rotate if oversized to prevent unbounded disk growth

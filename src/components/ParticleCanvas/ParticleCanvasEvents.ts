@@ -577,6 +577,8 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
       return;
     }
 
+    resetActivity();
+
     if (e.key === "t" || e.key === "T") {
       // Hotkey: Launch rogue star into Roche limit for Tidal Disruption Event (TDE)
       if (ctx.triggerTdeFn) {

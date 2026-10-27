@@ -262,6 +262,7 @@ export default function App() {
         setIsCinematicMode(false);
         setIsAutopilot(false);
         setShowDebug(false);
+        setSelectedEntity(null);
       } else if (
         e.key === 'w' ||
         e.key === 'W' ||
