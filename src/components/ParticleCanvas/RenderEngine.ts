@@ -92,11 +92,14 @@ export interface RenderEngineContext {
 }
 
 export function executeRenderFrame(ctx: RenderEngineContext) {
-  const currentW = window.innerWidth;
-  const currentH = window.innerHeight;
+  const currentW = typeof window !== "undefined" ? window.innerWidth : 1920;
+  const currentH = typeof window !== "undefined" ? window.innerHeight : 1080;
 
   const now = Date.now();
-  const speedMult = ctx.cinematicSpeedMultiplierRef?.current ?? (window as any).__cinematicSpeedMultiplier ?? 1.0;
+  const speedMult =
+    ctx.cinematicSpeedMultiplierRef?.current ??
+    (typeof window !== "undefined" ? (window as any).__cinematicSpeedMultiplier : 1.0) ??
+    1.0;
   const dt = ctx.rendererRef.current ? ctx.rendererRef.current.getDeltaTime() : 16.666;
   const globalTimeMultiplier = Math.min((dt / 16.666) * speedMult, 3.0);
 
@@ -418,7 +421,7 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
     } else {
       inputs.targetLock.active = false;
       inputs.targetLock.entityId = null;
-      if ((window as any).__onSelectedEntityChange) {
+      if (typeof window !== "undefined" && (window as any).__onSelectedEntityChange) {
         (window as any).__onSelectedEntityChange(null);
       }
     }
@@ -442,8 +445,13 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
   let finalTargetY = inputs.currentCameraParallaxY;
   let finalTargetZ = -cameraZ + inputs.currentCameraZDepthOffset;
 
-  const isCinematic = (ctx.isCinematicModeRef?.current) || (window as any).__cinematicMode;
-  const camMode = ctx.cinematicCameraModeRef?.current || (window as any).__cinematicCameraMode || 'orbit';
+  const isCinematic =
+    ctx.isCinematicModeRef?.current ||
+    (typeof window !== "undefined" && (window as any).__cinematicMode);
+  const camMode =
+    ctx.cinematicCameraModeRef?.current ||
+    (typeof window !== "undefined" ? (window as any).__cinematicCameraMode : "orbit") ||
+    "orbit";
 
   if (isCinematic || ctx.isInterstellarRef.current) {
     if (camMode === 'horizon') {
@@ -551,12 +559,25 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
   }
 
   // Scroll-to-Zoom towards Black Hole Event Horizon & Singularity Core
-  const targetZoom = ctx.targetZoomToHorizonRef?.current ?? (window as any).__targetHorizonZoom ?? 0.0;
+  const targetZoom =
+    ctx.targetZoomToHorizonRef?.current ??
+    (typeof window !== "undefined" ? (window as any).__targetHorizonZoom : 0.0) ??
+    0.0;
   if (ctx.zoomToHorizonRef) {
     ctx.zoomToHorizonRef.current += (targetZoom - ctx.zoomToHorizonRef.current) * 0.08;
   }
-  const currentZoom = Math.min(0.92, Math.max(0.0, ctx.zoomToHorizonRef?.current ?? (window as any).__targetHorizonZoom ?? 0.0));
-  (window as any).__horizonZoom = currentZoom;
+  const currentZoom = Math.min(
+    0.92,
+    Math.max(
+      0.0,
+      ctx.zoomToHorizonRef?.current ??
+        (typeof window !== "undefined" ? (window as any).__targetHorizonZoom : 0.0) ??
+        0.0
+    )
+  );
+  if (typeof window !== "undefined") {
+    (window as any).__horizonZoom = currentZoom;
+  }
 
   const bh = ctx.celestialEntitiesRef.current.find((e) => !e.isDestroyed && e.type === "blackhole");
   if (bh && currentZoom > 0.001) {
@@ -593,8 +614,11 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
       ctx.cameraShakeRef.current = Math.max(ctx.cameraShakeRef.current, shatterShake);
 
       // Trigger auditory spacetime rupture if crossing shatter threshold
-      if (shatterIntensity > 0.45 && !(window as any).__hasShatteredSound) {
-        (window as any).__hasShatteredSound = true;
+      const hasShattered = typeof window !== "undefined" ? Boolean((window as any).__hasShatteredSound) : false;
+      if (shatterIntensity > 0.45 && !hasShattered) {
+        if (typeof window !== "undefined") {
+          (window as any).__hasShatteredSound = true;
+        }
         if (ctx.audio?.playFrameShatter) {
           ctx.audio.playFrameShatter();
         } else if (ctx.audio?.playSupernova) {
@@ -602,18 +626,24 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
         }
       }
     } else {
-      (window as any).__hasShatteredSound = false;
+      if (typeof window !== "undefined") {
+        (window as any).__hasShatteredSound = false;
+      }
     }
 
     if (ctx.shatterIntensityRef) {
       ctx.shatterIntensityRef.current = shatterIntensity;
     }
-    (window as any).__shatterIntensity = shatterIntensity;
+    if (typeof window !== "undefined") {
+      (window as any).__shatterIntensity = shatterIntensity;
+    }
   } else {
     if (ctx.shatterIntensityRef) {
       ctx.shatterIntensityRef.current = 0.0;
     }
-    (window as any).__shatterIntensity = 0.0;
+    if (typeof window !== "undefined") {
+      (window as any).__shatterIntensity = 0.0;
+    }
   }
 
   let isTransitioning = false;
@@ -718,9 +748,15 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
 
   if (ctx.pointsMaterialRef.current) {
     ctx.pointsMaterialRef.current.setFloat("electricPulse", 0.0);
-    const isCinematic = (ctx.isCinematicModeRef?.current) || (window as any).__cinematicMode;
-    const isDofExplicitlyEnabled = ctx.dofEnabledRef ? ctx.dofEnabledRef.current : ((window as any).__dofEnabled !== false);
-    const dofActive = (isCinematic && isDofExplicitlyEnabled) ? 1.0 : 0.0;
+    const isCinematic =
+      ctx.isCinematicModeRef?.current ||
+      (typeof window !== "undefined" && (window as any).__cinematicMode);
+    const isDofExplicitlyEnabled = ctx.dofEnabledRef
+      ? ctx.dofEnabledRef.current
+      : typeof window !== "undefined"
+      ? (window as any).__dofEnabled !== false
+      : true;
+    const dofActive = isCinematic && isDofExplicitlyEnabled ? 1.0 : 0.0;
     ctx.pointsMaterialRef.current.setFloat("uCinematicMode", isCinematic ? 1.0 : 0.0);
     ctx.pointsMaterialRef.current.setFloat("uDofActive", dofActive);
     ctx.pointsMaterialRef.current.setFloat("uCameraZ", ctx.cameraZRef?.current ?? 2000);
@@ -731,7 +767,9 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
 
   if (ctx.composerRef.current) {
     const pipeline = ctx.composerRef.current;
-    const isCinematic = (ctx.isCinematicModeRef?.current) || (window as any).__cinematicMode;
+    const isCinematic =
+      ctx.isCinematicModeRef?.current ||
+      (typeof window !== "undefined" && (window as any).__cinematicMode);
     const baseBloom = (isCinematic ? 0.10 : 0.06) + musicAmpVal * (isCinematic ? 0.28 : 0.20);
     const shakeBloom = (shakeVal / 30.0) * 0.30;
     pipeline.bloomWeight = Math.min(0.55, baseBloom + shakeBloom);

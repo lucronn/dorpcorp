@@ -458,7 +458,8 @@ class AudioEngine {
   }
 
   setTimeDilation(dilation: number) {
-    this.timeDilation = Math.max(0.15, Math.min(3.0, dilation));
+    const safeDilation = isFinite(dilation) ? dilation : 1.0;
+    this.timeDilation = Math.max(0.15, Math.min(3.0, safeDilation));
     if (this.ctx && this.droneFilter) {
       const targetFreq = 260 + 260 * this.timeDilation;
       this.droneFilter.frequency.setTargetAtTime(targetFreq, this.ctx.currentTime, 0.5);
@@ -485,7 +486,8 @@ class AudioEngine {
    */
   setGravitationalProximity(proximity: number) {
     if (!this.ctx || !this.droneFilter) return;
-    this.currentProximity = Math.max(0, Math.min(1.0, proximity));
+    const safeProximity = isFinite(proximity) ? proximity : 0;
+    this.currentProximity = Math.max(0, Math.min(1.0, safeProximity));
     const now = this.ctx.currentTime;
 
     // Filter frequency drops smoothly from 520Hz down to 110Hz (deep sub-bass space-time redshift)
@@ -537,9 +539,12 @@ class AudioEngine {
     if (!this.ctx || this.isMuted || !this.reverbBus) return;
     const now = this.ctx.currentTime;
 
+    const safeIntensity = isFinite(intensity) ? intensity : 0.5;
+    const safeX = isFinite(relativeX) ? Math.max(0, Math.min(1, relativeX)) : 0.5;
+
     // Harmonic warm marimba / singing bowl bar (low pitched, rounded, zero piercing highs)
     const chord = this.chords[this.currentChordIndex] || this.chords[0]!;
-    const note = chord.melody[Math.floor(relativeX * chord.melody.length) % chord.melody.length] || 220;
+    const note = chord.melody[Math.floor(safeX * chord.melody.length) % chord.melody.length] || 220;
 
     const chime = this.ctx.createOscillator();
     const chimeFilter = this.ctx.createBiquadFilter();
@@ -551,7 +556,7 @@ class AudioEngine {
     chimeFilter.type = "lowpass";
     chimeFilter.frequency.setValueAtTime(380, now);
 
-    const vol = Math.min(0.035, Math.max(0.005, intensity * 0.025));
+    const vol = Math.min(0.035, Math.max(0.005, safeIntensity * 0.025));
     chimeGain.gain.setValueAtTime(0.0, now);
     chimeGain.gain.linearRampToValueAtTime(vol, now + 0.02);
     chimeGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.8);
@@ -850,12 +855,13 @@ class AudioEngine {
     if (!this.ctx || this.isMuted || !this.masterGain) return;
     const now = this.ctx.currentTime;
 
+    const safeSpeedFactor = isFinite(speedFactor) && speedFactor > 0 ? speedFactor : 1.0;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     const filter = this.ctx.createBiquadFilter();
 
     osc.type = "triangle";
-    const baseFreq = 340 + Math.min(500, speedFactor * 100);
+    const baseFreq = 340 + Math.min(500, safeSpeedFactor * 100);
     osc.frequency.setValueAtTime(baseFreq * 0.7, now);
     osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.6, now + 0.14);
     osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.8, now + 0.36);

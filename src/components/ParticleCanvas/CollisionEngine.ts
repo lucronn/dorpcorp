@@ -243,12 +243,32 @@ export function spawnCollisionFlare(
   colorHex: string,
   flaresList: Array<{ mesh: BABYLON.Mesh; life: number; maxLife: number; initialRadius: number }>
 ): void {
+  if (!scene || scene.isDisposed) return;
+  if (!Array.isArray(flaresList)) return;
+
+  // Bound active flares to prevent unbounded WebGL sphere allocation during intense collisions
+  const MAX_ACTIVE_FLARES = 50;
+  while (flaresList.length >= MAX_ACTIVE_FLARES) {
+    const oldest = flaresList.shift();
+    if (oldest?.mesh && !oldest.mesh.isDisposed()) {
+      if (oldest.mesh.material) {
+        oldest.mesh.material.dispose(false, true);
+      }
+      oldest.mesh.dispose();
+    }
+  }
+
+  const safeRadius = isFinite(radius) && radius > 0 ? radius : 10;
+  const safeX = isFinite(x) ? x : 0;
+  const safeY = isFinite(y) ? y : 0;
+  const safeZ = isFinite(z) ? z : 0;
+
   const flareMesh = BABYLON.MeshBuilder.CreateSphere(
     "colFlare",
-    { segments: 32, diameter: radius * 2 },
+    { segments: 32, diameter: safeRadius * 2 },
     scene
   );
-  flareMesh.position.set(x, y, z);
+  flareMesh.position.set(safeX, safeY, safeZ);
 
   const mat = new BABYLON.StandardMaterial("flareMat", scene);
   let safeHex = (typeof colorHex === "string" && colorHex.startsWith("#")) ? colorHex : "#ffaa44";
@@ -265,7 +285,7 @@ export function spawnCollisionFlare(
     mesh: flareMesh,
     life: 1.0,
     maxLife: 1.0,
-    initialRadius: radius,
+    initialRadius: safeRadius,
   });
 }
 
@@ -276,6 +296,7 @@ export function updateCollisionFlares(
   flaresList: Array<{ mesh: BABYLON.Mesh; life: number; maxLife: number; initialRadius: number }>,
   dt: number = 0.016
 ): Array<{ mesh: BABYLON.Mesh; life: number; maxLife: number; initialRadius: number }> {
+  if (!Array.isArray(flaresList)) return [];
   const activeFlares: typeof flaresList = [];
   for (let i = 0; i < flaresList.length; i++) {
     const flare = flaresList[i]!;
@@ -308,6 +329,7 @@ export function updateCollisionFlares(
 export function disposeCollisionFlares(
   flaresList: Array<{ mesh: BABYLON.Mesh; life: number; maxLife: number; initialRadius: number }>
 ): void {
+  if (!Array.isArray(flaresList)) return;
   for (let i = 0; i < flaresList.length; i++) {
     const flare = flaresList[i];
     if (flare?.mesh && !flare.mesh.isDisposed()) {

@@ -306,6 +306,17 @@ export function updateTidalDisruption(
     const activeFragments: TdeFragment[] = [];
     for (let f = 0; f < tde.fragments.length; f++) {
       const frag = tde.fragments[f]!;
+      if (
+        !frag ||
+        !isFinite(frag.x) ||
+        !isFinite(frag.y) ||
+        !isFinite(frag.vx) ||
+        !isFinite(frag.vy) ||
+        !isFinite(frag.radius) ||
+        frag.radius <= 0
+      ) {
+        continue;
+      }
       frag.life -= frag.decay;
       if (frag.life <= 0) continue;
 
@@ -426,7 +437,19 @@ export function updateTidalDisruption(
   const decayMult = tde.stage === "COOLDOWN" ? 2.5 : 1.0;
   for (let i = 0; i < tde.streamers.length; i++) {
     const p = tde.streamers[i];
-    if (!p) continue;
+    if (
+      !p ||
+      !isFinite(p.x) ||
+      !isFinite(p.y) ||
+      !isFinite(p.z) ||
+      !isFinite(p.vx) ||
+      !isFinite(p.vy) ||
+      !isFinite(p.vz) ||
+      isNaN(p.life) ||
+      p.life <= 0
+    ) {
+      continue;
+    }
     p.life -= p.decay * decayMult;
     if (p.life <= 0) continue;
 

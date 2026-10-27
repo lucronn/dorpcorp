@@ -23,6 +23,8 @@ export function isIgnoredErrorMessage(msg: string): boolean {
     lower.includes("chrome-extension://") ||
     lower.includes("moz-extension://") ||
     lower.includes("safari-extension://") ||
+    lower.includes("safari-web-extension://") ||
+    lower.includes("ms-browser-extension://") ||
     lower.includes("resizeobserver loop completed") ||
     lower.includes("resizeobserver loop limit exceeded")
   );

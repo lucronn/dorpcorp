@@ -36,8 +36,24 @@ export const parseColorToBabylonColor4 = (color: string, alpha: number = 1.0) =>
   return new BABYLON.Color4(r / 255, g / 255, b / 255, alpha);
 };
 
+export const isCanvasSupported = (): boolean => {
+  return typeof document !== "undefined" || typeof (globalThis as any).OffscreenCanvas !== "undefined";
+};
+
+export const createFallbackDynamicTexture = (name: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
+  const tex = new BABYLON.Texture(null, scene) as any;
+  tex.name = name;
+  tex.getContext = () => null;
+  tex.update = () => {};
+  tex.hasAlpha = true;
+  return tex as BABYLON.DynamicTexture;
+};
+
 /** Ultra-soft particle point texture with smooth Gaussian falloff and zero hard edges */
 export const createCircleTexture = (scene: BABYLON.Scene): BABYLON.DynamicTexture => {
+  if (!isCanvasSupported()) {
+    return createFallbackDynamicTexture("circle_particle_tex", scene);
+  }
   const size = 128;
   const texture = new BABYLON.DynamicTexture("circle_particle_tex", size, scene, false);
   const ctx = texture.getContext() as CanvasRenderingContext2D;
@@ -63,6 +79,9 @@ export const createCircleTexture = (scene: BABYLON.Scene): BABYLON.DynamicTextur
 
 /** Smooth, ethereal radial glow disc texture for stars, light halos, and flares with zero color banding */
 export const createCircularGlowTexture = (colorStr: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
+  if (!isCanvasSupported()) {
+    return createFallbackDynamicTexture("glow_disc_tex", scene);
+  }
   const size = 512;
   const texture = new BABYLON.DynamicTexture("glow_disc_tex", size, scene, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
   const ctx = texture.getContext() as CanvasRenderingContext2D;

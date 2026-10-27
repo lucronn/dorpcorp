@@ -238,7 +238,7 @@ export default function App() {
     audio.setCinematicMode(isCinematicMode);
   }, [isCinematicMode]);
 
-  // Global hotkeys [A], [C], [W], [N], [T], [P] for Autopilot, Cinema & Interstellar Sandbox state sync
+  // Global hotkeys [A], [C], [W], [N], [T], [P], [M], [Escape] for Autopilot, Cinema & Interstellar Sandbox state sync
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
@@ -252,6 +252,16 @@ export default function App() {
         });
       } else if (e.key === 'c' || e.key === 'C') {
         setIsCinematicMode((prev) => !prev);
+      } else if (e.key === 'm' || e.key === 'M') {
+        setMuted((prev) => {
+          const next = !prev;
+          audio.setMute(next);
+          return next;
+        });
+      } else if (e.key === 'Escape') {
+        setIsCinematicMode(false);
+        setIsAutopilot(false);
+        setShowDebug(false);
       } else if (
         e.key === 'w' ||
         e.key === 'W' ||
@@ -346,7 +356,7 @@ export default function App() {
     window.addEventListener('scroll', handleScroll, { passive: true });
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
     window.addEventListener('click', handleClick);
-    window.addEventListener('keypress', handleKeyPress, { passive: true });
+    window.addEventListener('keydown', handleKeyPress, { passive: true });
     handleScroll();
 
     return () => {
@@ -354,7 +364,7 @@ export default function App() {
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('click', handleClick);
-      window.removeEventListener('keypress', handleKeyPress);
+      window.removeEventListener('keydown', handleKeyPress);
       clearTimeout(idleTimer);
     };
   }, []);
@@ -471,7 +481,7 @@ export default function App() {
               audio.setMute(nextMute);
             }}
             className="flex items-center justify-center gap-1.5 border bg-black/60 border-white/15 hover:bg-white/10 hover:border-white/30 text-[#f5f2eb] rounded-full font-mono tracking-widest font-semibold transition-all duration-200 shadow-[0_8px_20px_rgba(0,0,0,0.5)] backdrop-blur-xl cursor-pointer group w-8 h-8 sm:w-auto p-0 sm:px-3 sm:py-1.5 text-[9.5px]"
-            title={muted ? 'Enable celestial audio ambiance' : 'Mute audio'}
+            title={muted ? 'Enable celestial audio ambiance (Hotkey: M)' : 'Mute audio (Hotkey: M)'}
           >
             <span className="relative flex h-2 w-2 items-center justify-center shrink-0">
               {!muted && (

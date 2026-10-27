@@ -63,6 +63,11 @@ export function isUIElement(target: HTMLElement | null): boolean {
 }
 
 export function setupParticleCanvasEvents(ctx: EventManagerContext) {
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+
+  let isCleanedUp = false;
   let resizeTimeout: ReturnType<typeof setTimeout>;
   let lastWidth = window.innerWidth;
   let lastHeight = window.innerHeight;
@@ -334,7 +339,9 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
         if (ctx.audio?.playProbeLaunch) {
           ctx.audio.playProbeLaunch();
         }
-        ctx.ripplesRef.current.push({ x: aim.originX, y: aim.originY, life: 0.6 });
+        if (Array.isArray(ctx.ripplesRef?.current)) {
+          ctx.ripplesRef.current.push({ x: aim.originX, y: aim.originY, life: 0.6 });
+        }
       }
 
       aim.isAiming = false;
@@ -345,7 +352,9 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
       document.body.style.cursor = "default";
       if (dragDistance > 20) {
         // Gravitational wave shockwave on slingshot release
-        ctx.ripplesRef.current.push({ x: draggedEntity.x, y: draggedEntity.y, life: 1.0 });
+        if (Array.isArray(ctx.ripplesRef?.current)) {
+          ctx.ripplesRef.current.push({ x: draggedEntity.x, y: draggedEntity.y, life: 1.0 });
+        }
         ctx.audio.playRippleShockwave();
         draggedEntity.vx = (draggedEntity.vx || 0) * 1.5;
         draggedEntity.vy = (draggedEntity.vy || 0) * 1.5;
@@ -356,6 +365,7 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
   };
 
   const handleDeviceOrientation = (e: DeviceOrientationEvent) => {
+    if (isCleanedUp) return;
     if (e.beta !== null && e.gamma !== null) {
       const inputs = ctx.inputControllerRef.current;
       inputs.gyroActive = true;
@@ -369,11 +379,12 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
   };
 
   const requestGyroPermission = () => {
+    if (isCleanedUp) return;
     const DOC = window.DeviceOrientationEvent as any;
     if (DOC && typeof DOC.requestPermission === "function") {
       DOC.requestPermission()
         .then((permissionState: string) => {
-          if (permissionState === "granted") {
+          if (!isCleanedUp && permissionState === "granted") {
             window.addEventListener("deviceorientation", handleDeviceOrientation);
           }
         })
@@ -401,7 +412,9 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
     const clickX = typeof e.clientX === "number" && !isNaN(e.clientX) ? e.clientX : currentW / 2;
     const clickY = typeof e.clientY === "number" && !isNaN(e.clientY) ? e.clientY : currentH / 2;
 
-    ctx.ripplesRef.current.push({ x: clickX, y: clickY, life: 1.0 });
+    if (Array.isArray(ctx.ripplesRef?.current)) {
+      ctx.ripplesRef.current.push({ x: clickX, y: clickY, life: 1.0 });
+    }
 
     let nearestEntity: CelestialEntity | null = null;
     let minDistance = 180;
@@ -438,11 +451,13 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
       }
 
       // Singularity pulse acoustic shockwave
-      ctx.ripplesRef.current.push({
-        x: isNaN(ent.x) ? currentW / 2 : ent.x,
-        y: isNaN(ent.y) ? currentH / 2 : ent.y,
-        life: 1.0
-      });
+      if (Array.isArray(ctx.ripplesRef?.current)) {
+        ctx.ripplesRef.current.push({
+          x: isNaN(ent.x) ? currentW / 2 : ent.x,
+          y: isNaN(ent.y) ? currentH / 2 : ent.y,
+          life: 1.0
+        });
+      }
       ctx.audio.playRippleShockwave();
     } else {
       inputs.targetLock = {
@@ -527,7 +542,9 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
   const handleTouchEnd = () => {
     if (isDragging && draggedEntity) {
       if (dragDistance > 20) {
-        ctx.ripplesRef.current.push({ x: draggedEntity.x, y: draggedEntity.y, life: 1.0 });
+        if (Array.isArray(ctx.ripplesRef?.current)) {
+          ctx.ripplesRef.current.push({ x: draggedEntity.x, y: draggedEntity.y, life: 1.0 });
+        }
         ctx.audio.playRippleShockwave();
         draggedEntity.vx = (draggedEntity.vx || 0) * 1.5;
         draggedEntity.vy = (draggedEntity.vy || 0) * 1.5;
@@ -607,7 +624,9 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
         if (ctx.audio?.playProbeLaunch) {
           ctx.audio.playProbeLaunch();
         }
-        ctx.ripplesRef.current.push({ x: spawnX, y: spawnY, life: 0.6 });
+        if (Array.isArray(ctx.ripplesRef?.current)) {
+          ctx.ripplesRef.current.push({ x: spawnX, y: spawnY, life: 0.6 });
+        }
       }
     } else if (e.key === "w" || e.key === "W") {
       // Hotkey: Engage Einstein-Rosen Wormhole Transit to a new cosmic system
@@ -752,11 +771,13 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
               if ((window as any).__onSelectedEntityChange) {
                 (window as any).__onSelectedEntityChange(matchedEntity);
               }
-              ctx.ripplesRef.current.push({
-                x: isNaN(matchedEntity.x) ? curW / 2 : matchedEntity.x,
-                y: isNaN(matchedEntity.y) ? curH / 2 : matchedEntity.y,
-                life: 1.0,
-              });
+              if (Array.isArray(ctx.ripplesRef?.current)) {
+                ctx.ripplesRef.current.push({
+                  x: isNaN(matchedEntity.x) ? curW / 2 : matchedEntity.x,
+                  y: isNaN(matchedEntity.y) ? curH / 2 : matchedEntity.y,
+                  life: 1.0,
+                });
+              }
               ctx.audio.playRippleShockwave();
             }
           }
@@ -766,6 +787,7 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
   }
 
   const cleanup = () => {
+    isCleanedUp = true;
     clearTimeout(resizeTimeout);
     window.removeEventListener("resize", handleResize);
     window.removeEventListener("mousedown", handleMouseDown);

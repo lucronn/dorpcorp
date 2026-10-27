@@ -58,6 +58,7 @@ export function calculateForwardTrajectory(
     return [];
   }
 
+  const entities = Array.isArray(celestialEntities) ? celestialEntities : [];
   const points: SlingshotTrajectoryPoint[] = [];
   
   // Launch velocity vector is opposite to pull vector
@@ -69,7 +70,7 @@ export function calculateForwardTrajectory(
   // Cap maximum launch speed
   const maxLaunchSpeed = 38.0;
   const launchMag = Math.hypot(vx, vy);
-  if (launchMag > maxLaunchSpeed) {
+  if (launchMag > maxLaunchSpeed && launchMag > 0) {
     vx = (vx / launchMag) * maxLaunchSpeed;
     vy = (vy / launchMag) * maxLaunchSpeed;
   }
@@ -89,8 +90,8 @@ export function calculateForwardTrajectory(
     let ay = 0;
     let az = 0;
 
-    for (let i = 0; i < celestialEntities.length; i++) {
-      const entity = celestialEntities[i];
+    for (let i = 0; i < entities.length; i++) {
+      const entity = entities[i];
       if (
         !entity ||
         entity.isDestroyed ||
@@ -173,6 +174,8 @@ export function updateActiveProbes(
   ripplesRef: { current: { x: number; y: number; life: number }[] },
   spawnTailParticleRef?: { current?: (...args: any[]) => void }
 ): SlingshotProbe[] {
+  if (!Array.isArray(probes)) return [];
+  const entities = Array.isArray(celestialEntities) ? celestialEntities : [];
   const dt = 0.85;
   const now = Date.now();
   const nextProbes: SlingshotProbe[] = [];
@@ -202,8 +205,8 @@ export function updateActiveProbes(
     let closestDistToBh = 999999;
     let nearestBhRadius = 60;
 
-    for (let i = 0; i < celestialEntities.length; i++) {
-      const entity = celestialEntities[i];
+    for (let i = 0; i < entities.length; i++) {
+      const entity = entities[i];
       if (
         !entity ||
         entity.isDestroyed ||
@@ -232,7 +235,9 @@ export function updateActiveProbes(
         if (dist <= effectiveRadius * 1.08) {
           probe.isSwallowed = true;
           audio.playProbeSwallowed();
-          ripplesRef.current.push({ x: entity.x, y: entity.y, life: 1.0 });
+          if (Array.isArray(ripplesRef?.current)) {
+            ripplesRef.current.push({ x: entity.x, y: entity.y, life: 1.0 });
+          }
           break;
         }
 
@@ -262,16 +267,18 @@ export function updateActiveProbes(
     // Detect Slingshot Velocity Whip through periapsis
     if (
       closestDistToBh < nearestBhRadius * 3.5 &&
-      currentSpeed > probe.maxSpeedReached * 1.35 &&
-      now - probe.lastWhipTime > 1200
+      currentSpeed > (probe.maxSpeedReached || 1) * 1.35 &&
+      now - (probe.lastWhipTime || 0) > 1200
     ) {
       probe.lastWhipTime = now;
       probe.maxSpeedReached = currentSpeed;
       audio.playProbeSlingshot(currentSpeed / 20.0);
-      ripplesRef.current.push({ x: probe.x, y: probe.y, life: 0.7 });
+      if (Array.isArray(ripplesRef?.current)) {
+        ripplesRef.current.push({ x: probe.x, y: probe.y, life: 0.7 });
+      }
     }
 
-    if (currentSpeed > probe.maxSpeedReached) {
+    if (currentSpeed > (probe.maxSpeedReached || 0)) {
       probe.maxSpeedReached = currentSpeed;
     }
 
@@ -289,6 +296,9 @@ export function updateActiveProbes(
     probe.z += probe.vz * dt;
 
     // Trail recording
+    if (!Array.isArray(probe.trail)) {
+      probe.trail = [];
+    }
     probe.trail.unshift({ x: probe.x, y: probe.y, z: probe.z, alpha: 1.0 });
     if (probe.trail.length > 28) {
       probe.trail.pop();

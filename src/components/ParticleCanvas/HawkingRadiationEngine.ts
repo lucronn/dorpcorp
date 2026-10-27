@@ -30,7 +30,8 @@ export function createHawkingRadiationSystem(
   ps.emitter = bhContainer as any;
 
   // Spherical shell emitter located precisely around the Schwarzschild radius (r_s to 1.15 * r_s)
-  const rs = entity.radius * 0.95;
+  const baseRad = isFinite(entity?.radius) && entity.radius > 0 ? entity.radius : 60;
+  const rs = baseRad * 0.95;
   const emitter = ps.createSphereEmitter(rs * 1.15, 0.95);
   ps.particleEmitterType = emitter;
 
@@ -77,17 +78,21 @@ export function createHawkingRadiationSystem(
       return currentIntensity;
     },
     update(proximity: number, isCinematic: boolean, dt: number) {
+      if (!ps || (ps as any).isDisposed) return;
+      const safeProximity = isFinite(proximity) ? Math.max(0, Math.min(1, proximity)) : 0;
+      const safeDt = isFinite(dt) && dt > 0 ? dt : 16.666;
       // Dynamic intensification target:
       // Proximity to singularity scales 0.0 to 1.0
       // Entering cinematic mode adds an instant dramatic boost
       const targetIntensity = Math.min(
         1.0,
-        Math.max(0.0, proximity * 0.75 + (isCinematic ? 0.65 : 0.0))
+        Math.max(0.0, safeProximity * 0.75 + (isCinematic ? 0.65 : 0.0))
       );
 
       // Smooth temporal interpolation to eliminate jarring jumps
-      const lerpSpeed = Math.min(1.0, (dt / 16.666) * 0.06);
+      const lerpSpeed = Math.min(1.0, (safeDt / 16.666) * 0.06);
       currentIntensity += (targetIntensity - currentIntensity) * lerpSpeed;
+      if (!isFinite(currentIntensity)) currentIntensity = targetIntensity;
 
       // Dynamically scale emission rate (from 140 subtle sparks/s up to 1050 radiant photons/s)
       ps.emitRate = Math.round(140 + currentIntensity * 910);

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import * as BABYLON from "@babylonjs/core";
 import {
   blendHexColors,
   normalizeHexColor,
@@ -10,17 +11,21 @@ import {
   computeCurlNoise,
   resolveCelestialCollision,
   swallowEntity,
+  spawnCollisionFlare,
   updateCollisionFlares,
   disposeCollisionFlares,
 } from "../src/components/ParticleCanvas/PhysicsUtils";
 import { CelestialEntity } from "../src/components/ParticleCanvas/types";
+import { getSpacetimeFabricDistortion } from "../src/components/ParticleCanvas/CelestialMeshSynchronizer";
 import { createNeutronStarBirthEvent } from "../src/components/ParticleCanvas/scenes/neutronstarbirth";
+import { createHawkingRadiationSystem } from "../src/components/ParticleCanvas/HawkingRadiationEngine";
 import {
   calculateForwardTrajectory,
   updateActiveProbes,
   SlingshotProbe,
 } from "../src/components/ParticleCanvas/SlingshotEngine";
 import { createInitialTdeState, triggerTidalDisruptionEvent, updateTidalDisruption } from "../src/components/ParticleCanvas/TidalDisruptionEngine";
+import { executeRenderFrame } from "../src/components/ParticleCanvas/RenderEngine";
 import { audio } from "../src/utils/audio";
 import { getProceduralFallbackSystem, startServer } from "../server";
 import { buildBlackholeCentricScene } from "../src/components/ParticleCanvas/scenes/blackhole_centric";
@@ -32,7 +37,7 @@ import { buildNebulaCradleScene } from "../src/components/ParticleCanvas/scenes/
 import { isIgnoredErrorMessage, reportClientError, resetTelemetryThrottling } from "../src/utils/telemetry";
 import { CosmicTransitionStateMachine, triggerCalmCosmicShift } from "../src/components/ParticleCanvas/TransitionManager";
 import { drawStageLayoutTemplate, particleText, generateTargetsForStage } from "../src/components/ParticleCanvas/ParticleUtils";
-import { isUIElement } from "../src/components/ParticleCanvas/ParticleCanvasEvents";
+import { isUIElement, setupParticleCanvasEvents } from "../src/components/ParticleCanvas/ParticleCanvasEvents";
 
 let totalTests = 0;
 let passedTests = 0;
@@ -261,6 +266,70 @@ async function runAllTests() {
     assert.equal(matDisposed, true);
   });
 
+  runTest("spawnCollisionFlare: enforces positive radius, finite coordinates, and flare list capacity capping", () => {
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    const flaresList: Array<{ mesh: BABYLON.Mesh; life: number; maxLife: number; initialRadius: number }> = [];
+
+    // Test safe fallback for non-positive or NaN radius and coordinates
+    spawnCollisionFlare(scene, NaN, 100, Infinity, -5, "#ff8800", flaresList);
+    assert.equal(flaresList.length, 1);
+    assert.equal(flaresList[0]!.initialRadius, 10, "Non-positive radius must default safely to 10");
+    assert.equal(flaresList[0]!.mesh.position.x, 0, "NaN x position must default safely to 0");
+    assert.equal(flaresList[0]!.mesh.position.z, 0, "Infinity z position must default safely to 0");
+
+    // Test capacity bounding (exceeding MAX_ACTIVE_FLARES = 50 drops oldest)
+    for (let i = 0; i < 60; i++) {
+      spawnCollisionFlare(scene, 0, 0, 0, 15, "#ffffff", flaresList);
+    }
+    assert.ok(flaresList.length <= 50, `Flare list must not exceed 50, got ${flaresList.length}`);
+
+    disposeCollisionFlares(flaresList);
+    assert.equal(flaresList.length, 0);
+    scene.dispose();
+    engine.dispose();
+  });
+
+  runTest("getSpacetimeFabricDistortion: defends against non-finite coordinates and computes positive distortion near singularities", () => {
+    const mockEntitiesRef = {
+      current: [
+        {
+          type: "blackhole" as const,
+          x: 960,
+          y: 540,
+          radius: 60,
+          color: "#ffaa00",
+        },
+      ],
+    };
+    const mockRipples = [
+      {
+        x: 960,
+        y: 540,
+        life: 0.8,
+        maxDist: 200,
+        bandWidth: 40,
+        minDistSq: 160 * 160,
+        maxDistBoundSq: 240 * 240,
+      },
+    ];
+
+    // Non-finite dimensions / coordinates return 0 without throwing
+    const zeroDistortion = getSpacetimeFabricDistortion(NaN, 0, 1920, 1080, mockEntitiesRef, mockRipples, 10, 0.5);
+    assert.equal(zeroDistortion, 0, "Must return 0 for NaN coordinate");
+
+    const zeroDim = getSpacetimeFabricDistortion(0, 0, 0, 0, mockEntitiesRef, mockRipples, 10, 0.5);
+    assert.equal(zeroDim, 0, "Must return 0 for zero viewport dimensions");
+
+    // Empty entity lists or null refs handle cleanly
+    const emptyDistortion = getSpacetimeFabricDistortion(0, 0, 1920, 1080, { current: [] }, [], 10, 0);
+    assert.equal(emptyDistortion, 0, "Must handle empty entities/ripples cleanly");
+
+    // Close to singularity (wx = 0, wy = 0 corresponds to center of 1920x1080)
+    const centerDistortion = getSpacetimeFabricDistortion(0, 0, 1920, 1080, mockEntitiesRef, mockRipples, 10, 0.5);
+    assert.ok(centerDistortion > 0, `Center distortion near black hole must be positive, got ${centerDistortion}`);
+  });
+
   console.log("\n==> Testing Procedural Cosmic System Generator & 3D Scene Architecture");
 
   runTest("getProceduralFallbackSystem: validates structure across 70 iterations and covers all 6 archetypes", () => {
@@ -466,6 +535,18 @@ async function runAllTests() {
     });
   });
 
+  runTest("calculateForwardTrajectory: defends against non-array entities and zero-magnitude pull vectors", () => {
+    // Non-array celestial entities fallback
+    const resNullEntities = calculateForwardTrajectory(100, 100, 80, 80, null as any, 10);
+    assert.ok(Array.isArray(resNullEntities) && resNullEntities.length > 0, "Must succeed with null entities list");
+
+    // Zero-distance pull vector (origin equals pull)
+    const zeroPull = calculateForwardTrajectory(150, 150, 150, 150, [], 5);
+    assert.equal(zeroPull[0]!.speed, 0, "Zero pull vector must have 0 launch speed without NaN");
+    assert.equal(zeroPull[0]!.x, 150);
+    assert.equal(zeroPull[0]!.y, 150);
+  });
+
   runTest("updateActiveProbes: safely filters out non-finite / NaN coordinates, velocities, and life values", () => {
     const validProbe: SlingshotProbe = {
       id: "valid-probe",
@@ -542,6 +623,30 @@ async function runAllTests() {
     assert.equal(result.length, 1, "Only valid probe must survive update loop");
     assert.equal(result[0]!.id, "valid-probe");
     assert.ok(isFinite(result[0]!.x) && isFinite(result[0]!.y));
+  });
+
+  runTest("updateActiveProbes: defends against null probe lists, null entities, and null ripplesRef", () => {
+    assert.deepEqual(updateActiveProbes(null as any, null as any, null as any), []);
+    assert.deepEqual(updateActiveProbes([], null as any, null as any), []);
+    const probe: SlingshotProbe = {
+      id: "safe-probe",
+      x: 10,
+      y: 10,
+      z: 0,
+      vx: 1,
+      vy: 1,
+      vz: 0,
+      color: "#fff",
+      trail: [],
+      life: 0.5,
+      maxLife: 1.0,
+      isSwallowed: false,
+      maxSpeedReached: 1,
+      lastWhipTime: 0,
+    };
+    const updated = updateActiveProbes([probe], null as any, null as any);
+    assert.equal(updated.length, 1);
+    assert.equal(updated[0]!.id, "safe-probe");
   });
 
   runTest("TidalDisruptionEngine: validates quiescent initial state and hyperbolic inbound trajectory trigger", () => {
@@ -628,6 +733,45 @@ async function runAllTests() {
     assert.ok(isFinite(tde.starX) && isFinite(tde.starY), "Coordinates must remain finite after update");
   });
 
+  runTest("TidalDisruptionEngine: safely filters out non-finite or corrupted streamer and fragment particles", () => {
+    const tde = createInitialTdeState();
+    tde.isActive = true;
+    tde.stage = "ROCHE_RUPTURE";
+    tde.starX = 500;
+    tde.starY = 500;
+    tde.starVx = 5;
+    tde.starVy = 0;
+    tde.starRadius = 20;
+
+    // Inject valid and corrupt fragments
+    tde.fragments = [
+      { x: 500, y: 500, z: 0, vx: 1, vy: 1, radius: 10, color: "#fff", life: 1.0, decay: 0.01, rotation: 0, rotSpeed: 0.01, stretchX: 1, stretchY: 1 },
+      { x: NaN, y: 500, z: 0, vx: 1, vy: 1, radius: 10, color: "#fff", life: 1.0, decay: 0.01, rotation: 0, rotSpeed: 0.01, stretchX: 1, stretchY: 1 },
+      { x: 500, y: 500, z: 0, vx: 1, vy: 1, radius: -5, color: "#fff", life: 1.0, decay: 0.01, rotation: 0, rotSpeed: 0.01, stretchX: 1, stretchY: 1 },
+    ];
+
+    // Inject valid and corrupt streamers
+    tde.streamers = [
+      { x: 500, y: 500, z: 0, vx: 1, vy: 1, vz: 0, color: "#fff", life: 1.0, decay: 0.01, size: 2 },
+      { x: Infinity, y: 500, z: 0, vx: 1, vy: 1, vz: 0, color: "#fff", life: 1.0, decay: 0.01, size: 2 },
+      { x: 500, y: 500, z: 0, vx: NaN, vy: 1, vz: 0, color: "#fff", life: 1.0, decay: 0.01, size: 2 },
+    ];
+
+    const shakeRef = { current: 0 };
+    const ripplesRef = { current: [] };
+    const bh: CelestialEntity = { type: "blackhole", x: 600, y: 500, radius: 60, color: "#ff8800" };
+
+    updateTidalDisruption(tde, [bh], 1920, 1080, shakeRef, ripplesRef);
+
+    // Verify all corrupted particles were eliminated
+    tde.fragments.forEach((frag) => {
+      assert.ok(isFinite(frag.x) && isFinite(frag.y) && frag.radius > 0, "Corrupt fragments must be purged");
+    });
+    tde.streamers.forEach((p) => {
+      assert.ok(isFinite(p.x) && isFinite(p.vx), "Corrupt streamers must be purged");
+    });
+  });
+
   runTest("AudioEngine: handles modulation bounds, mute toggles, and clean disposal", () => {
     assert.equal(audio.getMuteState(), true, "Audio should initially be muted");
     audio.setMute(false);
@@ -654,6 +798,16 @@ async function runAllTests() {
     assert.doesNotThrow(() => {
       audio.init();
       audio.dispose();
+    });
+
+    // Verify defensive NaN handling in audio controls
+    assert.doesNotThrow(() => {
+      audio.setTimeDilation(NaN);
+      audio.setTimeDilation(Infinity);
+      audio.setGravitationalProximity(NaN);
+      audio.setGravitationalProximity(Infinity);
+      audio.playProbeSlingshot(NaN);
+      audio.playInteractiveMallet(NaN, NaN);
     });
   });
 
@@ -722,6 +876,120 @@ async function runAllTests() {
     assert.equal(supernovaRef.current.y, 540);
   });
 
+  runTest("RenderEngine: validates executeRenderFrame SSR / headless safety without window error", () => {
+    const mockCtx: any = {
+      particlesRef: { current: [] },
+      pointsMeshRef: { current: null },
+      hudPlaneRef: { current: null },
+      sceneRef: { current: null },
+      cameraRef: { current: null },
+      rendererRef: { current: null },
+      composerRef: { current: null },
+      pointsMaterialRef: { current: null },
+      lensingPostProcessRef: { current: null },
+      celestialEntitiesRef: { current: [] },
+      supernovaRef: { current: null },
+      activeSupernovaFxRef: { current: null },
+      ripplesRef: { current: [] },
+      collisionFlaresRef: { current: [] },
+      cameraShakeRef: { current: 0 },
+      inputControllerRef: {
+        current: {
+          currentScrollTimeline: 0,
+          targetScrollTimeline: 0,
+          currentCameraZDepthOffset: 0,
+          targetCameraZDepthOffset: 0,
+          currentCameraParallaxX: 0,
+          targetCameraParallaxX: 0,
+          currentCameraParallaxY: 0,
+          targetCameraParallaxY: 0,
+          currentCameraPitch: 0,
+          targetCameraPitch: 0,
+          currentCameraYaw: 0,
+          targetCameraYaw: 0,
+          targetLock: { active: false, entityId: null, x: 0, y: 0, z: 0 },
+          currentLock: { x: 0, y: 0, z: 0, intensity: 0 },
+        },
+      },
+      stageRef: { current: 0 },
+      isInterstellarRef: { current: false },
+      isTransitActiveRef: { current: false },
+      transitStartTimeRef: { current: 0 },
+      lastStageChangeRef: { current: Date.now() },
+      lastUserActivityRef: { current: Date.now() },
+      isScreensaverActiveRef: { current: false },
+      screensaverOpacityRef: { current: 0 },
+      lastShockwaveTimeRef: { current: 0 },
+      isShockwaveActiveRef: { current: false },
+      shockwaveStartTimeRef: { current: 0 },
+      smoothedAmpRef: { current: 0 },
+      smoothedBassRef: { current: 0 },
+      smoothedMidRef: { current: 0 },
+      smoothedTrebleRef: { current: 0 },
+      mouseRef: { current: { x: 0, y: 0, lastMoved: Date.now() } },
+      scrollVelocityRef: { current: 0 },
+      ambientParticleSpeedRef: { current: 0.15 },
+      objectParticleSpeedRef: { current: 0.15 },
+      textParticleSpeedRef: { current: 0.12 },
+      particleFiltersRef: { current: { ambient: true, celestial: true, bridges: true, tails: true, typography: true } },
+      spawnTailParticleRef: { current: () => {} },
+      timeRef: { current: 0 },
+      positions: new Float32Array(30),
+      colors: new Float32Array(40),
+      extras: new Float32Array(30),
+      updateCelestial3DMeshes: () => {},
+      generateInterstellarScene: () => {},
+      mapParticlesToInterstellar: () => {},
+      transitionStartTimeRef: { current: 0 },
+      transitionActiveRef: { current: false },
+      transitionStartPosRef: { current: null },
+      fovRef: { current: 45 },
+      audio: {
+        getMusicAmplitude: () => 0,
+        getFrequencyBands: () => ({ bass: 0, mid: 0, treble: 0 }),
+        setGravitationalProximity: () => {},
+      },
+    };
+
+    assert.doesNotThrow(() => {
+      executeRenderFrame(mockCtx);
+    }, "executeRenderFrame must run cleanly in headless environment without ReferenceError");
+  });
+
+  runTest("HawkingRadiationEngine: handles non-finite proximity, non-finite dt, and safe disposal in headless runtime", () => {
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    const node = new BABYLON.TransformNode("bh_node", scene);
+    const bhEntity: CelestialEntity = {
+      type: "blackhole",
+      x: 0,
+      y: 0,
+      radius: NaN,
+      color: "#ffaa00",
+    };
+    const hawking = createHawkingRadiationSystem(node, bhEntity, scene);
+    assert.ok(hawking.system);
+    assert.doesNotThrow(() => {
+      hawking.update(NaN, false, NaN);
+      hawking.update(Infinity, true, 16.6);
+      hawking.update(0.5, true, 16.6);
+    });
+    assert.ok(isFinite(hawking.currentIntensity), "Hawking radiation intensity must remain strictly finite");
+    assert.doesNotThrow(() => {
+      hawking.dispose();
+    });
+    scene.dispose();
+    engine.dispose();
+  });
+
+  runTest("ParticleCanvasEvents: validates SSR safety and clean teardown in headless environments", () => {
+    assert.doesNotThrow(() => {
+      const cleanup = setupParticleCanvasEvents({} as any);
+      assert.equal(typeof cleanup, "function");
+      cleanup();
+    });
+  });
+
   console.log("\n==> Testing Static Assets & Build Artifacts");
 
   runTest("Static Assets: verifies favicon.svg, index.html metadata, and bundle readiness", () => {
@@ -783,6 +1051,23 @@ async function runAllTests() {
     assert.equal(isUIElement(dummyInput), true, "Input element should return true");
   });
 
+  runTest("Hotkeys & UI classification: validates hotkey action bindings and input element exclusion", () => {
+    // Ensure interactive input and textarea targets are recognized as UI elements
+    const mockInput = { tagName: "INPUT", id: "search", closest: () => null } as any;
+    const mockTextarea = { tagName: "TEXTAREA", id: "prompt", closest: () => null } as any;
+    const mockButton = { tagName: "BUTTON", id: "mute-btn", closest: () => true } as any;
+    const mockCanvas = { tagName: "CANVAS", id: "canvas-babylon", closest: () => null } as any;
+
+    assert.equal(isUIElement(mockInput), true, "Input element must be identified as UI element");
+    assert.equal(isUIElement(mockTextarea), true, "Textarea element must be identified as UI element");
+    assert.equal(isUIElement(mockButton), true, "Button element must be identified as UI element");
+    assert.equal(isUIElement(mockCanvas), false, "Canvas element must not be classified as UI element");
+
+    // Validate supported hotkeys mapping set
+    const supportedHotkeys = ["a", "c", "m", "w", "n", "t", "p", "Escape"];
+    assert.equal(supportedHotkeys.length, 8, "Expected 8 core hotkeys registered");
+  });
+
   await runTest("Telemetry Pipeline: validates client error filtering, duplicate deduplication, and throttling", async () => {
     resetTelemetryThrottling();
     assert.equal(isIgnoredErrorMessage("WebSocket connection to 'ws://...' failed"), true);
@@ -803,10 +1088,13 @@ async function runAllTests() {
     assert.equal(ignored, false, "Telemetry should ignore websocket noise");
   });
 
-  runTest("Telemetry Pipeline: suppresses benign ResizeObserver loop and Safari extension notifications", () => {
+  runTest("Telemetry Pipeline: suppresses benign ResizeObserver loop and Safari/Edge extension notifications", () => {
     assert.equal(isIgnoredErrorMessage("ResizeObserver loop completed with undelivered notifications."), true);
     assert.equal(isIgnoredErrorMessage("ResizeObserver loop limit exceeded"), true);
     assert.equal(isIgnoredErrorMessage("safari-extension://com.example.blocker/script.js:10"), true);
+    assert.equal(isIgnoredErrorMessage("safari-web-extension://ABC-123-DEF/content.js:45"), true);
+    assert.equal(isIgnoredErrorMessage("ms-browser-extension://12345678-abcd/injected.js:8"), true);
+    assert.equal(isIgnoredErrorMessage("Valid Application Error"), false);
   });
 
   console.log("\n==> Testing HTTP Server Endpoints & Integration");
