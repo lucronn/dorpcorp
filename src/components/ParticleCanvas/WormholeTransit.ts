@@ -334,8 +334,8 @@ export async function startWormholeTransit(
         // At 65% of the transit (while inside the wormhole throat at peak swirl), seed the new cosmic system
         if (progress >= 0.65 && !hasSpawnedNewSystem) {
           hasSpawnedNewSystem = true;
-          const ww = window.innerWidth;
-          const wh = window.innerHeight;
+          const ww = typeof window !== "undefined" && window.innerWidth > 0 ? window.innerWidth : 1920;
+          const wh = typeof window !== "undefined" && window.innerHeight > 0 ? window.innerHeight : 1080;
           isInterstellarRef.current = true;
           generateInterstellarScene(ww, wh, true);
           mapParticlesToInterstellar(ww, wh);
@@ -359,8 +359,8 @@ export async function startWormholeTransit(
         // Ensure new system was generated even if tab was backgrounded
         if (!hasSpawnedNewSystem) {
           hasSpawnedNewSystem = true;
-          const ww = window.innerWidth;
-          const wh = window.innerHeight;
+          const ww = typeof window !== "undefined" && window.innerWidth > 0 ? window.innerWidth : 1920;
+          const wh = typeof window !== "undefined" && window.innerHeight > 0 ? window.innerHeight : 1080;
           isInterstellarRef.current = true;
           generateInterstellarScene(ww, wh, true);
           mapParticlesToInterstellar(ww, wh);

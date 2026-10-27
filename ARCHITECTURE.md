@@ -119,7 +119,7 @@ flowchart TD
 
 ## 4. Verification & Testing ([`scripts/test-integrity.ts`](file:///home/corp/curtis-click-portfolio/scripts/test-integrity.ts))
 
-The project includes an automated 58-test integrity test suite verifying:
+The project includes an automated 63-test integrity test suite verifying:
 1. **Hex Color Utilities**: 6-digit hex preservation, 3-digit shorthand expansion (`#fff` -> `#ffffff`), and NaN-free blending.
 2. **Physics & Noise Calculations**: `valueNoise2D` bounds, `fBmNoise2D` octave aggregation and negative octave safety, `computeCurlNoise` vector output and zero-vector guards against non-finite inputs, `resolveCelestialCollision` momentum conservation, and defensive rejection of non-finite/NaN coordinates, zero separation, and negative radii.
 3. **Collision Flares & Spacetime Distortion**: `spawnCollisionFlare` safe radius and coordinate enforcement, capacity bounding (max 50) with oldest flare material disposal, and `getSpacetimeFabricDistortion` defensive math barriers against non-finite inputs and null references.
@@ -134,9 +134,13 @@ The project includes an automated 58-test integrity test suite verifying:
    - `TextureUtils`: universal headless / SSR fallback dynamic textures across all 18 texture generators.
    - `ParticleCanvasEvents`: headless SSR execution safety, listener cleanup, and race-free device orientation permission handling.
 6. **Audio Engine & State Machine**: Volume/time-dilation modulation bounds (including NaN/Infinity clamping), mute toggles (`getMuteState`/`setMute`), bus teardown and garbage collection upon disposal, and `CosmicTransitionStateMachine` lifecycle transitions and cancellation.
-7. **SSR Resilience & Telemetry Pipeline**:
-   - SSR guards for `particleText`, `drawStageLayoutTemplate`, `generateTargetsForStage`, and `triggerCalmCosmicShift`.
+7. **SSR Resilience & Post-Processing Shaders**:
+   - SSR guards for `particleText`, `drawStageLayoutTemplate`, `generateTargetsForStage` (safe array returns without `undefined` leaks for arbitrary stage indices), `HUDManager` texture updates with null or disposed meshes, and `triggerCalmCosmicShift`.
+   - Post-processing shader instantiation and uniform application safety (`setupBlackholeLensingPostProcess`, `setupDepthOfFieldPostProcess`, `setupFrameShatterPostProcess`) with defensive runtime checks.
+   - `WormholeTransit` parameter verification and non-blocking state safety.
+8. **Static Assets & Bundle Readiness**:
+   - `favicon.svg`, `index.html` metadata, and chunk outputs (`babylon-*.js`, `vendor-*.js`, `index-*.js`, `server.cjs`).
+   - Vite 6 chunking rules ensuring `framer-motion`, `motion`, `react`, `react-dom`, and `lucide-react` cleanly bundle into `vendor-*.js` to minimize `index-*.js`.
    - Browser extension error filtering (`chrome-extension://`, `moz-extension://`, `safari-extension://`, `safari-web-extension://`, `ms-browser-extension://`), duplicate deduplication, and rate limiting.
    - UI element classification (`isUIElement`) and hotkey mapping set (`[A]`, `[C]`, `[W]`, `[N]`, `[T]`, `[P]`, `[M]`, `[Escape]`).
-8. **Static Assets & Bundle Readiness**: `favicon.svg`, `index.html` metadata, and chunk outputs (`babylon-*.js`, `vendor-*.js`, `index-*.js`, `server.cjs`).
 9. **Server Endpoints & Integration**: `/health`, `/api/health`, `/api/generate-cosmic-scene` with archetype overrides, `ALL /api/*` 404 handler, structured `/api/log-error` with log rotation, plain text beacon handling, malformed JSON body-parser 400 interception, `PORT=0` ephemeral binding, `EADDRINUSE` port conflict handling, and clean process listener deregistration.

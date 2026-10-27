@@ -6,10 +6,16 @@ export function updateHudTexture(
   hudPlane: BABYLON.Mesh | null,
   hudTexture: BABYLON.DynamicTexture | null
 ): void {
-  if (!hudPlane || !hudTexture) return;
-  const ww = window.innerWidth;
-  const wh = window.innerHeight;
-  const hudDpr = window.devicePixelRatio || 1;
+  if (!hudPlane || !hudTexture || hudPlane.isDisposed() || hudTexture.isDisposed()) return;
+  const ww = typeof window !== "undefined" && isFinite(window.innerWidth) && window.innerWidth > 0
+    ? window.innerWidth
+    : 1920;
+  const wh = typeof window !== "undefined" && isFinite(window.innerHeight) && window.innerHeight > 0
+    ? window.innerHeight
+    : 1080;
+  const hudDpr = typeof window !== "undefined" && isFinite(window.devicePixelRatio) && window.devicePixelRatio > 0
+    ? window.devicePixelRatio
+    : 1;
 
   const context = hudTexture.getContext() as CanvasRenderingContext2D | null;
   if (!context) return;

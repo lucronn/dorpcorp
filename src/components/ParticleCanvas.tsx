@@ -85,11 +85,13 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   }, [onTdeStateChange]);
 
   const triggerTDE = () => {
+    const ww = typeof window !== "undefined" && window.innerWidth > 0 ? window.innerWidth : 1920;
+    const wh = typeof window !== "undefined" && window.innerHeight > 0 ? window.innerHeight : 1080;
     const success = triggerTidalDisruptionEvent(
       tdeStateRef.current,
       celestialEntitiesRef.current,
-      window.innerWidth,
-      window.innerHeight
+      ww,
+      wh
     );
     if (success && onTdeStateChangeRef.current) {
       onTdeStateChangeRef.current({
@@ -281,7 +283,9 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   const mappingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const scrollVelocityRef = useRef<number>(0);
   const lastScrollYRef = useRef<number>(
-    window.scrollY || document.documentElement.scrollTop
+    typeof window !== "undefined"
+      ? (window.scrollY || document.documentElement?.scrollTop || 0)
+      : 0
   );
   const celestialEntitiesRef = useRef<CelestialEntity[]>([]);
   const archetypeRef = useRef<string>("");

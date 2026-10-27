@@ -37,6 +37,11 @@ import { buildNebulaCradleScene } from "../src/components/ParticleCanvas/scenes/
 import { isIgnoredErrorMessage, reportClientError, resetTelemetryThrottling } from "../src/utils/telemetry";
 import { CosmicTransitionStateMachine, triggerCalmCosmicShift } from "../src/components/ParticleCanvas/TransitionManager";
 import { drawStageLayoutTemplate, particleText, generateTargetsForStage } from "../src/components/ParticleCanvas/ParticleUtils";
+import { updateHudTexture } from "../src/components/ParticleCanvas/HUDManager";
+import { setupBlackholeLensingPostProcess } from "../src/components/ParticleCanvas/BlackholeLensingPostProcess";
+import { setupDepthOfFieldPostProcess } from "../src/components/ParticleCanvas/DepthOfFieldPostProcess";
+import { setupFrameShatterPostProcess } from "../src/components/ParticleCanvas/FrameShatterPostProcess";
+import { startWormholeTransit } from "../src/components/ParticleCanvas/WormholeTransit";
 import { isUIElement, setupParticleCanvasEvents } from "../src/components/ParticleCanvas/ParticleCanvasEvents";
 import {
   createCircleTexture,
@@ -909,6 +914,33 @@ async function runAllTests() {
     assert.deepEqual(generateTargetsForStage(0, -100, -100), []);
   });
 
+  runTest("HUDManager: validates updateHudTexture with null, disposed meshes, and headless runtime without throwing errors", () => {
+    assert.doesNotThrow(() => {
+      updateHudTexture(0, null, null);
+      updateHudTexture(1, null, null);
+      updateHudTexture(2, null, null);
+    });
+
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    const plane = BABYLON.MeshBuilder.CreatePlane("hudPlane", { size: 10 }, scene);
+    plane.dispose();
+
+    assert.doesNotThrow(() => {
+      updateHudTexture(0, plane, null);
+    });
+
+    scene.dispose();
+    engine.dispose();
+  });
+
+  runTest("ParticleUtils: validates generateTargetsForStage returns array and never undefined for arbitrary indices", () => {
+    for (let s = -5; s <= 20; s++) {
+      const res = generateTargetsForStage(s, 800, 600);
+      assert.ok(Array.isArray(res), `generateTargetsForStage(${s}) must return an array`);
+    }
+  });
+
   runTest("TransitionManager: validates SSR safety in triggerCalmCosmicShift without window object", () => {
     const celestialEntitiesRef = { current: [{ isDestroyed: false } as CelestialEntity] };
     const supernovaRef = { current: null as any };
@@ -1004,6 +1036,97 @@ async function runAllTests() {
     assert.doesNotThrow(() => {
       executeRenderFrame(mockCtx);
     }, "executeRenderFrame must run cleanly in headless environment without ReferenceError");
+  });
+
+  runTest("PostProcess Shaders: validates BlackholeLensing, DepthOfField, and FrameShatter in headless runtime", () => {
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    const camera = new BABYLON.TargetCamera("testCam", new BABYLON.Vector3(0, 0, -500), scene);
+
+    const lensingRef = { current: null as any };
+    const dofRef = { current: null as any };
+    const shatterRef = { current: null as any };
+    const entitiesRef = {
+      current: [
+        { type: "blackhole", x: 100, y: 100, radius: 50, color: "#ff6600", isDestroyed: false },
+      ] as CelestialEntity[],
+    };
+    const shatterIntensityRef = { current: 0.5 };
+
+    assert.doesNotThrow(() => {
+      setupBlackholeLensingPostProcess(camera, scene, engine, lensingRef, entitiesRef);
+    });
+    assert.ok(lensingRef.current);
+    if (lensingRef.current.onApply) {
+      assert.doesNotThrow(() => {
+        const mockEffect: any = {
+          setFloat: () => {},
+          setFloat2: () => {},
+          setFloat3: () => {},
+          setArray3: () => {},
+        };
+        lensingRef.current.onApply(mockEffect);
+      });
+    }
+
+    assert.doesNotThrow(() => {
+      setupDepthOfFieldPostProcess(camera, scene, engine, dofRef, undefined, entitiesRef);
+    });
+    assert.ok(dofRef.current);
+    if (dofRef.current.onApply) {
+      assert.doesNotThrow(() => {
+        const mockEffect: any = {
+          setFloat: () => {},
+          setFloat2: () => {},
+        };
+        dofRef.current.onApply(mockEffect);
+      });
+    }
+
+    assert.doesNotThrow(() => {
+      setupFrameShatterPostProcess(camera, scene, engine, shatterRef, entitiesRef, shatterIntensityRef);
+    });
+    assert.ok(shatterRef.current);
+    if (shatterRef.current.onApply) {
+      assert.doesNotThrow(() => {
+        const mockEffect: any = {
+          setFloat: () => {},
+          setFloat2: () => {},
+        };
+        shatterRef.current.onApply(mockEffect);
+      });
+    }
+
+    lensingRef.current?.dispose();
+    dofRef.current?.dispose();
+    shatterRef.current?.dispose();
+    scene.dispose();
+    engine.dispose();
+  });
+
+  runTest("WormholeTransit: verifies transit state guards and headless safety", async () => {
+    const isTransitActiveRef = { current: true }; // Active barrier returns early
+    const dummyParams: any = {
+      isTransitActiveRef,
+      transitStartTimeRef: { current: 0 },
+      transitTargetPosRef: { current: null },
+      transitDirRef: { current: null },
+      wormholePostProcessRef: { current: null },
+      wormholeTimeRef: { current: 0 },
+      wormholeIntensityRef: { current: 0 },
+      fovRef: { current: 60 },
+      cameraZRef: { current: 600 },
+      isInterstellarRef: { current: false },
+      nextGeminiSceneRef: { current: null },
+      generateInterstellarScene: () => {},
+      mapParticlesToInterstellar: () => {},
+      cameraRef: { current: null },
+      sceneRef: { current: null },
+      rendererRef: { current: null },
+    };
+    await assert.doesNotReject(async () => {
+      await startWormholeTransit(dummyParams);
+    });
   });
 
   runTest("HawkingRadiationEngine: handles non-finite proximity, non-finite dt, and safe disposal in headless runtime", () => {
@@ -1130,6 +1253,15 @@ async function runAllTests() {
         assert.ok(hasIndexBundle, "dist/assets must contain bundled index chunk");
       }
     }
+  });
+
+  runTest("Vite Build Configuration: validates manualChunks chunking rules for babylon and vendor libraries", () => {
+    const viteConfigPath = path.join(process.cwd(), "vite.config.ts");
+    assert.ok(fs.existsSync(viteConfigPath), "vite.config.ts must exist");
+    const content = fs.readFileSync(viteConfigPath, "utf-8");
+    assert.ok(content.includes("node_modules/framer-motion"), "vite.config.ts must explicitly group framer-motion into vendor chunk");
+    assert.ok(content.includes("node_modules/motion"), "vite.config.ts must group motion into vendor chunk");
+    assert.ok(content.includes("node_modules/@babylonjs/core"), "vite.config.ts must group @babylonjs/core into babylon chunk");
   });
 
   runTest("isUIElement: correctly classifies interactive UI DOM elements versus WebGL canvas", () => {

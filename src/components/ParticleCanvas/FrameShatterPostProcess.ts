@@ -126,10 +126,10 @@ export function setupFrameShatterPostProcess(
   );
 
   shatterPP.onApply = (effect) => {
-    const ww = engine.getRenderWidth() || window.innerWidth;
-    const wh = engine.getRenderHeight() || window.innerHeight;
+    const ww = engine.getRenderWidth() || (typeof window !== "undefined" ? window.innerWidth : 1920) || 1920;
+    const wh = engine.getRenderHeight() || (typeof window !== "undefined" ? window.innerHeight : 1080) || 1080;
     effect.setFloat2("uScreenResolution", ww, wh);
-    effect.setFloat("uTime", performance.now() * 0.001);
+    effect.setFloat("uTime", (typeof performance !== "undefined" ? performance.now() : Date.now()) * 0.001);
 
     const intensity = shatterIntensityRef.current || 0.0;
     effect.setFloat("uShatterIntensity", intensity);
@@ -141,8 +141,8 @@ export function setupFrameShatterPostProcess(
       (e) => !e.isDestroyed && e.type === "blackhole"
     );
     if (bh) {
-      const cssW = window.innerWidth || ww;
-      const cssH = window.innerHeight || wh;
+      const cssW = (typeof window !== "undefined" ? window.innerWidth : ww) || ww;
+      const cssH = (typeof window !== "undefined" ? window.innerHeight : wh) || wh;
       const wx = bh.worldX !== undefined ? bh.worldX : bh.x - cssW / 2;
       const wy = bh.worldY !== undefined ? bh.worldY : -(bh.y - cssH / 2);
       const wz = bh.worldZ !== undefined ? bh.worldZ : (bh.z || 0);

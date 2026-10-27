@@ -275,7 +275,7 @@ export const generateTargetsForStage = (
   } else if (index >= 2 && index <= 5) {
     const pIndex = index - 2;
     const p = projects[pIndex];
-    if (!p) return;
+    if (!p) return [];
     const isMobile = width < 640;
     const containerPad = isMobile ? 24 : 48;
     const hudMaxW = Math.min(1100, width - containerPad * 2);

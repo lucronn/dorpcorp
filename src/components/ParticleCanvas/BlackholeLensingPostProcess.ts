@@ -165,13 +165,13 @@ export function setupBlackholeLensingPostProcess(
   );
 
   lensingPP.onApply = (effect) => {
-    const ww = engine.getRenderWidth() || window.innerWidth;
-    const wh = engine.getRenderHeight() || window.innerHeight;
+    const ww = engine.getRenderWidth() || (typeof window !== "undefined" ? window.innerWidth : 1920) || 1920;
+    const wh = engine.getRenderHeight() || (typeof window !== "undefined" ? window.innerHeight : 1080) || 1080;
     effect.setFloat2("uScreenResolution", ww, wh);
-    effect.setFloat("uTime", performance.now() * 0.001);
-    effect.setFloat("uCinematicMode", (window as any).__cinematicMode ? 1.0 : 0.0);
-    effect.setFloat("uAnamorphicFlare", (window as any).__anamorphicFlare !== false ? 1.0 : 0.0);
-    effect.setFloat("uHawkingIntensity", (window as any).__hawkingIntensity || 0.0);
+    effect.setFloat("uTime", (typeof performance !== "undefined" ? performance.now() : Date.now()) * 0.001);
+    effect.setFloat("uCinematicMode", typeof window !== "undefined" && (window as any).__cinematicMode ? 1.0 : 0.0);
+    effect.setFloat("uAnamorphicFlare", typeof window !== "undefined" && (window as any).__anamorphicFlare !== false ? 1.0 : 0.0);
+    effect.setFloat("uHawkingIntensity", typeof window !== "undefined" && (window as any).__hawkingIntensity ? (window as any).__hawkingIntensity : 0.0);
 
     const bhData: number[] = [];
     const bhColors: number[] = [];
@@ -181,8 +181,8 @@ export function setupBlackholeLensingPostProcess(
       (e) => e.type === "blackhole" && !e.isDestroyed
     );
 
-    const cssW = window.innerWidth || ww;
-    const cssH = window.innerHeight || wh;
+    const cssW = (typeof window !== "undefined" ? window.innerWidth : ww) || ww;
+    const cssH = (typeof window !== "undefined" ? window.innerHeight : wh) || wh;
     const globalViewport = camera.viewport.toGlobal(ww, wh);
     const transformMatrix = scene.getTransformMatrix();
 

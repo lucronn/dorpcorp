@@ -23,6 +23,7 @@ export default defineConfig(() => {
               id.includes('node_modules/react') ||
               id.includes('node_modules/react-dom') ||
               id.includes('node_modules/motion') ||
+              id.includes('node_modules/framer-motion') ||
               id.includes('node_modules/lucide-react')
             ) {
               return 'vendor';

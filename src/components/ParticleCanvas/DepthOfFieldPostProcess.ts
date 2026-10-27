@@ -144,18 +144,18 @@ export function setupDepthOfFieldPostProcess(
   );
 
   let currentDofAmount = 0.0;
-  let lastTime = performance.now();
+  let lastTime = typeof performance !== "undefined" ? performance.now() : Date.now();
 
   dofPP.onApply = (effect) => {
-    const now = performance.now();
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
     const dt = Math.min(0.1, (now - lastTime) * 0.001);
     lastTime = now;
 
-    const ww = engine.getRenderWidth() || window.innerWidth;
-    const wh = engine.getRenderHeight() || window.innerHeight;
+    const ww = engine.getRenderWidth() || (typeof window !== "undefined" ? window.innerWidth : 1920) || 1920;
+    const wh = engine.getRenderHeight() || (typeof window !== "undefined" ? window.innerHeight : 1080) || 1080;
 
-    const isCinematic = (isCinematicRef?.current) || (window as any).__cinematicMode;
-    const isDofExplicitlyEnabled = dofEnabledRef ? dofEnabledRef.current : ((window as any).__dofEnabled !== false);
+    const isCinematic = (isCinematicRef?.current) || (typeof window !== "undefined" && (window as any).__cinematicMode);
+    const isDofExplicitlyEnabled = dofEnabledRef ? dofEnabledRef.current : (typeof window !== "undefined" ? (window as any).__dofEnabled !== false : true);
     const targetDof = (isCinematic && isDofExplicitlyEnabled) ? 1.0 : 0.0;
 
     // Smooth optical focal transition
@@ -177,8 +177,8 @@ export function setupDepthOfFieldPostProcess(
     const targetEntity = activeBh || entities.find((e) => !e.isDestroyed);
 
     if (targetEntity) {
-      const cssW = window.innerWidth || ww;
-      const cssH = window.innerHeight || wh;
+      const cssW = (typeof window !== "undefined" ? window.innerWidth : ww) || ww;
+      const cssH = (typeof window !== "undefined" ? window.innerHeight : wh) || wh;
       const scale = targetEntity.scale !== undefined && targetEntity.scale > 0 ? targetEntity.scale : 1.0;
       const wx = targetEntity.worldX !== undefined ? targetEntity.worldX : targetEntity.x - cssW / 2;
       const wy = targetEntity.worldY !== undefined ? targetEntity.worldY : -(targetEntity.y - cssH / 2);
