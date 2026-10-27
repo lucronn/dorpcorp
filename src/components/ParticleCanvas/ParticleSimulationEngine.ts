@@ -45,8 +45,8 @@ export function simulateParticles(
   ctx: SimulationContext
 ) {
   const {
-    currentW,
-    currentH,
+    currentW: rawW,
+    currentH: rawH,
     time,
     globalTimeMultiplier,
     musicAmpVal,
@@ -77,6 +77,9 @@ export function simulateParticles(
     activeRipples,
     audio,
   } = ctx;
+
+  const currentW = isFinite(rawW) && rawW > 0 ? rawW : 1920;
+  const currentH = isFinite(rawH) && rawH > 0 ? rawH : 1080;
 
   const floatScaleX = isTypographyMode ? 0 : (1 - attractionMultiplier) * 0.5;
   const floatScaleY = isTypographyMode ? 0 : (1 - attractionMultiplier) * 0.5;

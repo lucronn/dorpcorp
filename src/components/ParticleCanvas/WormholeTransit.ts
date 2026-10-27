@@ -344,7 +344,11 @@ export async function startWormholeTransit(
 
     setTimeout(() => {
       try {
-        if (!scene || scene.isDisposed) return;
+        if (!scene || scene.isDisposed) {
+          isTransitActiveRef.current = false;
+          wormholeIntensityRef.current = 0.0;
+          return;
+        }
 
         if (transitObserver) {
           scene.onBeforeRenderObservable.remove(transitObserver);

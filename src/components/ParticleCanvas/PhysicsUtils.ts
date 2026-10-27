@@ -26,7 +26,7 @@ export const blendHexColors = (c1: string, c2: string, weight: number): string =
   const g2 = parseInt(norm2.slice(3, 5), 16) || 0;
   const b2 = parseInt(norm2.slice(5, 7), 16) || 0;
 
-  const w = Math.max(0, Math.min(1, weight));
+  const w = isNaN(weight) ? 0.5 : Math.max(0, Math.min(1, weight));
   const r = Math.round(r1 * (1 - w) + r2 * w);
   const g = Math.round(g1 * (1 - w) + g2 * w);
   const b = Math.round(b1 * (1 - w) + b2 * w);

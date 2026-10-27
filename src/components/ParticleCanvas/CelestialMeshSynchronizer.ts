@@ -126,8 +126,14 @@ export function updateCelestial3DMeshes(
     const group = celestialGroupRef.current;
     if (!scene || !group) return;
 
-    const ww = typeof window !== "undefined" ? window.innerWidth : 1920;
-    const wh = typeof window !== "undefined" ? window.innerHeight : 1080;
+    const ww =
+      typeof window !== "undefined" && isFinite(window.innerWidth) && window.innerWidth > 0
+        ? window.innerWidth
+        : 1920;
+    const wh =
+      typeof window !== "undefined" && isFinite(window.innerHeight) && window.innerHeight > 0
+        ? window.innerHeight
+        : 1080;
     const entities = celestialEntitiesRef.current;
 
     let meshTransitionT = 0;

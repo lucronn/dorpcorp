@@ -7,20 +7,29 @@ export const parseColorToRgb = (color: string) => {
   if (cleaned.startsWith("#")) {
     const hex = cleaned.replace("#", "");
     if (hex.length === 3) {
-      r = parseInt(hex[0] + hex[0], 16) || 255;
-      g = parseInt(hex[1] + hex[1], 16) || 255;
-      b = parseInt(hex[2] + hex[2], 16) || 255;
+      const pr = parseInt(hex[0] + hex[0], 16);
+      const pg = parseInt(hex[1] + hex[1], 16);
+      const pb = parseInt(hex[2] + hex[2], 16);
+      r = isNaN(pr) ? 255 : pr;
+      g = isNaN(pg) ? 255 : pg;
+      b = isNaN(pb) ? 255 : pb;
     } else if (hex.length >= 6) {
-      r = parseInt(hex.substring(0, 2), 16) || 255;
-      g = parseInt(hex.substring(2, 4), 16) || 255;
-      b = parseInt(hex.substring(4, 6), 16) || 255;
+      const pr = parseInt(hex.substring(0, 2), 16);
+      const pg = parseInt(hex.substring(2, 4), 16);
+      const pb = parseInt(hex.substring(4, 6), 16);
+      r = isNaN(pr) ? 255 : pr;
+      g = isNaN(pg) ? 255 : pg;
+      b = isNaN(pb) ? 255 : pb;
     }
   } else if (cleaned.startsWith("rgb")) {
     const matches = cleaned.match(/\d+/g);
-    if (matches) {
-      r = parseInt(matches[0] || "255", 10);
-      g = parseInt(matches[1] || "255", 10);
-      b = parseInt(matches[2] || "255", 10);
+    if (matches && matches.length >= 3) {
+      const pr = parseInt(matches[0]!, 10);
+      const pg = parseInt(matches[1]!, 10);
+      const pb = parseInt(matches[2]!, 10);
+      r = isNaN(pr) ? 255 : Math.max(0, Math.min(255, pr));
+      g = isNaN(pg) ? 255 : Math.max(0, Math.min(255, pg));
+      b = isNaN(pb) ? 255 : Math.max(0, Math.min(255, pb));
     }
   }
   return { r, g, b };
@@ -33,7 +42,8 @@ export const parseColorToBabylonColor3 = (color: string) => {
 
 export const parseColorToBabylonColor4 = (color: string, alpha: number = 1.0) => {
   const { r, g, b } = parseColorToRgb(color);
-  return new BABYLON.Color4(r / 255, g / 255, b / 255, alpha);
+  const safeAlpha = isNaN(alpha) ? 1.0 : Math.max(0, Math.min(1, alpha));
+  return new BABYLON.Color4(r / 255, g / 255, b / 255, safeAlpha);
 };
 
 export const isCanvasSupported = (): boolean => {
@@ -41,6 +51,16 @@ export const isCanvasSupported = (): boolean => {
 };
 
 export const createFallbackDynamicTexture = (name: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
+  if (!scene || scene.isDisposed) {
+    return {
+      name,
+      getContext: () => null,
+      update: () => {},
+      hasAlpha: true,
+      dispose: () => {},
+      isDisposed: () => true,
+    } as any;
+  }
   const tex = new BABYLON.Texture(null, scene) as any;
   tex.name = name;
   tex.getContext = () => null;
@@ -51,7 +71,7 @@ export const createFallbackDynamicTexture = (name: string, scene: BABYLON.Scene)
 
 /** Ultra-soft particle point texture with smooth Gaussian falloff and zero hard edges */
 export const createCircleTexture = (scene: BABYLON.Scene): BABYLON.DynamicTexture => {
-  if (!isCanvasSupported()) {
+  if (!scene || scene.isDisposed || !isCanvasSupported()) {
     return createFallbackDynamicTexture("circle_particle_tex", scene);
   }
   const size = 128;
@@ -79,7 +99,7 @@ export const createCircleTexture = (scene: BABYLON.Scene): BABYLON.DynamicTextur
 
 /** Smooth, ethereal radial glow disc texture for stars, light halos, and flares with zero color banding */
 export const createCircularGlowTexture = (colorStr: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
-  if (!isCanvasSupported()) {
+  if (!scene || scene.isDisposed || !isCanvasSupported()) {
     return createFallbackDynamicTexture("glow_disc_tex", scene);
   }
   const size = 512;
@@ -125,7 +145,7 @@ export const createCircularGlowTexture = (colorStr: string, scene: BABYLON.Scene
 
 /** Accretion Disk texture for Black Holes with a dark inner event horizon hole and smooth soft outer radial decay */
 export const generateAccretionDiskTexture = (colorStr: string, secondaryStr: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
-  if (!isCanvasSupported()) {
+  if (!scene || scene.isDisposed || !isCanvasSupported()) {
     return createFallbackDynamicTexture("accretion_disk_tex", scene);
   }
   const size = 1024;
@@ -228,7 +248,7 @@ export const generateRelativisticJetTexture = (
   secondaryStr: string,
   scene: BABYLON.Scene
 ): BABYLON.DynamicTexture => {
-  if (!isCanvasSupported()) {
+  if (!scene || scene.isDisposed || !isCanvasSupported()) {
     return createFallbackDynamicTexture("rel_jet_tex", scene);
   }
   const width = 256;
@@ -280,7 +300,7 @@ export const generateRelativisticJetTexture = (
 
 /** Crisp, razor-thin Photon Ring halo surrounding a Black Hole's pitch-black event horizon silhouette */
 export const generatePhotonRingTexture = (colorStr: string, secondaryStr: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
-  if (!isCanvasSupported()) {
+  if (!scene || scene.isDisposed || !isCanvasSupported()) {
     return createFallbackDynamicTexture("photon_ring_tex", scene);
   }
   const size = 1024;
@@ -344,7 +364,7 @@ export const generatePhotonRingTexture = (colorStr: string, secondaryStr: string
 };
 
 export const generateAdvancedPlanetTexture = (colorHex: string, secondaryHex: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
-  if (!isCanvasSupported()) {
+  if (!scene || scene.isDisposed || !isCanvasSupported()) {
     return createFallbackDynamicTexture("planet_adv_tex", scene);
   }
   const width = 512;
@@ -387,7 +407,7 @@ export const generateAdvancedPlanetTexture = (colorHex: string, secondaryHex: st
 };
 
 export const generatePlanetNightLightsTexture = (colorHex: string, secondaryHex: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
-  if (!isCanvasSupported()) {
+  if (!scene || scene.isDisposed || !isCanvasSupported()) {
     return createFallbackDynamicTexture("planet_night_tex", scene);
   }
   const width = 512;
@@ -415,7 +435,7 @@ export const generatePlanetNightLightsTexture = (colorHex: string, secondaryHex:
 };
 
 export const generatePlanetBumpNormalTexture = (scene: BABYLON.Scene): BABYLON.DynamicTexture => {
-  if (!isCanvasSupported()) {
+  if (!scene || scene.isDisposed || !isCanvasSupported()) {
     return createFallbackDynamicTexture("planet_bump_tex", scene);
   }
   const width = 256;
@@ -431,7 +451,7 @@ export const generatePlanetBumpNormalTexture = (scene: BABYLON.Scene): BABYLON.D
 };
 
 export const generateProceduralCloudTexture = (colorHex: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
-  if (!isCanvasSupported()) {
+  if (!scene || scene.isDisposed || !isCanvasSupported()) {
     return createFallbackDynamicTexture("cloud_tex", scene);
   }
   const width = 512;
@@ -465,7 +485,7 @@ export const generateProceduralCloudTexture = (colorHex: string, scene: BABYLON.
 };
 
 export const generateAuroraTexture = (colorHex: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
-  if (!isCanvasSupported()) {
+  if (!scene || scene.isDisposed || !isCanvasSupported()) {
     return createFallbackDynamicTexture("aurora_tex", scene);
   }
   const size = 256;
@@ -492,7 +512,7 @@ export const generateAuroraTexture = (colorHex: string, scene: BABYLON.Scene): B
 };
 
 export const generateStarTexture = (baseColor: string, secondaryColor: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
-  if (!isCanvasSupported()) {
+  if (!scene || scene.isDisposed || !isCanvasSupported()) {
     return createFallbackDynamicTexture("star_surface_tex", scene);
   }
   const size = 512;
@@ -541,7 +561,7 @@ export const generateStarTexture = (baseColor: string, secondaryColor: string, s
 };
 
 export const generateConcentricRingTexture = (ringColor: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
-  if (!isCanvasSupported()) {
+  if (!scene || scene.isDisposed || !isCanvasSupported()) {
     return createFallbackDynamicTexture("ring_tex", scene);
   }
   const size = 512;
@@ -585,7 +605,7 @@ export const generateConcentricRingTexture = (ringColor: string, scene: BABYLON.
 };
 
 export const generateDistortedLightwaveTexture = (baseColor: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
-  if (!isCanvasSupported()) {
+  if (!scene || scene.isDisposed || !isCanvasSupported()) {
     return createFallbackDynamicTexture("lightwave_tex", scene);
   }
   const size = 256;
@@ -612,7 +632,7 @@ export const generateDistortedLightwaveTexture = (baseColor: string, scene: BABY
 };
 
 export const generateGalaxyTexture = (baseColor: string, secondaryColor: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
-  if (!isCanvasSupported()) {
+  if (!scene || scene.isDisposed || !isCanvasSupported()) {
     return createFallbackDynamicTexture("galaxy_tex", scene);
   }
   const size = 512;
@@ -669,7 +689,7 @@ export const generateGalaxyTexture = (baseColor: string, secondaryColor: string,
 };
 
 export const generateNebulaTexture = (baseColor: string, secondaryColor: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
-  if (!isCanvasSupported()) {
+  if (!scene || scene.isDisposed || !isCanvasSupported()) {
     return createFallbackDynamicTexture("nebula_tex", scene);
   }
   const size = 512;
@@ -724,7 +744,8 @@ export const generateNebulaTexture = (baseColor: string, secondaryColor: string,
 export const blendColorsHex = (color1: string, color2: string, weight1: number = 0.5): string => {
   const rgb1 = parseColorToRgb(color1);
   const rgb2 = parseColorToRgb(color2);
-  const w1 = Math.max(0, Math.min(1, weight1));
+  const safeWeight = isNaN(weight1) ? 0.5 : Math.max(0, Math.min(1, weight1));
+  const w1 = safeWeight;
   const w2 = 1 - w1;
   const r = Math.round(rgb1.r * w1 + rgb2.r * w2);
   const g = Math.round(rgb1.g * w1 + rgb2.g * w2);
@@ -734,7 +755,7 @@ export const blendColorsHex = (color1: string, color2: string, weight1: number =
 
 /** High-Energy Supernova Core Glow & Optical Flash Texture */
 export const generateSupernovaCoreFlareTexture = (scene: BABYLON.Scene): BABYLON.DynamicTexture => {
-  if (!isCanvasSupported()) {
+  if (!scene || scene.isDisposed || !isCanvasSupported()) {
     return createFallbackDynamicTexture("sn_core_flare_tex", scene);
   }
   const size = 512;
@@ -799,7 +820,7 @@ export const generateSupernovaCoreFlareTexture = (scene: BABYLON.Scene): BABYLON
 
 /** Anamorphic Lens Flare & 4-Point Optical Diffraction Starburst */
 export const generateAnamorphicSpikeTexture = (scene: BABYLON.Scene): BABYLON.DynamicTexture => {
-  if (!isCanvasSupported()) {
+  if (!scene || scene.isDisposed || !isCanvasSupported()) {
     return createFallbackDynamicTexture("sn_anamorphic_tex", scene);
   }
   const size = 512;
@@ -873,7 +894,7 @@ export const generateSupernovaPhotonicRingTexture = (
   secondaryColor: string,
   scene: BABYLON.Scene
 ): BABYLON.DynamicTexture => {
-  if (!isCanvasSupported()) {
+  if (!scene || scene.isDisposed || !isCanvasSupported()) {
     return createFallbackDynamicTexture("sn_photonic_ring_tex", scene);
   }
   const size = 512;

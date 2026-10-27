@@ -11,10 +11,14 @@ import {
   computeCurlNoise,
   resolveCelestialCollision,
   swallowEntity,
+  createDustSplash,
+  createShatterDebris,
+  createSpaghettificationDebris,
   spawnCollisionFlare,
   updateCollisionFlares,
   disposeCollisionFlares,
 } from "../src/components/ParticleCanvas/PhysicsUtils";
+import { simulateParticles } from "../src/components/ParticleCanvas/ParticleSimulationEngine";
 import { CelestialEntity } from "../src/components/ParticleCanvas/types";
 import { getSpacetimeFabricDistortion } from "../src/components/ParticleCanvas/CelestialMeshSynchronizer";
 import { createNeutronStarBirthEvent } from "../src/components/ParticleCanvas/scenes/neutronstarbirth";
@@ -25,6 +29,8 @@ import {
   SlingshotProbe,
 } from "../src/components/ParticleCanvas/SlingshotEngine";
 import { createInitialTdeState, triggerTidalDisruptionEvent, updateTidalDisruption } from "../src/components/ParticleCanvas/TidalDisruptionEngine";
+import { spawnTidalDisruptionFX } from "../src/components/ParticleCanvas/TidalDisruptionFX";
+import { spawnSupernovaFX } from "../src/components/ParticleCanvas/SupernovaFX";
 import { executeRenderFrame } from "../src/components/ParticleCanvas/RenderEngine";
 import { audio } from "../src/utils/audio";
 import { getProceduralFallbackSystem, startServer } from "../server";
@@ -62,6 +68,8 @@ import {
   generateSupernovaCoreFlareTexture,
   generateAnamorphicSpikeTexture,
   generateSupernovaPhotonicRingTexture,
+  blendColorsHex,
+  parseColorToBabylonColor4,
 } from "../src/components/ParticleCanvas/TextureUtils";
 
 let totalTests = 0;
@@ -115,6 +123,24 @@ async function runAllTests() {
     const res = blendHexColors("#fff", "#000", 0.5);
     assert.equal(res, "#808080");
     assert.equal(blendHexColors("#f00", "#00f", 0.5), "#800080");
+  });
+
+  runTest("blendHexColors and blendColorsHex: safely handles NaN and non-finite weights without producing NaN or invalid hex", () => {
+    assert.equal(blendHexColors("#ffffff", "#000000", NaN), "#808080");
+    assert.equal(blendHexColors("#ffffff", "#000000", Infinity), "#000000");
+    assert.equal(blendHexColors("#ffffff", "#000000", -Infinity), "#ffffff");
+    assert.equal(blendColorsHex("#ffffff", "#000000", NaN), "#808080");
+  });
+
+  runTest("parseColorToBabylonColor4: safely validates and clamps alpha including NaN/non-finite values", () => {
+    const colDefault = parseColorToBabylonColor4("#ffffff");
+    assert.equal(colDefault.a, 1.0);
+    const colNan = parseColorToBabylonColor4("#ffffff", NaN);
+    assert.equal(colNan.a, 1.0);
+    const colInf = parseColorToBabylonColor4("#ffffff", Infinity);
+    assert.equal(colInf.a, 1.0);
+    const colNeg = parseColorToBabylonColor4("#ffffff", -5);
+    assert.equal(colNeg.a, 0.0);
   });
 
   runTest("valueNoise2D: returns deterministic values between 0.0 and 1.0", () => {
@@ -217,6 +243,16 @@ async function runAllTests() {
     const eZeroRad1: CelestialEntity = { type: "planet", x: 10, y: 10, radius: 0, color: "#fff" };
     const eZeroRad2: CelestialEntity = { type: "planet", x: 10, y: 10, radius: 20, color: "#fff" };
     assert.equal(resolveCelestialCollision(eZeroRad1, eZeroRad2), null, "Must reject zero radius");
+  });
+
+  runTest("resolveCelestialCollision, swallowEntity, and debris generators: safely handle null entities and non-function callbacks", () => {
+    assert.equal(resolveCelestialCollision(null as any, null as any), null);
+    assert.doesNotThrow(() => {
+      swallowEntity(null as any, null as any);
+      createDustSplash(0, 0, "#fff", 10, null as any);
+      createShatterDebris(0, 0, "#fff", 10, null as any);
+      createSpaghettificationDebris(null as any, null as any, null as any);
+    });
   });
 
   runTest("swallowEntity: updates victim state and expands black hole mass & targetRadius safely", () => {
@@ -1038,6 +1074,192 @@ async function runAllTests() {
     }, "executeRenderFrame must run cleanly in headless environment without ReferenceError");
   });
 
+  runTest("executeRenderFrame: safely handles undefined inputControllerRef and non-finite delta-time without throwing", () => {
+    const mockCtx: any = {
+      stageRef: { current: 0 },
+      isInterstellarRef: { current: false },
+      isScreensaverActiveRef: { current: false },
+      screensaverOpacityRef: { current: 0 },
+      lastUserActivityRef: { current: Date.now() },
+      lastStageChangeRef: { current: Date.now() },
+      lastShockwaveTimeRef: { current: Date.now() },
+      isShockwaveActiveRef: { current: false },
+      shockwaveStartTimeRef: { current: 0 },
+      smoothedAmpRef: { current: 0 },
+      smoothedBassRef: { current: 0 },
+      smoothedMidRef: { current: 0 },
+      smoothedTrebleRef: { current: 0 },
+      mouseRef: { current: { x: 0, y: 0, lastMoved: Date.now() } },
+      scrollVelocityRef: { current: 0 },
+      ambientParticleSpeedRef: { current: 0.15 },
+      objectParticleSpeedRef: { current: 0.15 },
+      textParticleSpeedRef: { current: 0.12 },
+      particleFiltersRef: { current: {} },
+      spawnTailParticleRef: { current: () => {} },
+      celestialEntitiesRef: { current: [] },
+      supernovaRef: { current: null },
+      activeSupernovaFxRef: { current: null },
+      ripplesRef: { current: [] },
+      collisionFlaresRef: { current: [] },
+      cameraShakeRef: { current: 0 },
+      inputControllerRef: { current: undefined },
+      particlesRef: { current: [] },
+      pointsMeshRef: { current: null },
+      hudPlaneRef: { current: null },
+      sceneRef: { current: null },
+      cameraRef: { current: null },
+      rendererRef: { current: { getDeltaTime: () => NaN } },
+      composerRef: { current: null },
+      pointsMaterialRef: { current: null },
+      lensingPostProcessRef: { current: null },
+      isTransitActiveRef: { current: false },
+      transitStartTimeRef: { current: 0 },
+      timeRef: { current: NaN },
+      positions: new Float32Array(30),
+      colors: new Float32Array(40),
+      extras: new Float32Array(30),
+      updateCelestial3DMeshes: () => {},
+      generateInterstellarScene: () => {},
+      mapParticlesToInterstellar: () => {},
+      transitionStartTimeRef: { current: 0 },
+      transitionActiveRef: { current: false },
+      transitionStartPosRef: { current: null },
+      fovRef: { current: 45 },
+      audio: {
+        getMusicAmplitude: () => 0,
+        getFrequencyBands: () => ({ bass: 0, mid: 0, treble: 0 }),
+        setGravitationalProximity: () => {},
+      },
+    };
+
+    assert.doesNotThrow(() => {
+      executeRenderFrame(mockCtx);
+    }, "executeRenderFrame must run cleanly with undefined inputs and non-finite metrics");
+  });
+
+  runTest("spawnSupernovaFX: safely handles null or disposed scene returning no-op instance", () => {
+    const noopNull = spawnSupernovaFX(null as any, new BABYLON.Vector3(0, 0, 0));
+    assert.equal(noopNull.isDisposed, true);
+    assert.doesNotThrow(() => {
+      noopNull.update(Date.now());
+      noopNull.dispose();
+    });
+
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    scene.dispose();
+    const noopDisposed = spawnSupernovaFX(scene, new BABYLON.Vector3(10, 20, 30));
+    assert.equal(noopDisposed.isDisposed, true);
+    assert.doesNotThrow(() => {
+      noopDisposed.update(Date.now());
+      noopDisposed.dispose();
+    });
+    engine.dispose();
+  });
+
+  runTest("spawnSupernovaFX: safely initializes and disposes in headless NullEngine with non-finite coordinates", () => {
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    const camera = new BABYLON.TargetCamera("testCam", new BABYLON.Vector3(0, 0, -500), scene);
+
+    const corruptPos = new BABYLON.Vector3(NaN, Infinity, -Infinity);
+    const snInstance = spawnSupernovaFX(scene, corruptPos);
+    assert.ok(snInstance);
+    assert.equal(snInstance.isDisposed, false);
+
+    assert.doesNotThrow(() => {
+      snInstance.update(NaN);
+      snInstance.update(Date.now() + 1000);
+      snInstance.update(Date.now() + 3500);
+      snInstance.dispose();
+    });
+    assert.equal(snInstance.isDisposed, true);
+
+    scene.dispose();
+    engine.dispose();
+  });
+
+  runTest("spawnSupernovaFX: automatically disposes when elapsed duration exceeds totalDurationMs", () => {
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    const snInstance = spawnSupernovaFX(scene, new BABYLON.Vector3(0, 0, 0));
+    assert.equal(snInstance.isDisposed, false);
+    snInstance.update(Date.now() + 15000);
+    assert.equal(snInstance.isDisposed, true, "SupernovaFX must auto-dispose upon completion");
+    scene.dispose();
+    engine.dispose();
+  });
+
+  runTest("spawnTidalDisruptionFX: safely handles null or disposed scene returning no-op instance", () => {
+    const noopNull = spawnTidalDisruptionFX(null as any);
+    assert.equal(noopNull.isDisposed, true);
+    assert.doesNotThrow(() => {
+      noopNull.update(Date.now(), createInitialTdeState(), null, 1920, 1080);
+      noopNull.dispose();
+    });
+
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    scene.dispose();
+    const noopDisposed = spawnTidalDisruptionFX(scene);
+    assert.equal(noopDisposed.isDisposed, true);
+    assert.doesNotThrow(() => {
+      noopDisposed.update(Date.now(), createInitialTdeState(), null, 1920, 1080);
+      noopDisposed.dispose();
+    });
+    engine.dispose();
+  });
+
+  runTest("spawnTidalDisruptionFX: manages lifecycle, update, and dynamic isDisposed getter in headless NullEngine", () => {
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    const tdeFx = spawnTidalDisruptionFX(scene);
+    assert.ok(tdeFx);
+    assert.equal(tdeFx.isDisposed, false);
+
+    const tdeState = createInitialTdeState();
+    tdeState.isActive = true;
+    tdeState.stage = "ROCHE_RUPTURE";
+    tdeState.starX = 500;
+    tdeState.starY = 500;
+
+    const mockBh: CelestialEntity = {
+      type: "blackhole",
+      x: 960,
+      y: 540,
+      radius: 60,
+      color: "#ff8844",
+    };
+
+    assert.doesNotThrow(() => {
+      tdeFx.update(Date.now(), tdeState, mockBh, NaN, -100);
+      tdeFx.update(Date.now(), tdeState, mockBh, 1920, 1080);
+    });
+
+    tdeFx.dispose();
+    assert.equal(tdeFx.isDisposed, true, "isDisposed getter must return true after disposal");
+
+    scene.dispose();
+    engine.dispose();
+  });
+
+  runTest("spawnTidalDisruptionFX: cleanly hides all meshes and shuts down illumination when inactive", () => {
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    const tdeFx = spawnTidalDisruptionFX(scene);
+    const inactiveTde = createInitialTdeState();
+    inactiveTde.isActive = false;
+
+    assert.doesNotThrow(() => {
+      tdeFx.update(Date.now(), inactiveTde, null, 1920, 1080);
+    });
+
+    tdeFx.dispose();
+    assert.equal(tdeFx.isDisposed, true);
+    scene.dispose();
+    engine.dispose();
+  });
+
   runTest("PostProcess Shaders: validates BlackholeLensing, DepthOfField, and FrameShatter in headless runtime", () => {
     const engine = new BABYLON.NullEngine();
     const scene = new BABYLON.Scene(engine);
@@ -1129,6 +1351,32 @@ async function runAllTests() {
     });
   });
 
+  runTest("WormholeTransit: safely handles missing camera or disposed scene without throwing", async () => {
+    const isTransitActiveRef = { current: false };
+    const dummyParams: any = {
+      isTransitActiveRef,
+      transitStartTimeRef: { current: 0 },
+      transitTargetPosRef: { current: null },
+      transitDirRef: { current: null },
+      wormholePostProcessRef: { current: null },
+      wormholeTimeRef: { current: 0 },
+      wormholeIntensityRef: { current: 0 },
+      fovRef: { current: 60 },
+      cameraZRef: { current: 600 },
+      isInterstellarRef: { current: false },
+      nextGeminiSceneRef: { current: null },
+      generateInterstellarScene: () => {},
+      mapParticlesToInterstellar: () => {},
+      cameraRef: { current: null },
+      sceneRef: { current: null },
+      rendererRef: { current: null },
+    };
+    await assert.doesNotReject(async () => {
+      await startWormholeTransit(dummyParams);
+    });
+    assert.equal(isTransitActiveRef.current, false);
+  });
+
   runTest("HawkingRadiationEngine: handles non-finite proximity, non-finite dt, and safe disposal in headless runtime", () => {
     const engine = new BABYLON.NullEngine();
     const scene = new BABYLON.Scene(engine);
@@ -1204,6 +1452,91 @@ async function runAllTests() {
 
     scene.dispose();
     engine.dispose();
+  });
+
+  runTest("TextureUtils: safely handles null and disposed scenes across generators returning fallback textures", () => {
+    assert.doesNotThrow(() => {
+      const tex1 = createCircleTexture(null as any);
+      assert.ok(tex1);
+      assert.equal(tex1.getContext(), null);
+
+      const engine = new BABYLON.NullEngine();
+      const scene = new BABYLON.Scene(engine);
+      scene.dispose();
+
+      const tex2 = createCircularGlowTexture("#fff", scene);
+      assert.ok(tex2);
+      assert.equal(tex2.getContext(), null);
+
+      const tex3 = generateAccretionDiskTexture("#ff8844", "#ffffff", null as any);
+      assert.ok(tex3);
+      assert.equal(tex3.getContext(), null);
+
+      engine.dispose();
+    });
+  });
+
+  runTest("ParticleSimulationEngine: safely defends against non-finite or zero viewport dimensions", () => {
+    const particles = [
+      {
+        x: 100,
+        y: 100,
+        z: 0,
+        vx: 0,
+        vy: 0,
+        vz: 0,
+        originX: 100,
+        originY: 100,
+        color: "#fff",
+        r: 255,
+        g: 255,
+        b: 255,
+        isCosmicAmbient: true,
+      } as any,
+    ];
+    const positions = new Float32Array(3);
+    const colors = new Float32Array(4);
+    const extras = new Float32Array(1);
+    const mockCtx: any = {
+      currentW: NaN,
+      currentH: 0,
+      time: 0,
+      globalTimeMultiplier: 1.0,
+      musicAmpVal: 0,
+      musicBands: { bass: 0, mid: 0, treble: 0 },
+      musicSpeedFactor: 1.0,
+      activeBlackholes: [],
+      activeCollidables: [],
+      activeSupernova: null,
+      snElapsed: 0,
+      scrollVelocity: 0,
+      ambientParticleSpeed: 0.15,
+      objectParticleSpeed: 0.15,
+      textParticleSpeed: 0.12,
+      particleFilters: {},
+      globalAlpha: 1.0,
+      isTypographyMode: false,
+      isInterstellar: true,
+      vortexMultiplier: 1.0,
+      attractionMultiplier: 1.0,
+      mousePos: { x: 0, y: 0 },
+      celestialEntities: [],
+      spawnTailParticle: () => {},
+      screensaverOpacity: 0,
+      isTransitActive: false,
+      transitProgress: 0,
+      transitCx: 0,
+      transitCy: 0,
+      activeRipples: [],
+      audio: null,
+    };
+
+    assert.doesNotThrow(() => {
+      simulateParticles(particles, positions, colors, extras, mockCtx);
+    });
+    assert.ok(!isNaN(positions[0]));
+    assert.ok(!isNaN(positions[1]));
+    assert.ok(!isNaN(positions[2]));
   });
 
   runTest("ParticleCanvasEvents: validates SSR safety and clean teardown in headless environments", () => {
@@ -1321,9 +1654,12 @@ async function runAllTests() {
     assert.equal(ignored, false, "Telemetry should ignore websocket noise");
   });
 
-  runTest("Telemetry Pipeline: suppresses benign ResizeObserver loop and Safari/Edge extension notifications", () => {
+  runTest("Telemetry Pipeline: suppresses benign ResizeObserver loop, script errors, and extension notifications", () => {
     assert.equal(isIgnoredErrorMessage("ResizeObserver loop completed with undelivered notifications."), true);
     assert.equal(isIgnoredErrorMessage("ResizeObserver loop limit exceeded"), true);
+    assert.equal(isIgnoredErrorMessage("Script error."), true);
+    assert.equal(isIgnoredErrorMessage("script error"), true);
+    assert.equal(isIgnoredErrorMessage("Error: Extension context invalidated."), true);
     assert.equal(isIgnoredErrorMessage("safari-extension://com.example.blocker/script.js:10"), true);
     assert.equal(isIgnoredErrorMessage("safari-web-extension://ABC-123-DEF/content.js:45"), true);
     assert.equal(isIgnoredErrorMessage("ms-browser-extension://12345678-abcd/injected.js:8"), true);
@@ -1439,6 +1775,16 @@ async function runAllTests() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ error: { message: "WebGL Context Lost", code: "CONTEXT_LOST_WEBGL" } }),
+    } as any);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+  });
+
+  await runTest("POST /api/log-error: handles structured error object without error wrapper key", async () => {
+    const res = await makeRequest("/api/log-error", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Direct Diagnostic Message", subsystem: "render-pipeline" }),
     } as any);
     assert.equal(res.status, 200);
     assert.equal(res.body.ok, true);

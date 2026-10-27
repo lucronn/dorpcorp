@@ -14,8 +14,10 @@ const reportedErrorHashes = new Set<string>();
  */
 export function isIgnoredErrorMessage(msg: string): boolean {
   if (!msg || typeof msg !== "string") return true;
-  const lower = msg.toLowerCase();
+  const lower = msg.toLowerCase().trim();
   return (
+    lower === "script error." ||
+    lower === "script error" ||
     lower.includes("websocket") ||
     lower.includes("[vite]") ||
     lower.includes("hmr") ||
@@ -25,6 +27,7 @@ export function isIgnoredErrorMessage(msg: string): boolean {
     lower.includes("safari-extension://") ||
     lower.includes("safari-web-extension://") ||
     lower.includes("ms-browser-extension://") ||
+    lower.includes("extension context invalidated") ||
     lower.includes("resizeobserver loop completed") ||
     lower.includes("resizeobserver loop limit exceeded")
   );

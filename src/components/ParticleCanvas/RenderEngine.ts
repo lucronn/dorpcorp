@@ -92,15 +92,22 @@ export interface RenderEngineContext {
 }
 
 export function executeRenderFrame(ctx: RenderEngineContext) {
-  const currentW = typeof window !== "undefined" ? window.innerWidth : 1920;
-  const currentH = typeof window !== "undefined" ? window.innerHeight : 1080;
+  const currentW =
+    typeof window !== "undefined" && isFinite(window.innerWidth) && window.innerWidth > 0
+      ? window.innerWidth
+      : 1920;
+  const currentH =
+    typeof window !== "undefined" && isFinite(window.innerHeight) && window.innerHeight > 0
+      ? window.innerHeight
+      : 1080;
 
   const now = Date.now();
   const speedMult =
     ctx.cinematicSpeedMultiplierRef?.current ??
     (typeof window !== "undefined" ? (window as any).__cinematicSpeedMultiplier : 1.0) ??
     1.0;
-  const dt = ctx.rendererRef.current ? ctx.rendererRef.current.getDeltaTime() : 16.666;
+  const rawDt = ctx.rendererRef.current ? ctx.rendererRef.current.getDeltaTime() : 16.666;
+  const dt = isFinite(rawDt) && rawDt > 0 ? rawDt : 16.666;
   const globalTimeMultiplier = Math.min((dt / 16.666) * speedMult, 3.0);
 
   // Dynamic Web Audio API metrics with temporal smoothing
@@ -191,8 +198,11 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
 
   // Gravitational time dilation slows down particle clock ticks (Δτ = Δt / timeDilation)
   const clockTimeDilationFactor = Math.max(0.12, 1.0 / timeDilation);
-  ctx.timeRef.current += clockTimeDilationFactor;
-  const time = ctx.timeRef.current;
+  if (ctx.timeRef) {
+    if (!isFinite(ctx.timeRef.current)) ctx.timeRef.current = 0;
+    ctx.timeRef.current += clockTimeDilationFactor;
+  }
+  const time = ctx.timeRef?.current ?? 0;
 
   // Active Gravitational Slingshot Probes & Comet Tails Physics
   if (ctx.probesRef && ctx.probesRef.current.length > 0) {
@@ -399,7 +409,23 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
   const shakeY = shakeVal > 0 ? (Math.cos(now * 0.09) * 0.6 + (Math.random() - 0.5) * 0.4) * shakeVal : 0;
   const shakeZ = shakeVal > 0 ? (Math.sin(now * 0.07) * 0.5) * shakeVal : 0;
 
-  const inputs = ctx.inputControllerRef.current;
+  const defaultInputs = {
+    currentScrollTimeline: 0,
+    targetScrollTimeline: 0,
+    currentCameraZDepthOffset: 0,
+    targetCameraZDepthOffset: 0,
+    currentCameraParallaxX: 0,
+    targetCameraParallaxX: 0,
+    currentCameraParallaxY: 0,
+    targetCameraParallaxY: 0,
+    currentCameraPitch: 0,
+    targetCameraPitch: 0,
+    currentCameraYaw: 0,
+    targetCameraYaw: 0,
+    targetLock: { active: false, entityId: null as string | null, x: 0, y: 0, z: 0 },
+    currentLock: { x: 0, y: 0, z: 0, intensity: 0 },
+  };
+  const inputs = ctx.inputControllerRef?.current || defaultInputs;
   inputs.currentScrollTimeline += (inputs.targetScrollTimeline - inputs.currentScrollTimeline) * 0.05;
   inputs.currentCameraZDepthOffset += (inputs.targetCameraZDepthOffset - inputs.currentCameraZDepthOffset) * 0.05;
   inputs.currentCameraParallaxX += (inputs.targetCameraParallaxX - inputs.currentCameraParallaxX) * 0.05;

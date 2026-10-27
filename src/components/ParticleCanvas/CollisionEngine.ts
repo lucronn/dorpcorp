@@ -28,6 +28,7 @@ export function resolveCelestialCollision(
   e2: CelestialEntity,
   restitution: number = 0.75
 ): CollisionResult | null {
+  if (!e1 || !e2) return null;
   const dx = e2.x - e1.x;
   const dy = e2.y - e1.y;
   const dz = (e2.z || 0) - (e1.z || 0);
@@ -144,6 +145,7 @@ export function resolveCelestialCollision(
  * Accretion and swallowing of a victim entity by a black hole.
  */
 export function swallowEntity(bh: CelestialEntity, victim: CelestialEntity): void {
+  if (!bh || !victim) return;
   victim.isSwallowing = true;
   victim.destroyedBy = "blackhole";
   const bhMass = (bh.mass && isFinite(bh.mass) && bh.mass > 0) ? bh.mass : 100;
@@ -167,7 +169,8 @@ export function createDustSplash(
   count: number,
   spawnP: SpawnParticleFn
 ): void {
-  const safeCount = Math.min(30, count);
+  if (typeof spawnP !== "function") return;
+  const safeCount = isFinite(count) && count > 0 ? Math.min(30, Math.floor(count)) : 0;
   for (let i = 0; i < safeCount; i++) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 0.1 + Math.random() * 0.3;
@@ -187,7 +190,8 @@ export function createShatterDebris(
   count: number,
   spawnP: SpawnParticleFn
 ): void {
-  const safeCount = Math.min(40, count);
+  if (typeof spawnP !== "function") return;
+  const safeCount = isFinite(count) && count > 0 ? Math.min(40, Math.floor(count)) : 0;
   for (let i = 0; i < safeCount; i++) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 0.15 + Math.random() * 0.35;
@@ -205,10 +209,12 @@ export function createSpaghettificationDebris(
   victim: CelestialEntity,
   spawnP: SpawnParticleFn
 ): void {
-  const count = Math.min(80, Math.floor(victim.radius * 2));
+  if (!bh || !victim || typeof spawnP !== "function") return;
+  const safeRad = isFinite(victim.radius) && victim.radius > 0 ? victim.radius : 20;
+  const count = Math.min(80, Math.floor(safeRad * 2));
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
-    const r = Math.random() * victim.radius;
+    const r = Math.random() * safeRad;
     const px = victim.x + Math.cos(angle) * r;
     const py = victim.y + Math.sin(angle) * r;
 
@@ -222,7 +228,7 @@ export function createSpaghettificationDebris(
     spawnP(
       px,
       py,
-      (Math.random() - 0.5) * victim.radius,
+      (Math.random() - 0.5) * safeRad,
       vx,
       vy,
       victim.color || "#88aaff",

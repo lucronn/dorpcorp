@@ -26,6 +26,16 @@ export interface TidalDisruptionFXInstance {
  * 4. Layer 4 (Relativistic Polar Spray): 2,000 particles simulating collimated biconical relativistic jets & shock knots.
  */
 export function spawnTidalDisruptionFX(scene: BABYLON.Scene): TidalDisruptionFXInstance {
+  if (!scene || scene.isDisposed) {
+    return {
+      get isDisposed() {
+        return true;
+      },
+      dispose: () => {},
+      update: () => {},
+    };
+  }
+
   let isDisposed = false;
   const disposables: { dispose: () => void }[] = [];
 
@@ -513,9 +523,11 @@ export function spawnTidalDisruptionFX(scene: BABYLON.Scene): TidalDisruptionFXI
       return;
     }
 
-    const dpr = window.devicePixelRatio || 1.0;
-    const halfW = screenWidth / 2;
-    const halfH = screenHeight / 2;
+    const dpr = typeof window !== "undefined" && window.devicePixelRatio ? window.devicePixelRatio : 1.0;
+    const safeW = isFinite(screenWidth) && screenWidth > 0 ? screenWidth : 1920;
+    const safeH = isFinite(screenHeight) && screenHeight > 0 ? screenHeight : 1080;
+    const halfW = safeW / 2;
+    const halfH = safeH / 2;
 
     // Map 2D simulation coordinates to 3D world space
     const starWorldX = tde.starX - halfW;
@@ -775,10 +787,13 @@ export function spawnTidalDisruptionFX(scene: BABYLON.Scene): TidalDisruptionFXI
         item.dispose();
       } catch (_) {}
     });
+    disposables.length = 0;
   };
 
   return {
-    isDisposed,
+    get isDisposed() {
+      return isDisposed;
+    },
     dispose,
     update,
   };

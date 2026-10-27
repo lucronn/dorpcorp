@@ -14,6 +14,22 @@ export function spawnSupernovaFX(
   scene: BABYLON.Scene,
   worldPos: BABYLON.Vector3
 ): SupernovaFXInstance {
+  if (!scene || scene.isDisposed) {
+    return {
+      isDisposed: true,
+      dispose: () => {},
+      update: () => {},
+    };
+  }
+
+  const safePos =
+    worldPos &&
+    isFinite(worldPos.x) &&
+    isFinite(worldPos.y) &&
+    isFinite(worldPos.z)
+      ? worldPos.clone()
+      : new BABYLON.Vector3(0, 0, 0);
+
   const startTime = Date.now();
   const implosionDurationMs = 2800; 
   const explosionDurationMs = 6500; 
@@ -25,13 +41,13 @@ export function spawnSupernovaFX(
   const disposables: { dispose: () => void }[] = [];
 
   // 1. Dynamic PointLight for intense local illumination
-  const light = new BABYLON.PointLight("sn_light", worldPos, scene);
+  const light = new BABYLON.PointLight("sn_light", safePos, scene);
   light.intensity = 0;
   disposables.push(light);
 
   // 2. Core Sphere (The Singularity that explodes)
   const coreMesh = BABYLON.MeshBuilder.CreateSphere("sn_core", { segments: 64, diameter: 2 }, scene);
-  coreMesh.position = worldPos.clone();
+  coreMesh.position = safePos.clone();
   const coreMat = new BABYLON.StandardMaterial("sn_core_mat", scene);
   coreMat.emissiveColor = new BABYLON.Color3(0, 0.8, 1.0);
   coreMat.disableLighting = true;
@@ -41,33 +57,37 @@ export function spawnSupernovaFX(
   // 3. Volumetric Light Scattering (True 3D God Rays)
   const camera = scene.activeCamera;
   let godrays: BABYLON.VolumetricLightScatteringPostProcess | null = null;
-  if (camera) {
-    godrays = new BABYLON.VolumetricLightScatteringPostProcess(
-      "sn_godrays", 
-      1.0, 
-      camera, 
-      coreMesh, 
-      128, 
-      BABYLON.Texture.BILINEAR_SAMPLINGMODE, 
-      scene.getEngine(), 
-      false
-    );
-    godrays.exposure = 0.0;
-    godrays.decay = 0.96;
-    godrays.weight = 0.98;
-    godrays.density = 0.96;
-    disposables.push({
-      dispose: () => {
-        try {
-          godrays?.dispose(camera);
-        } catch (_) {}
-      }
-    });
+  if (camera && typeof window !== "undefined") {
+    try {
+      godrays = new BABYLON.VolumetricLightScatteringPostProcess(
+        "sn_godrays", 
+        1.0, 
+        camera, 
+        coreMesh, 
+        128, 
+        BABYLON.Texture.BILINEAR_SAMPLINGMODE, 
+        scene.getEngine(), 
+        false
+      );
+      godrays.exposure = 0.0;
+      godrays.decay = 0.96;
+      godrays.weight = 0.98;
+      godrays.density = 0.96;
+      disposables.push({
+        dispose: () => {
+          try {
+            godrays?.dispose(camera);
+          } catch (_) {}
+        }
+      });
+    } catch (_) {
+      // In headless/test or when post-process is unsupported, proceed safely
+    }
   }
 
   // 4. 3D Spherical Shockwave Bubble (Custom Fresnel Shader)
   const shockwave = BABYLON.MeshBuilder.CreateSphere("sn_shockwave", { segments: 128, diameter: 1 }, scene);
-  shockwave.position = worldPos.clone();
+  shockwave.position = safePos.clone();
   const swMat = new BABYLON.ShaderMaterial("sn_sw_mat", scene, {
     vertexSource: `
       precision highp float;
@@ -235,10 +255,12 @@ export function spawnSupernovaFX(
           console.warn("[SupernovaFX] Cleanup error:", e);
         }
       });
+      disposables.length = 0;
     },
     update: (now: number) => {
       if (instance.isDisposed) return;
-      const elapsed = now - startTime;
+      const currentTime = isFinite(now) ? now : Date.now();
+      const elapsed = currentTime - startTime;
       
       if (elapsed >= totalDurationMs) {
         instance.dispose();

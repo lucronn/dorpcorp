@@ -205,11 +205,18 @@ export const CosmicScreensaverOverlay: React.FC<CosmicScreensaverOverlayProps> =
 
   // Fullscreen toggle
   const toggleFullscreen = useCallback(() => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
-    } else {
-      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
-    }
+    if (typeof document === "undefined") return;
+    try {
+      if (!document.fullscreenElement) {
+        if (typeof document.documentElement.requestFullscreen === "function") {
+          document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+        }
+      } else {
+        if (typeof document.exitFullscreen === "function") {
+          document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+        }
+      }
+    } catch (_) {}
   }, []);
 
   useEffect(() => {

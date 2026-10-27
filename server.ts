@@ -246,7 +246,14 @@ export async function startServer(portOverride?: number) {
 
   // Client error logging endpoint with size bounding and string sanitization
   app.post("/api/log-error", (req, res) => {
-    let rawError = typeof req.body === "string" ? req.body : req.body?.error;
+    let rawError =
+      typeof req.body === "string"
+        ? req.body
+        : req.body?.error !== undefined
+        ? req.body.error
+        : req.body && typeof req.body === "object" && Object.keys(req.body).length > 0
+        ? req.body
+        : undefined;
     if (typeof rawError !== "string" && rawError !== undefined && rawError !== null) {
       try {
         rawError = JSON.stringify(rawError);
