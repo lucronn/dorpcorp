@@ -1,0 +1,97 @@
+import { Database, Zap, Layers, Globe } from "lucide-react";
+
+export interface Particle {
+  id?: string;
+  x: number;
+  y: number;
+  z: number;
+  targetX: number;
+  targetY: number;
+  targetZ?: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  color: string;
+  baseColor: string;
+  size: number;
+  isCosmicAmbient?: boolean;
+  driftSpeed?: number;
+  interstellarType?: "blackhole" | "planet" | "nebula" | "star" | "bridge" | "background_galaxy" | "galaxy" | "pulsar_ring" | "pulsar_jet";
+  interstellarEntityIndex?: number;
+  interstellarEntity?: any;
+  orbitRadius?: number;
+  orbitAngle?: number;
+  orbitSpeed?: number;
+  galaxyZOffset?: number;
+  isPlanetRing?: boolean;
+  bridgeStartEntityIndex?: number;
+  bridgeStartEntity?: any;
+  bridgeEndEntityIndex?: number;
+  bridgeEndEntity?: any;
+  bridgeProgress?: number;
+  bridgeSpeed?: number;
+  galaxyX?: number;
+  galaxyY?: number;
+  galaxyZ?: number;
+  galaxyPitch?: number;
+  galaxyYaw?: number;
+  galaxyType?: "spiral" | "elliptical";
+  isTail?: boolean;
+  isProjectText?: boolean;
+  life?: number;
+  decay?: number;
+  prevDrawX?: number;
+  prevDrawY?: number;
+  r?: number;
+  g?: number;
+  b?: number;
+  tunnelLife?: number;
+}
+
+export interface Project {
+  title: string;
+  category: string;
+  description: string;
+  tags: string[];
+  metrics?: string[];
+  icon: any;
+}
+
+export const projects: Project[] = [
+  {
+    title: "AI Engineering",
+    category: "WHO I AM",
+    description:
+      "Ten years of engineering experience. Full-stack systems, agentic pipelines, and the evaluations that keep AI models honest.",
+    tags: ["AI Engineering", "Production AI", "LLM Optimization", "Distributed Systems"],
+    metrics: ["10+ YRS ENGINEERING", "FULL-STACK & ML INFRA"],
+    icon: Database,
+  },
+  {
+    title: "Architecting Autonomy",
+    category: "WHAT I BUILD",
+    description:
+      "Autonomous agentic systems and large-scale RAG pipelines. Built to reason, plan, and execute reliably across complex toolchains.",
+    tags: ["Agentic Workflows", "LangChain", "VectorDBs", "Tool-Use Orchestration"],
+    metrics: ["MULTI-AGENT PIPELINES", "HIGH-RECALL HYBRID RAG"],
+    icon: Zap,
+  },
+  {
+    title: "Frontier Model Alignment",
+    category: "HOW I TEST",
+    description:
+      "RLHF evaluation, adversarial red-teaming, and hallucination analysis on frontier models, including Claude Code and Fable.",
+    tags: ["RLHF", "Red-Teaming", "Evaluations", "Benchmark Design"],
+    metrics: ["FRONTIER RED-TEAMING", "ADVERSARIAL EVAL SUITES"],
+    icon: Layers,
+  },
+  {
+    title: "Technical Depth & Synthesis",
+    category: "MY EXPERTISE",
+    description:
+      "Not only code. Domain expertise in CAD, civil and structural engineering, and fluid dynamics. Messy real-world data, turned into high-fidelity training corpuses.",
+    tags: ["OpenFOAM", "OpenSEES", "SMEs", "Physics-Informed AI"],
+    metrics: ["CFD & FEA SIMULATION", "DOMAIN CORPUS SYNTHESIS"],
+    icon: Globe,
+  },
+];
