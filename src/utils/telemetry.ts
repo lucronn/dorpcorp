@@ -21,7 +21,10 @@ export function isIgnoredErrorMessage(msg: string): boolean {
     lower.includes("hmr") ||
     lower.includes("failed to connect to websocket") ||
     lower.includes("chrome-extension://") ||
-    lower.includes("moz-extension://")
+    lower.includes("moz-extension://") ||
+    lower.includes("safari-extension://") ||
+    lower.includes("resizeobserver loop completed") ||
+    lower.includes("resizeobserver loop limit exceeded")
   );
 }
 

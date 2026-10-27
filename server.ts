@@ -211,11 +211,18 @@ export async function startServer(portOverride?: number) {
 
   // Health check endpoints for Docker / Cloud Run / Kubernetes probes
   app.get(["/health", "/api/health"], (req, res) => {
+    const mem = process.memoryUsage();
     res.json({
       status: "healthy",
       service: "curtis-click-portfolio",
       timestamp: new Date().toISOString(),
       uptime: Math.floor(process.uptime()),
+      nodeVersion: process.version,
+      memoryUsage: {
+        rss: mem.rss,
+        heapTotal: mem.heapTotal,
+        heapUsed: mem.heapUsed,
+      },
     });
   });
 

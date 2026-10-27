@@ -330,9 +330,9 @@ export function updateCelestial3DMeshes(
       const shouldDispose = !isStillPresent || (entity.isDestroyed && (entity.scale ?? 0) <= 0.02);
 
       if (shouldDispose) {
-        inst.mesh.getChildMeshes(false).forEach((m) => {
-          if (m.material) {
-            const mats = (m.material as any).subMaterials || [m.material];
+        const disposeMeshResources = (meshObj: any) => {
+          if (meshObj && meshObj.material) {
+            const mats = meshObj.material.subMaterials || [meshObj.material];
             mats.forEach((mat: any) => {
               if (mat) {
                 const textures = mat.getActiveTextures ? mat.getActiveTextures() : [];
@@ -347,8 +347,14 @@ export function updateCelestial3DMeshes(
               }
             });
           }
+        };
+
+        inst.mesh.getChildMeshes(false).forEach((m) => {
+          disposeMeshResources(m);
           m.dispose();
         });
+        disposeMeshResources(inst.mesh);
+
         if (inst.hawkingSystem && typeof inst.hawkingSystem.dispose === "function") {
           inst.hawkingSystem.dispose();
         }

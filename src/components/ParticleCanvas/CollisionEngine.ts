@@ -34,7 +34,9 @@ export function resolveCelestialCollision(
   const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
   const colDist = e1.radius + e2.radius;
 
-  if (dist >= colDist || dist === 0) return null;
+  if (isNaN(dist) || !isFinite(dist) || dist >= colDist || dist <= 0.0001 || e1.radius <= 0 || e2.radius <= 0) {
+    return null;
+  }
 
   // Unshackle both entities into full active 3D physics body simulation
   e1.isPhysicsEnabled = true;
@@ -46,8 +48,8 @@ export function resolveCelestialCollision(
   const nz = dz / dist;
 
   // Approximate relative masses via radius cubics
-  const m1 = e1.mass || e1.radius * e1.radius * 2;
-  const m2 = e2.mass || e2.radius * e2.radius * 2;
+  const m1 = (e1.mass && isFinite(e1.mass) && e1.mass > 0) ? e1.mass : (e1.radius > 0 ? e1.radius * e1.radius * 2 : 100);
+  const m2 = (e2.mass && isFinite(e2.mass) && e2.mass > 0) ? e2.mass : (e2.radius > 0 ? e2.radius * e2.radius * 2 : 100);
 
   // Retrieve velocities
   const v1x = e1.vx || 0;

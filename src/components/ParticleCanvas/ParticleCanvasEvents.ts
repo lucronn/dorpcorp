@@ -766,6 +766,7 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
   }
 
   const cleanup = () => {
+    clearTimeout(resizeTimeout);
     window.removeEventListener("resize", handleResize);
     window.removeEventListener("mousedown", handleMouseDown);
     window.removeEventListener("mousemove", handleMouseMove);

@@ -47,6 +47,10 @@ export function calculateForwardTrajectory(
   steps: number = 75,
   initialVz: number = 0.0
 ): SlingshotTrajectoryPoint[] {
+  if (!isFinite(originX) || !isFinite(originY) || !isFinite(pullX) || !isFinite(pullY)) {
+    return [];
+  }
+
   const points: SlingshotTrajectoryPoint[] = [];
   
   // Launch velocity vector is opposite to pull vector
@@ -80,7 +84,14 @@ export function calculateForwardTrajectory(
 
     for (let i = 0; i < celestialEntities.length; i++) {
       const entity = celestialEntities[i];
-      if (!entity || entity.isDestroyed || (entity.scale !== undefined && entity.scale <= 0.01) || entity.radius <= 0) continue;
+      if (
+        !entity ||
+        entity.isDestroyed ||
+        !isFinite(entity.x) ||
+        !isFinite(entity.y) ||
+        (entity.scale !== undefined && entity.scale <= 0.01) ||
+        entity.radius <= 0
+      ) continue;
 
       const scale = entity.scale !== undefined && entity.scale > 0 ? entity.scale : 1.0;
       const effectiveRadius = entity.radius * scale;
@@ -173,7 +184,14 @@ export function updateActiveProbes(
 
     for (let i = 0; i < celestialEntities.length; i++) {
       const entity = celestialEntities[i];
-      if (!entity || entity.isDestroyed || (entity.scale !== undefined && entity.scale <= 0.01) || entity.radius <= 0) continue;
+      if (
+        !entity ||
+        entity.isDestroyed ||
+        !isFinite(entity.x) ||
+        !isFinite(entity.y) ||
+        (entity.scale !== undefined && entity.scale <= 0.01) ||
+        entity.radius <= 0
+      ) continue;
 
       const scale = entity.scale !== undefined && entity.scale > 0 ? entity.scale : 1.0;
       const effectiveRadius = entity.radius * scale;

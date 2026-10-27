@@ -28,6 +28,7 @@ import { buildNebulaCradleScene } from "../src/components/ParticleCanvas/scenes/
 import { isIgnoredErrorMessage, reportClientError, resetTelemetryThrottling } from "../src/utils/telemetry";
 import { CosmicTransitionStateMachine, triggerCalmCosmicShift } from "../src/components/ParticleCanvas/TransitionManager";
 import { drawStageLayoutTemplate, particleText, generateTargetsForStage } from "../src/components/ParticleCanvas/ParticleUtils";
+import { isUIElement } from "../src/components/ParticleCanvas/ParticleCanvasEvents";
 
 let totalTests = 0;
 let passedTests = 0;
@@ -138,6 +139,34 @@ async function runAllTests() {
     // Verify velocities reversed along impact axis
     assert.ok(e1.vx! < 0, "Body 1 must bounce leftward");
     assert.ok(e2.vx! > 0, "Body 2 must bounce rightward");
+  });
+
+  runTest("resolveCelestialCollision: safely rejects non-finite coordinates, zero separation, and negative radii", () => {
+    const e1: CelestialEntity = {
+      type: "planet",
+      x: NaN,
+      y: 100,
+      radius: 20,
+      color: "#ff0000",
+      vx: 1.0,
+      mass: 500,
+    };
+    const e2: CelestialEntity = {
+      type: "planet",
+      x: 120,
+      y: 100,
+      radius: 20,
+      color: "#0000ff",
+      vx: -1.0,
+      mass: 500,
+    };
+    const res = resolveCelestialCollision(e1, e2);
+    assert.equal(res, null, "Must safely reject collision with NaN coordinate");
+    assert.equal(e2.vx, -1.0, "Entity velocity must remain untouched");
+
+    const eZeroRad1: CelestialEntity = { type: "planet", x: 10, y: 10, radius: 0, color: "#fff" };
+    const eZeroRad2: CelestialEntity = { type: "planet", x: 10, y: 10, radius: 20, color: "#fff" };
+    assert.equal(resolveCelestialCollision(eZeroRad1, eZeroRad2), null, "Must reject zero radius");
   });
 
   runTest("swallowEntity: updates victim state and expands black hole mass & targetRadius safely", () => {
@@ -357,6 +386,38 @@ async function runAllTests() {
     assert.equal(hasCapturedActive, true, "Active entity must capture trajectory");
   });
 
+  runTest("calculateForwardTrajectory: defends against non-finite origin coordinates and entities with non-finite positions", () => {
+    // Non-finite origin/pull parameters
+    const nanOriginTraj = calculateForwardTrajectory(NaN, 100, 80, 80, [], 40);
+    assert.deepEqual(nanOriginTraj, [], "Must return empty array on NaN originX");
+
+    const infPullTraj = calculateForwardTrajectory(100, 100, Infinity, 80, [], 40);
+    assert.deepEqual(infPullTraj, [], "Must return empty array on infinite pullX");
+
+    // Entity with NaN coordinate should be ignored without polluting trajectory
+    const nanEntity: CelestialEntity = {
+      type: "blackhole",
+      x: NaN,
+      y: NaN,
+      radius: 50,
+      color: "#ff0000",
+      mass: 50000,
+    };
+    const validBh: CelestialEntity = {
+      type: "blackhole",
+      x: 300,
+      y: 300,
+      radius: 50,
+      color: "#ff8844",
+      mass: 50000,
+    };
+    const trajWithNanEntity = calculateForwardTrajectory(100, 100, 80, 80, [nanEntity, validBh], 30);
+    assert.ok(trajWithNanEntity.length > 0, "Trajectory calculation should proceed ignoring corrupted entity");
+    trajWithNanEntity.forEach((pt) => {
+      assert.ok(isFinite(pt.x) && isFinite(pt.y) && isFinite(pt.speed), "Trajectory point must remain strictly finite");
+    });
+  });
+
   runTest("TidalDisruptionEngine: validates quiescent initial state and hyperbolic inbound trajectory trigger", () => {
     const tde = createInitialTdeState();
     assert.equal(tde.stage, "IDLE");
@@ -550,6 +611,26 @@ async function runAllTests() {
     }
   });
 
+  runTest("isUIElement: correctly classifies interactive UI DOM elements versus WebGL canvas", () => {
+    assert.equal(isUIElement(null), false, "Null target should return false");
+    const dummyCanvas: any = { tagName: "CANVAS", id: "canvas-babylon" };
+    assert.equal(isUIElement(dummyCanvas), false, "Canvas element should return false");
+
+    const dummyButton: any = {
+      tagName: "BUTTON",
+      id: "action-btn",
+      closest: (sel: string) => sel.includes("button"),
+    };
+    assert.equal(isUIElement(dummyButton), true, "Button element should return true");
+
+    const dummyInput: any = {
+      tagName: "INPUT",
+      id: "search",
+      closest: (sel: string) => sel.includes("input"),
+    };
+    assert.equal(isUIElement(dummyInput), true, "Input element should return true");
+  });
+
   await runTest("Telemetry Pipeline: validates client error filtering, duplicate deduplication, and throttling", async () => {
     resetTelemetryThrottling();
     assert.equal(isIgnoredErrorMessage("WebSocket connection to 'ws://...' failed"), true);
@@ -568,6 +649,12 @@ async function runAllTests() {
     // Test ignored error rejection
     const ignored = await reportClientError("WebSocket failed to connect to websocket", "test-suite");
     assert.equal(ignored, false, "Telemetry should ignore websocket noise");
+  });
+
+  runTest("Telemetry Pipeline: suppresses benign ResizeObserver loop and Safari extension notifications", () => {
+    assert.equal(isIgnoredErrorMessage("ResizeObserver loop completed with undelivered notifications."), true);
+    assert.equal(isIgnoredErrorMessage("ResizeObserver loop limit exceeded"), true);
+    assert.equal(isIgnoredErrorMessage("safari-extension://com.example.blocker/script.js:10"), true);
   });
 
   console.log("\n==> Testing HTTP Server Endpoints & Integration");
@@ -611,12 +698,16 @@ async function runAllTests() {
     });
   };
 
-  await runTest("GET /health: returns healthy status and uptime", async () => {
+  await runTest("GET /health: returns healthy status, uptime, nodeVersion, and memoryUsage diagnostics", async () => {
     const res = await makeRequest("/health");
     assert.equal(res.status, 200);
     assert.equal(res.body.status, "healthy");
     assert.equal(res.body.service, "curtis-click-portfolio");
     assert.ok(typeof res.body.uptime === "number");
+    assert.ok(typeof res.body.nodeVersion === "string" && res.body.nodeVersion.startsWith("v"));
+    assert.ok(typeof res.body.memoryUsage === "object");
+    assert.ok(typeof res.body.memoryUsage.rss === "number" && res.body.memoryUsage.rss > 0);
+    assert.ok(typeof res.body.memoryUsage.heapUsed === "number" && res.body.memoryUsage.heapUsed > 0);
   });
 
   await runTest("GET /api/health: responds to container probes", async () => {

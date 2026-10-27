@@ -28,7 +28,7 @@ Interactive 3D developer portfolio and cosmic web visualizer built with React 19
 | `npm run dev` | `tsx server.ts` | Start development server with Vite middleware |
 | `npm run build` | `vite build && esbuild server.ts ...` | Build client assets to `dist/` and server to `dist/server.cjs` |
 | `npm run lint` | `tsc --noEmit` | Run TypeScript type checking without emitting files |
-| `npm test` | `tsc --noEmit && tsx scripts/test-integrity.ts` | Execute TypeScript check and the automated 32-test integrity test suite |
+| `npm test` | `tsc --noEmit && tsx scripts/test-integrity.ts` | Execute TypeScript check and the automated 36-test integrity test suite |
 | `npm start` | `node dist/server.cjs` | Run the compiled production server on port 8080 (or `$PORT`) |
 | `npm run clean` | `rm -rf dist server.js client_errors.log` | Clean build outputs and local log files |
 
@@ -36,8 +36,8 @@ Interactive 3D developer portfolio and cosmic web visualizer built with React 19
 
 The server exposes lightweight health check endpoints for container orchestrators, Docker healthchecks, and uptime monitors:
 
-- `GET /health` — Returns JSON `{ status: "healthy", service: "curtis-click-portfolio", timestamp, uptime }`
-- `GET /api/health` — API health check alias
+- `GET /health` — Returns JSON `{ status: "healthy", service: "curtis-click-portfolio", timestamp, uptime, nodeVersion, memoryUsage: { rss, heapTotal, heapUsed } }`
+- `GET /api/health` — API health check alias (returns identical payload)
 - `POST /api/generate-cosmic-scene` — Generates a dynamic cosmic system via Gemini 2.5 Flash or procedural fallback (supports optional `{ archetype, prompt }` JSON payload for targeted generation with archetype validation)
 - `POST /api/log-error` — Ingests client-side telemetry and error logs with structured object parsing, string sanitization, and automated 1MB log rotation
 - `ALL /api/*` — 404 handler preventing unmatched API requests from serving client HTML

@@ -40,6 +40,7 @@ flowchart TD
 - **[`RenderEngine.ts`](file:///home/corp/curtis-click-portfolio/src/components/ParticleCanvas/RenderEngine.ts)**: Main animation loop executing 60 FPS delta-time physics updates, camera shake dampening, slingshot probe updates, and particle velocity fields.
 - **[`PhysicsUtils.ts`](file:///home/corp/curtis-click-portfolio/src/components/ParticleCanvas/PhysicsUtils.ts) & [`CollisionEngine.ts`](file:///home/corp/curtis-click-portfolio/src/components/ParticleCanvas/CollisionEngine.ts)**:
   - Conservation of Momentum & Energy elastic/inelastic collision solver with overlap resolution.
+  - Defensive non-finite and NaN coordinate rejection (`isNaN(dist) || !isFinite(dist) || dist <= 0.0001 || e1.radius <= 0 || e2.radius <= 0`) and positive mass validation preventing division-by-zero or physics state corruption.
   - Spawns incandescent 3D collision flares (`spawnCollisionFlare`) and high-velocity shatter debris (`createShatterDebris`) upon violent celestial body impacts.
   - Unified flare lifecycle management (`updateCollisionFlares`) with safe WebGL material disposal and scaling decay.
   - Procedural Value Noise and Fractional Brownian Motion (fBm) 2D/3D noise algorithms.
@@ -47,6 +48,7 @@ flowchart TD
   - Hex color normalization and blending with shorthand 3-digit hex code expansion.
 - **[`SlingshotEngine.ts`](file:///home/corp/curtis-click-portfolio/src/components/ParticleCanvas/SlingshotEngine.ts)**:
   - Solves Runge-Kutta / Euler n-body gravitational trajectory forecasts for interactive probe launches.
+  - Defensive non-finite coordinate barriers (`!isFinite(originX) || !isFinite(originY) || !isFinite(pullX) || !isFinite(pullY)`) returning safe empty trajectories, and automatic filtering of entities with non-finite coordinates.
   - Deterministic forward trajectory calculation eliminating aim preview depth-jitter.
   - Scale-aware celestial gravitation that safely ignores zero-scale (`scale <= 0.01`) or despawning bodies to prevent unnatural trajectory snaps.
   - Event horizon capture detection (`isHorizonBound`) and sub-lightspeed ceiling (55.0).
@@ -56,9 +58,9 @@ flowchart TD
   - Progression safeguards ensuring smooth transitions to `ACCRETION_SURGE` upon stellar core mass depletion, with bounded particle streamer management (max 400).
 - **[`ParticleCanvas.tsx`](file:///home/corp/curtis-click-portfolio/src/components/ParticleCanvas.tsx) Resource Lifecycle Management**:
   - Enforces strict teardown order upon component unmount:
-    1. Clear active timeouts and interval timers.
+    1. Clear active timeouts, interval timers, and debounced resize listeners (`clearTimeout(resizeTimeout)`).
     2. Detach event listeners and remove pointer observers.
-    3. Dispose all celestial mesh subsystems (e.g., active `hawkingSystem` quantum particle emitters).
+    3. Dispose all celestial mesh subsystems (e.g., active `hawkingSystem` quantum particle emitters and parent mesh materials/textures).
     4. Dispose active post-processes and custom FX (`lensingPostProcessRef`, `wormholePostProcessRef`, `dofPostProcessRef`, `shatterPostProcessRef`, `activeTdeFxRef`, `activeSupernovaFxRef`).
     5. Dispose `glowLayerRef`, `hudTextureRef`, and `hudPlaneRef`.
     6. Dispose rendering pipeline (`composerRef`).
@@ -85,10 +87,11 @@ flowchart TD
   - Archetype validation and sanitization guaranteeing that model outputs conform strictly to one of the 6 recognized core archetypes (`BLACKHOLE_CENTRIC`, `BINARY_PLANETS`, `NEBULA_CRADLE`, `EXOPLANET_CLUSTER`, `SPIRAL_GALAXY`, `STELLAR_PULSAR`).
   - Automatic fallback to `getProceduralFallbackSystem(requestedArchetype)` on network errors or rate limits (`429`).
 - **Container Health Probes**:
-  - `GET /health` and `GET /api/health` return service status, ISO timestamp, and process uptime.
+  - `GET /health` and `GET /api/health` return service status, ISO timestamp, process uptime, Node.js runtime version, and memory usage metrics (`rss`, `heapTotal`, `heapUsed`).
   - Dedicated `ALL /api/*` 404 handler prevents missing API routes from inadvertently returning HTML.
 - **Telemetry Ingestion & Bounded Logging**:
   - `POST /api/log-error` handles both string and structured JSON error objects, sanitizing payloads (500 character ceiling) and rotating/truncating `client_errors.log` if size exceeds 1MB, ensuring storage stability.
+  - Client-side telemetry suppression filters out browser extension anomalies (`chrome-extension://`, `moz-extension://`, `safari-extension://`) and benign layout warnings (`ResizeObserver loop completed with undelivered notifications`, `ResizeObserver loop limit exceeded`).
 - **Port Conflict Handling (`EADDRINUSE`)**:
   - Handles occupied ports gracefully with clear diagnostic output recommending port override via `PORT=<port>`.
 - **Graceful Shutdown**:
@@ -98,20 +101,20 @@ flowchart TD
 
 ## 4. Verification & Testing ([`scripts/test-integrity.ts`](file:///home/corp/curtis-click-portfolio/scripts/test-integrity.ts))
 
-The project includes an automated 32-test integrity test suite verifying:
+The project includes an automated 36-test integrity test suite verifying:
 1. **Hex Color Utilities**: 6-digit hex preservation, 3-digit shorthand expansion (`#fff` -> `#ffffff`), and NaN-free blending.
-2. **Physics & Noise Calculations**: `valueNoise2D` bounds, `fBmNoise2D` octave aggregation, `computeCurlNoise` vector output, and `resolveCelestialCollision` momentum conservation.
+2. **Physics & Noise Calculations**: `valueNoise2D` bounds, `fBmNoise2D` octave aggregation, `computeCurlNoise` vector output, `resolveCelestialCollision` momentum conservation, and defensive rejection of non-finite/NaN coordinates, zero separation, and negative radii.
 3. **Collision Flares & Accretion Dynamics**: `swallowEntity` mass transfer and radius swelling, as well as `updateCollisionFlares` decay and `disposeCollisionFlares` GPU material cleanup.
 4. **Cosmic Generator Contracts**: Entity counts, all 6 valid archetypes across 70 iterations, positive radii, required tags, targeted archetype overrides, and unknown archetype fallback sanitization.
 5. **Procedural Scene Builders**: Verification of all 6 scene builders (`buildBlackholeCentricScene`, `buildSpiralGalaxyScene`, `buildStellarPulsarScene`, `buildBinaryPlanetsScene`, `buildExoplanetClusterScene`, `buildNebulaCradleScene`).
 6. **Astrophysics Mechanics**:
    - `createNeutronStarBirthEvent`: core collapse remnant mass safety and collapse semantics.
-   - `calculateForwardTrajectory`: deterministic prediction, sub-lightspeed ceiling (55.0), event horizon capture, and zero-scale entity filtering.
+   - `calculateForwardTrajectory`: deterministic prediction, sub-lightspeed ceiling (55.0), event horizon capture, zero-scale entity filtering, and defensive guards against non-finite origin/pull coordinates and corrupted entities.
    - `TidalDisruptionEngine`: initial quiescent state, hyperbolic inbound trajectory trigger, double-trigger prevention, and mass-depleted progression safeguards advancing `ROCHE_RUPTURE` to `ACCRETION_SURGE`.
 7. **Audio Engine Boundary Conditions**: `audio.getMuteState()`, parameter clamping, SSR/Node runtime guard, and clean teardown.
 8. **Cosmic Transition State Machine & Particle Utilities**:
    - `CosmicTransitionStateMachine` & `TransitionManager`: asynchronous stages (`SUPERNOVA_IMPLODE` -> `SUPERNOVA_DETONATE` -> `SUPERNOVA_REBIRTH` -> `TRANSITION_COMPLETE`), abort signal propagation, clean cancellation, and SSR safety in `triggerCalmCosmicShift` without window object.
    - `ParticleUtils`: SSR safety for `particleText` and `generateTargetsForStage` in headless Node environments, zero/negative dimension guards, and defensive out-of-bounds guards in `drawStageLayoutTemplate`.
-9. **Static Assets & Production Bundles**: `public/favicon.svg`, `index.html` metadata, `dist/server.cjs` bundle size, `dist/index.html`, and clean 3-bundle chunk assets in `dist/assets` (`babylon`, `vendor`, `index`).
-10. **Client Telemetry Pipeline**: Client-side error filtering, duplicate deduplication, rate limiting, and safe payload transmission to `/api/log-error`.
-11. **Server Integration & Fault Tolerance**: Ephemeral port binding, `/health` response verification, requested archetype support, structured object error log sanitization & bounding, 404 routing, and clean promise rejection on port conflict (`EADDRINUSE`).
+9. **Static Assets & Production Bundles**: `public/favicon.svg`, `index.html` metadata, `dist/server.cjs` bundle size, `dist/index.html`, clean 3-bundle chunk assets in `dist/assets` (`babylon`, `vendor`, `index`), and DOM UI element classification (`isUIElement`).
+10. **Client Telemetry Pipeline**: Client-side error filtering, duplicate deduplication, rate limiting, suppression of benign ResizeObserver and Safari extension noise, and safe payload transmission to `/api/log-error`.
+11. **Server Integration & Fault Tolerance**: Ephemeral port binding, `/health` response verification with node version and memory diagnostics, requested archetype support, structured object error log sanitization & bounding, 404 routing, and clean promise rejection on port conflict (`EADDRINUSE`).
