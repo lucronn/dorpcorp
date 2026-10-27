@@ -4,22 +4,28 @@ import { generateTargetsForStage } from "./ParticleUtils";
 
 export function syncParticleColors(particlesList: Particle[]): void {
   particlesList.forEach((p) => {
-    if (p.color && typeof p.color === "string" && p.color.startsWith("#") && p.color.length >= 7) {
-      p.r = parseInt(p.color.slice(1, 3), 16);
-      p.g = parseInt(p.color.slice(3, 5), 16);
-      p.b = parseInt(p.color.slice(5, 7), 16);
+    if (p.color && typeof p.color === "string" && p.color.startsWith("#")) {
+      const hex = p.color.length === 4
+        ? `#${p.color[1]}${p.color[1]}${p.color[2]}${p.color[2]}${p.color[3]}${p.color[3]}`
+        : p.color;
+      if (hex.length >= 7) {
+        p.r = parseInt(hex.slice(1, 3), 16) || 255;
+        p.g = parseInt(hex.slice(3, 5), 16) || 255;
+        p.b = parseInt(hex.slice(5, 7), 16) || 255;
+        return;
+      }
     } else if (p.color && typeof p.color === "string" && p.color.startsWith("rgb")) {
       const matches = p.color.match(/\d+/g);
       if (matches) {
         p.r = parseInt(matches[0] || "255", 10);
         p.g = parseInt(matches[1] || "255", 10);
         p.b = parseInt(matches[2] || "255", 10);
+        return;
       }
-    } else {
-      p.r = 255;
-      p.g = 255;
-      p.b = 255;
     }
+    p.r = 255;
+    p.g = 255;
+    p.b = 255;
   });
 }
 

@@ -156,6 +156,10 @@ export default function App() {
     };
 
     const origLog = console.log;
+    const origError = console.error;
+    const origOnError = window.onerror;
+    const origOnUnhandledRejection = window.onunhandledrejection;
+
     console.log = (...args) => {
       origLog(...args);
       const msg = args.map(safeStringify).join(' ');
@@ -164,7 +168,6 @@ export default function App() {
       }
     };
 
-    const origError = console.error;
     console.error = (...args) => {
       origError(...args);
       const msg = '[ERROR] ' + args.map(safeStringify).join(' ');
@@ -185,6 +188,13 @@ export default function App() {
       if (!isIgnored(msg)) {
         setDebugLogs((prev) => [...prev.slice(-15), msg]);
       }
+    };
+
+    return () => {
+      console.log = origLog;
+      console.error = origError;
+      window.onerror = origOnError;
+      window.onunhandledrejection = origOnUnhandledRejection;
     };
   }, []);
 

@@ -1102,12 +1102,28 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     };
 
     return () => {
+      mappingTimersRef.current.forEach(clearTimeout);
+      mappingTimersRef.current = [];
+
+      collisionFlaresRef.current.forEach((flare) => {
+        if (flare.mesh.material) {
+          flare.mesh.material.dispose(false, true);
+        }
+        flare.mesh.dispose();
+      });
+      collisionFlaresRef.current = [];
+
       cleanupEvents();
+      composerRef.current?.dispose();
       activeTdeFxRef.current?.dispose();
       dofPostProcessRef.current?.dispose();
       shatterPostProcessRef.current?.dispose();
+      if (sceneRef.current) {
+        sceneRef.current.dispose();
+      }
       delete (window as any).activateSequence;
       delete (window as any).__cosmicCanvas;
+      delete (window as any).__onSelectedEntityChange;
     };
   }, []);
 

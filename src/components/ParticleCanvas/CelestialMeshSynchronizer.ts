@@ -97,7 +97,9 @@ export function updateCelestial3DMeshes(
   stageRef: React.MutableRefObject<number>,
   screensaverOpacityRef: React.MutableRefObject<number>,
   lastStageChangeRef: React.MutableRefObject<number>,
-  collisionFlaresRef: React.MutableRefObject<{ mesh: BABYLON.Mesh; life: number }[]>,
+  collisionFlaresRef: React.MutableRefObject<
+    Array<{ mesh: BABYLON.Mesh; life: number; maxLife: number; initialRadius: number }>
+  >,
   spawnTailParticleRef: React.MutableRefObject<any>
 ): void {
   try {
@@ -447,6 +449,8 @@ export function updateCelestial3DMeshes(
               collisionFlaresRef.current.push({
                 mesh: flareMesh,
                 life: 1.0,
+                maxLife: 1.0,
+                initialRadius: bh.radius * 2.8,
               });
             }
 

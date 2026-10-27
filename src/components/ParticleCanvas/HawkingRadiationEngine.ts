@@ -110,6 +110,8 @@ export function createHawkingRadiationSystem(
     },
     dispose() {
       try {
+        (window as any).__hawkingActive = false;
+        (window as any).__hawkingIntensity = 0;
         ps.stop();
         ps.dispose();
         sparkTex.dispose();

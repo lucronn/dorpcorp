@@ -6,9 +6,157 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-async function startServer() {
+// Procedural Fallback Cosmic System Generator
+export function getProceduralFallbackSystem() {
+  const archetypes = ["BLACKHOLE_CENTRIC", "BINARY_PLANETS", "NEBULA_CRADLE", "EXOPLANET_CLUSTER", "SPIRAL_GALAXY"];
+  const chosenArchetype = archetypes[Math.floor(Math.random() * archetypes.length)] || "BLACKHOLE_CENTRIC";
+
+  const prefixes = ["Aethel", "Vespera", "Helios", "Kalypsos", "Zephyrus", "Hyperion", "Thalassa", "Kronos", "Astraea", "Celestia", "Elysium", "Nebulon", "Xenon"];
+  const suffixes = ["Prime", "Resonance", "Anomalous", "Cradle", "Filament", "Spire", "Vortex", "Horizon", "Singularity", "Nursery", "Barycenter", "Clusters", "Borealis"];
+  const systemName = `${prefixes[Math.floor(Math.random() * prefixes.length)]} ${suffixes[Math.floor(Math.random() * suffixes.length)]}-${Math.floor(Math.random() * 90 + 10)}`;
+
+  let systemDesc = "";
+  let systemTags: string[] = [];
+  const entities: any[] = [];
+
+  const hexColors = ["#ffffff", "#ffccaa", "#aaccff", "#ffddbb", "#cc8844", "#88bbff", "#aa4422", "#44aa44", "#cccccc"];
+  const randomColor = () => hexColors[Math.floor(Math.random() * hexColors.length)];
+
+  if (chosenArchetype === "BLACKHOLE_CENTRIC") {
+    systemDesc = `A highly unstable gravitational pocket dominated by a spinning Kerr black hole. Relativistic lensing bends the luminescent light from twin surrounding diamond exoplanets into warped Einstein rings.`;
+    systemTags = ["🕳 KERR SINGULARITY", "☄ RELATIVISTIC LENS", "★ ACCRETION PULSE"];
+    
+    entities.push({
+      type: "blackhole",
+      radius: Math.floor(Math.random() * 20 + 55),
+      color: "#ff8844",
+      secondaryColor: "#ff4422"
+    });
+    const count = Math.floor(Math.random() * 2 + 1);
+    for (let i = 0; i < count; i++) {
+      entities.push({
+        type: "planet",
+        radius: Math.floor(Math.random() * 15 + 15),
+        color: randomColor(),
+        secondaryColor: randomColor(),
+        hasRings: Math.random() > 0.4,
+        ringColor: "rgba(200, 200, 200, 0.4)"
+      });
+    }
+    entities.push({
+      type: "star",
+      radius: Math.floor(Math.random() * 10 + 20),
+      color: "#ffffff",
+      secondaryColor: "#aaccff"
+    });
+  } else if (chosenArchetype === "BINARY_PLANETS") {
+    systemDesc = `Two massive, twin planets tidally locked to one another, orbiting a common barycenter. Ionized particle winds bridge their upper atmospheres, generating a permanent bridge of glowing auroral light.`;
+    systemTags = ["☄ TIDAL LOCK", "⚡ IONIC WIND", "★ BARYCENTER"];
+
+    entities.push({
+      type: "star",
+      radius: Math.floor(Math.random() * 15 + 40),
+      color: randomColor(),
+      secondaryColor: randomColor()
+    });
+    entities.push({
+      type: "planet",
+      radius: 30,
+      color: "#2255aa",
+      secondaryColor: "#44aa44",
+      hasRings: true,
+      ringColor: "rgba(220, 220, 220, 0.35)"
+    });
+    entities.push({
+      type: "planet",
+      radius: 26,
+      color: "#cc8844",
+      secondaryColor: "#aa4422",
+      hasRings: false
+    });
+  } else if (chosenArchetype === "NEBULA_CRADLE") {
+    systemDesc = `An ethereal, multicolored stellar nursery of ionized hydrogen gas and cosmic dust. Intense stellar winds from newly formed hypergiants sculpt majestic glowing hollows and dense protostellar cores.`;
+    systemTags = ["☁ COSMIC NURSERY", "★ STELLAR WIND", "⚛ HYDROGEN CLOUD"];
+
+    entities.push({
+      type: "nebula",
+      radius: Math.floor(Math.random() * 100 + 250),
+      color: "#ff4466",
+      secondaryColor: "#4488ff"
+    });
+    entities.push({
+      type: "star",
+      radius: 35,
+      color: "#aaccff",
+      secondaryColor: "#ffffff"
+    });
+    entities.push({
+      type: "planet",
+      radius: 22,
+      color: "#ffddbb",
+      secondaryColor: "#cc8844",
+      hasRings: true,
+      ringColor: "rgba(255, 255, 255, 0.45)"
+    });
+  } else if (chosenArchetype === "EXOPLANET_CLUSTER") {
+    systemDesc = `A rare, perfectly resonant chain of crystalline planets sharing a stable orbit. Silicate rich sands on their surfaces reflect the brilliant golden radiation of their host hypergiant star.`;
+    systemTags = ["💎 SILICATE DUNE", "☀ RESONANT CHAINS", "★ GOLDEN STAR"];
+
+    entities.push({
+      type: "star",
+      radius: 50,
+      color: "#ffccaa",
+      secondaryColor: "#ffddbb"
+    });
+    const count = Math.floor(Math.random() * 2 + 2);
+    for (let i = 0; i < count; i++) {
+      entities.push({
+        type: "planet",
+        radius: Math.floor(Math.random() * 10 + 15),
+        color: randomColor(),
+        secondaryColor: randomColor(),
+        hasRings: Math.random() > 0.5,
+        ringColor: "rgba(255, 255, 255, 0.4)"
+      });
+    }
+  } else {
+    systemDesc = `A spectacular galactic arm composed of countless blue giant stars, swirling dust filaments, and intense interstellar radiation fields centered around an ultra-dense stellar core.`;
+    systemTags = ["🌀 GALACTIC FILAMENT", "★ SWIRLING SHADOW", "☄ COLD DUST"];
+
+    entities.push({
+      type: "star",
+      radius: 38,
+      color: "#aaccff",
+      secondaryColor: "#ffffff"
+    });
+    entities.push({
+      type: "nebula",
+      radius: 300,
+      color: "#4488ff",
+      secondaryColor: "#ff4466"
+    });
+    entities.push({
+      type: "planet",
+      radius: 20,
+      color: "#44aa44",
+      secondaryColor: "#2255aa",
+      hasRings: true,
+      ringColor: "rgba(200, 200, 200, 0.3)"
+    });
+  }
+
+  return {
+    systemName,
+    systemDesc,
+    systemTags,
+    archetype: chosenArchetype,
+    entities
+  };
+}
+
+export async function startServer(portOverride?: number) {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const PORT = portOverride !== undefined ? portOverride : (Number(process.env.PORT) || 8080);
 
   app.use(express.json());
 
@@ -32,156 +180,18 @@ async function startServer() {
     return ai;
   }
 
-  // Procedural Fallback Cosmic System Generator
-  function getProceduralFallbackSystem() {
-    const archetypes = ["BLACKHOLE_CENTRIC", "BINARY_PLANETS", "NEBULA_CRADLE", "EXOPLANET_CLUSTER", "SPIRAL_GALAXY"];
-    const chosenArchetype = archetypes[Math.floor(Math.random() * archetypes.length)] || "BLACKHOLE_CENTRIC";
+  // Health check endpoints for Docker / Cloud Run / Kubernetes probes
+  app.get(["/health", "/api/health"], (req, res) => {
+    res.json({
+      status: "healthy",
+      service: "curtis-click-portfolio",
+      timestamp: new Date().toISOString(),
+      uptime: Math.floor(process.uptime()),
+    });
+  });
 
-    const prefixes = ["Aethel", "Vespera", "Helios", "Kalypsos", "Zephyrus", "Hyperion", "Thalassa", "Kronos", "Astraea", "Celestia", "Elysium", "Nebulon", "Xenon"];
-    const suffixes = ["Prime", "Resonance", "Anomalous", "Cradle", "Filament", "Spire", "Vortex", "Horizon", "Singularity", "Nursery", "Barycenter", "Clusters", "Borealis"];
-    const systemName = `${prefixes[Math.floor(Math.random() * prefixes.length)]} ${suffixes[Math.floor(Math.random() * suffixes.length)]}-${Math.floor(Math.random() * 90 + 10)}`;
-
-    let systemDesc = "";
-    let systemTags: string[] = [];
-    const entities: any[] = [];
-
-    const hexColors = ["#ffffff", "#ffccaa", "#aaccff", "#ffddbb", "#cc8844", "#88bbff", "#aa4422", "#44aa44", "#cccccc"];
-    const randomColor = () => hexColors[Math.floor(Math.random() * hexColors.length)];
-
-    if (chosenArchetype === "BLACKHOLE_CENTRIC") {
-      systemDesc = `A highly unstable gravitational pocket dominated by a spinning Kerr black hole. Relativistic lensing bends the luminescent light from twin surrounding diamond exoplanets into warped Einstein rings.`;
-      systemTags = ["🕳 KERR SINGULARITY", "☄ RELATIVISTIC LENS", "★ ACCRETION PULSE"];
-      
-      entities.push({
-        type: "blackhole",
-        radius: Math.floor(Math.random() * 20 + 55),
-        color: "#ff8844",
-        secondaryColor: "#ff4422"
-      });
-      const count = Math.floor(Math.random() * 2 + 1);
-      for (let i = 0; i < count; i++) {
-        entities.push({
-          type: "planet",
-          radius: Math.floor(Math.random() * 15 + 15),
-          color: randomColor(),
-          secondaryColor: randomColor(),
-          hasRings: Math.random() > 0.4,
-          ringColor: "rgba(200, 200, 200, 0.4)"
-        });
-      }
-      entities.push({
-        type: "star",
-        radius: Math.floor(Math.random() * 10 + 20),
-        color: "#ffffff",
-        secondaryColor: "#aaccff"
-      });
-    } else if (chosenArchetype === "BINARY_PLANETS") {
-      systemDesc = `Two massive, twin planets tidally locked to one another, orbiting a common barycenter. Ionized particle winds bridge their upper atmospheres, generating a permanent bridge of glowing auroral light.`;
-      systemTags = ["☄ TIDAL LOCK", "⚡ IONIC WIND", "★ BARYCENTER"];
-
-      entities.push({
-        type: "star",
-        radius: Math.floor(Math.random() * 15 + 40),
-        color: randomColor(),
-        secondaryColor: randomColor()
-      });
-      entities.push({
-        type: "planet",
-        radius: 30,
-        color: "#2255aa",
-        secondaryColor: "#44aa44",
-        hasRings: true,
-        ringColor: "rgba(220, 220, 220, 0.35)"
-      });
-      entities.push({
-        type: "planet",
-        radius: 26,
-        color: "#cc8844",
-        secondaryColor: "#aa4422",
-        hasRings: false
-      });
-    } else if (chosenArchetype === "NEBULA_CRADLE") {
-      systemDesc = `An ethereal, multicolored stellar nursery of ionized hydrogen gas and cosmic dust. Intense stellar winds from newly formed hypergiants sculpt majestic glowing hollows and dense protostellar cores.`;
-      systemTags = ["☁ COSMIC NURSERY", "★ STELLAR WIND", "⚛ HYDROGEN CLOUD"];
-
-      entities.push({
-        type: "nebula",
-        radius: Math.floor(Math.random() * 100 + 250),
-        color: "#ff4466",
-        secondaryColor: "#4488ff"
-      });
-      entities.push({
-        type: "star",
-        radius: 35,
-        color: "#aaccff",
-        secondaryColor: "#ffffff"
-      });
-      entities.push({
-        type: "planet",
-        radius: 22,
-        color: "#ffddbb",
-        secondaryColor: "#cc8844",
-        hasRings: true,
-        ringColor: "rgba(255, 255, 255, 0.45)"
-      });
-    } else if (chosenArchetype === "EXOPLANET_CLUSTER") {
-      systemDesc = `A rare, perfectly resonant chain of crystalline planets sharing a stable orbit. Silicate rich sands on their surfaces reflect the brilliant golden radiation of their host hypergiant star.`;
-      systemTags = ["💎 SILICATE DUNE", "☀ RESONANT CHAINS", "★ GOLDEN STAR"];
-
-      entities.push({
-        type: "star",
-        radius: 50,
-        color: "#ffccaa",
-        secondaryColor: "#ffddbb"
-      });
-      const count = Math.floor(Math.random() * 2 + 2);
-      for (let i = 0; i < count; i++) {
-        entities.push({
-          type: "planet",
-          radius: Math.floor(Math.random() * 10 + 15),
-          color: randomColor(),
-          secondaryColor: randomColor(),
-          hasRings: Math.random() > 0.5,
-          ringColor: "rgba(255, 255, 255, 0.4)"
-        });
-      }
-    } else {
-      systemDesc = `A spectacular galactic arm composed of countless blue giant stars, swirling dust filaments, and intense interstellar radiation fields centered around an ultra-dense stellar core.`;
-      systemTags = ["🌀 GALACTIC FILAMENT", "★ SWIRLING SHADOW", "☄ COLD DUST"];
-
-      entities.push({
-        type: "star",
-        radius: 38,
-        color: "#aaccff",
-        secondaryColor: "#ffffff"
-      });
-      entities.push({
-        type: "nebula",
-        radius: 300,
-        color: "#4488ff",
-        secondaryColor: "#ff4466"
-      });
-      entities.push({
-        type: "planet",
-        radius: 20,
-        color: "#44aa44",
-        secondaryColor: "#2255aa",
-        hasRings: true,
-        ringColor: "rgba(200, 200, 200, 0.3)"
-      });
-    }
-
-    return {
-      systemName,
-      systemDesc,
-      systemTags,
-      archetype: chosenArchetype,
-      entities
-    };
-  }
-
-  // API endpoint to generate cosmic scene
-  app.post("/api/log-error", express.json(), (req, res) => {
+  // Client error logging endpoint
+  app.post("/api/log-error", (req, res) => {
     console.log("CLIENT ERROR:", req.body?.error);
     try {
       fs.appendFileSync('client_errors.log', new Date().toISOString() + ': ' + (req.body?.error || 'Unknown error') + '\n');
@@ -194,8 +204,9 @@ async function startServer() {
   app.post("/api/generate-cosmic-scene", async (req, res) => {
     try {
       const client = getAIClient();
+      const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
       const response = await client.models.generateContent({
-        model: "gemini-3.5-flash",
+        model,
         contents: "Generate a completely unique, highly imaginative, custom cosmic system. Focus on realistic, high-fidelity space objects, avoiding plain neon colors.",
         config: {
           responseMimeType: "application/json",
@@ -262,7 +273,11 @@ async function startServer() {
       if (!text) {
         throw new Error("No text returned from Gemini API");
       }
-      const data = JSON.parse(text.trim());
+      let cleanText = text.trim();
+      if (cleanText.startsWith("```")) {
+        cleanText = cleanText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+      }
+      const data = JSON.parse(cleanText);
       res.json(data);
     } catch (err: any) {
       // If we hit a rate limit or other error, fallback quietly without a scary stack trace
@@ -272,8 +287,13 @@ async function startServer() {
     }
   });
 
+  // 404 handler for unrecognized /api routes to prevent returning SPA index.html
+  app.all("/api/*", (req, res) => {
+    res.status(404).json({ error: "Endpoint not found" });
+  });
+
   // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: {
@@ -283,7 +303,7 @@ async function startServer() {
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else {
+  } else if (process.env.NODE_ENV === "production") {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
@@ -291,9 +311,38 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  const server = app.listen(PORT, "0.0.0.0");
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  const boundAddress = server.address();
+  const actualPort = typeof boundAddress === "object" && boundAddress ? boundAddress.port : PORT;
+  console.log(`Server running on http://localhost:${actualPort}`);
+
+  const shutdown = (signal: string) => {
+    console.log(`Received ${signal}. Gracefully shutting down...`);
+    server.close(() => {
+      console.log("HTTP server closed.");
+      process.exit(0);
+    });
+    setTimeout(() => {
+      console.error("Forced shutdown after timeout.");
+      process.exit(1);
+    }, 10000).unref();
+  };
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
+
+  return { app, server };
 }
 
-startServer();
+// Auto-start when executed directly as application entrypoint
+const isDirectRun = Boolean(
+  process.argv[1] &&
+    (process.argv[1].endsWith("server.ts") ||
+      process.argv[1].endsWith("server.cjs") ||
+      process.argv[1].endsWith("server.js"))
+);
+
+if (isDirectRun && process.env.NODE_ENV !== "test") {
+  startServer();
+}

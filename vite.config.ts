@@ -12,7 +12,7 @@ export default defineConfig(() => {
       },
     },
     build: {
-      chunkSizeWarningLimit: 6000,
+      chunkSizeWarningLimit: 7000,
       rollupOptions: {
         output: {
           manualChunks: {

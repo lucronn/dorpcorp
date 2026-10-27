@@ -392,7 +392,7 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
         remainingFlares.push(flare);
       } else {
         if (flare.mesh.material) {
-          flare.mesh.material.dispose();
+          flare.mesh.material.dispose(false, true);
         }
         flare.mesh.dispose();
       }

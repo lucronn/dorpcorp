@@ -14,7 +14,12 @@ export function createNeutronStarBirthEvent(
   star.isDestroyed = true;
 
   const isNeutronStar = Math.random() > 0.5;
+  const starMass = star.mass ?? (star.radius * star.radius * 2);
+  const remnantMass = isNeutronStar ? starMass * 0.6 : starMass * 1.5;
+
+  const remnantId = `${isNeutronStar ? "neutron-star" : "micro-singularity"}-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 7)}`;
   const remnant: CelestialEntity = {
+    id: remnantId,
     type: isNeutronStar ? "star" : "blackhole",
     x: star.x,
     y: star.y,
@@ -23,7 +28,8 @@ export function createNeutronStarBirthEvent(
     secondaryColor: isNeutronStar ? "#ffffff" : "#000000",
     vx: (star.vx || 0) * 0.5,
     vy: (star.vy || 0) * 0.5,
-    mass: isNeutronStar ? star.mass * 0.6 : star.mass * 1.5,
+    mass: remnantMass,
+    initialMass: remnantMass,
     scale: 0.05,
     currentRadius: isNeutronStar ? 6 : 10,
     originalRadius: isNeutronStar ? 6 : 10,

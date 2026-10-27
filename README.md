@@ -1,24 +1,64 @@
 # curtis.click Portfolio
 
-Interactive 3D developer portfolio and cosmic web visualizer built with React 19, Babylon.js, Tailwind CSS 4, Motion, and Node.js.
+Interactive 3D developer portfolio and cosmic web visualizer built with React 19, Babylon.js 9, Tailwind CSS 4, Motion, and Node.js.
+
+## Key Features
+
+- **Relativistic Astrophysics Engine**: Real-time 3D simulation powered by Babylon.js with custom GLSL post-processing shaders for Schwarzschild black hole gravitational lensing, depth-of-field blur, Voronoi frame shattering, and spacetime fabric distortion.
+- **Interactive Astrophysics Tools**:
+  - **Gravitational Slingshot Probes**: Launch probes with real-time trajectory forecasting around orbital bodies, calculating n-body gravitational pull and relativistic swallowing.
+  - **Tidal Disruption Events (TDE)**: Trigger Roche-limit stellar disruption simulations complete with asymmetric tidal shear, accretion disk flare, and relativistic gamma-ray burst jets.
+  - **Hawking Radiation Engine**: Quantum particle emission simulation at the event horizon boundary.
+  - **Stellar Cataclysms & Supernovae**: Dynamic neutron star and micro-singularity synthesis upon core collapse.
+- **Generative Cosmic Systems**: Dynamic cosmic system synthesis powered by Google Gemini (`gemini-2.5-flash` or configurable `$GEMINI_MODEL`) via `@google/genai` with seamless procedural fallback across 5 core archetypes (`BLACKHOLE_CENTRIC`, `BINARY_PLANETS`, `NEBULA_CRADLE`, `EXOPLANET_CLUSTER`, `SPIRAL_GALAXY`).
+- **Web Audio Score Synthesizer**: Custom procedural Web Audio engine inspired by Hans Zimmer's *Interstellar* score, featuring church organ and celestial piano synthesis, cathedral reverb, cosmic clock ticks, and gravitational redshift pitch shifts.
+- **Autonomous Ambient Screensaver**: Smooth transitions, camera orbits, hotkey navigation, and HUD overlays tailored for interactive portfolio exploration.
 
 ## Tech Stack
 
-- **Frontend**: React 19, TypeScript, Babylon.js 9 (`@babylonjs/core`), Motion (`motion`), Lucide Icons.
+- **Frontend**: React 19, TypeScript 5.8, Babylon.js 9 (`@babylonjs/core`), Motion (`motion`), Lucide Icons.
 - **Styling**: Tailwind CSS 4 (`@tailwindcss/vite`).
-- **Server**: Express, esbuild, TypeScript execution with `tsx`.
-- **Bundler**: Vite 6 for client assets and esbuild for the SSR/server bundle.
+- **Server**: Express 4, esbuild, TypeScript execution via `tsx`.
+- **Bundler**: Vite 6 for client assets and esbuild for the production CommonJS server bundle.
 
 ## Available Scripts
 
 | Script | Command | Description |
 |---|---|---|
-| `npm run dev` | `tsx server.ts` | Start development server with live reload |
+| `npm run dev` | `tsx server.ts` | Start development server with Vite middleware |
 | `npm run build` | `vite build && esbuild server.ts ...` | Build client assets to `dist/` and server to `dist/server.cjs` |
 | `npm run lint` | `tsc --noEmit` | Run TypeScript type checking without emitting files |
-| `npm test` | `tsc --noEmit` | Execute project verification test suite |
-| `npm start` | `node dist/server.cjs` | Run the compiled production server |
-| `npm run clean` | `rm -rf dist server.js` | Clean build output directories |
+| `npm test` | `tsc --noEmit && tsx scripts/test-integrity.ts` | Execute TypeScript check and the automated 13-test integrity test suite |
+| `npm start` | `node dist/server.cjs` | Run the compiled production server on port 8080 (or `$PORT`) |
+| `npm run clean` | `rm -rf dist server.js client_errors.log` | Clean build outputs and local log files |
+
+## Health Checks & API Endpoints
+
+The server exposes lightweight health check endpoints for container orchestrators, Docker healthchecks, and uptime monitors:
+
+- `GET /health` — Returns JSON `{ status: "healthy", service: "curtis-click-portfolio", timestamp, uptime }`
+- `GET /api/health` — API health check alias
+- `POST /api/generate-cosmic-scene` — Generates a dynamic cosmic system via Gemini 2.5 Flash or procedural fallback
+- `POST /api/log-error` — Ingests client-side telemetry and error logs
+- `ALL /api/*` — 404 handler preventing unmatched API requests from serving client HTML
+
+## Environment Configuration
+
+Configure environment variables via `.env` (refer to [`.env.example`](file:///home/corp/curtis-click-portfolio/.env.example)):
+
+```bash
+# GEMINI_API_KEY: Optional API key for live Gemini cosmic system generation
+GEMINI_API_KEY="your-gemini-api-key"
+
+# GEMINI_MODEL: Gemini model name for cosmic scene synthesis (defaults to gemini-2.5-flash)
+GEMINI_MODEL="gemini-2.5-flash"
+
+# PORT: Port the HTTP server binds to (default: 8080)
+PORT=8080
+
+# NODE_ENV: Application environment ('development' | 'production')
+NODE_ENV=production
+```
 
 ## Docker Deployment
 
@@ -31,3 +71,5 @@ Run locally on port 8080:
 ```bash
 docker run -p 8080:8080 --env-file .env.example curtis-click-portfolio
 ```
+
+The container listens on port 8080 by default (`ENV PORT=8080`), matching the exposed Docker port and health probes.
