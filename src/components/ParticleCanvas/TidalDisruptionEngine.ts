@@ -109,15 +109,18 @@ export function triggerTidalDisruptionEvent(
     return false;
   }
 
+  const safeWidth = isFinite(screenWidth) && screenWidth > 0 ? screenWidth : 1920;
+  const safeHeight = isFinite(screenHeight) && screenHeight > 0 ? screenHeight : 1080;
+
   // Locate the black hole or center
   const bh = celestialEntities.find((e) => !e.isDestroyed && e.type === "blackhole");
-  const cx = bh ? bh.x : screenWidth / 2;
-  const cy = bh ? bh.y : screenHeight / 2;
+  const cx = bh ? bh.x : safeWidth / 2;
+  const cy = bh ? bh.y : safeHeight / 2;
   const bhRadius = bh ? bh.radius : 65;
 
   // Position the rogue star on a high-velocity hyperbolic inbound trajectory towards the black hole
   const spawnAngle = Math.PI * 1.25;
-  const spawnDist = Math.max(screenWidth * 0.42, 640);
+  const spawnDist = Math.max(safeWidth * 0.42, 640);
   const startX = cx + Math.cos(spawnAngle) * spawnDist;
   const startY = cy + Math.sin(spawnAngle) * spawnDist;
 
@@ -176,9 +179,12 @@ export function updateTidalDisruption(
 ): void {
   if (!tde.isActive) return;
 
+  const safeWidth = isFinite(screenWidth) && screenWidth > 0 ? screenWidth : 1920;
+  const safeHeight = isFinite(screenHeight) && screenHeight > 0 ? screenHeight : 1080;
+
   const bh = celestialEntities.find((e) => !e.isDestroyed && e.type === "blackhole");
-  const cx = bh ? bh.x : screenWidth / 2;
-  const cy = bh ? bh.y : screenHeight / 2;
+  const cx = bh ? bh.x : safeWidth / 2;
+  const cy = bh ? bh.y : safeHeight / 2;
   const bhRadius = bh ? bh.radius : 65;
   const rocheRadius = bhRadius * 2.85;
 

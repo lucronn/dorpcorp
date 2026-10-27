@@ -148,6 +148,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     ambientParticleSpeedRef.current = ambientParticleSpeed;
   }, [ambientParticleSpeed]);
 
+  const isSlingshotModeRef = useRef<boolean>(isSlingshotMode);
+  useEffect(() => {
+    isSlingshotModeRef.current = isSlingshotMode;
+  }, [isSlingshotMode]);
+
   const objectParticleSpeedRef = useRef<number>(objectParticleSpeed);
   useEffect(() => {
     objectParticleSpeedRef.current = objectParticleSpeed;
@@ -1000,6 +1005,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       probesRef,
       tdeStateRef,
       triggerTdeFn: triggerTDE,
+      isSlingshotModeRef,
       targetZoomToHorizonRef,
       zoomToHorizonRef,
       shatterIntensityRef,

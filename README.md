@@ -12,7 +12,7 @@ Interactive 3D developer portfolio and cosmic web visualizer built with React 19
   - **Stellar Cataclysms & Supernovae**: Dynamic neutron star and micro-singularity synthesis upon core collapse.
 - **Generative Cosmic Systems**: Dynamic cosmic system synthesis powered by Google Gemini (`gemini-2.5-flash` or configurable `$GEMINI_MODEL`) via `@google/genai` with seamless procedural fallback across 6 core archetypes (`BLACKHOLE_CENTRIC`, `BINARY_PLANETS`, `NEBULA_CRADLE`, `EXOPLANET_CLUSTER`, `SPIRAL_GALAXY`, `STELLAR_PULSAR`). Supports prompt and archetype overrides via API requests.
 - **Web Audio Score Synthesizer**: Custom procedural Web Audio engine inspired by Hans Zimmer's *Interstellar* score, featuring church organ and celestial piano synthesis, cathedral reverb, cosmic clock ticks, and gravitational redshift pitch shifts. Universal runtime guards ensure safe execution in SSR and Node.js testing environments.
-- **Autonomous Ambient Screensaver**: Smooth transitions, camera orbits, hotkey navigation, and HUD overlays tailored for interactive portfolio exploration.
+- **Autonomous Ambient Screensaver**: Smooth transitions, camera orbits, global hotkey navigation (`[A]` Autopilot, `[C]` Cinematic 2.39:1 mode, `[W]` Wormhole, `[N]` Supernova, `[T]` TDE, `[P]` Probe), and HUD overlays tailored for interactive portfolio exploration.
 
 ## Tech Stack
 
@@ -28,7 +28,7 @@ Interactive 3D developer portfolio and cosmic web visualizer built with React 19
 | `npm run dev` | `tsx server.ts` | Start development server with Vite middleware |
 | `npm run build` | `vite build && esbuild server.ts ...` | Build client assets to `dist/` and server to `dist/server.cjs` |
 | `npm run lint` | `tsc --noEmit` | Run TypeScript type checking without emitting files |
-| `npm test` | `tsc --noEmit && tsx scripts/test-integrity.ts` | Execute TypeScript check and the automated 36-test integrity test suite |
+| `npm test` | `tsc --noEmit && tsx scripts/test-integrity.ts` | Execute TypeScript check and the automated 41-test integrity test suite |
 | `npm start` | `node dist/server.cjs` | Run the compiled production server on port 8080 (or `$PORT`) |
 | `npm run clean` | `rm -rf dist server.js client_errors.log` | Clean build outputs and local log files |
 
@@ -36,13 +36,13 @@ Interactive 3D developer portfolio and cosmic web visualizer built with React 19
 
 The server exposes lightweight health check endpoints for container orchestrators, Docker healthchecks, and uptime monitors:
 
-- `GET /health` — Returns JSON `{ status: "healthy", service: "curtis-click-portfolio", timestamp, uptime, nodeVersion, memoryUsage: { rss, heapTotal, heapUsed } }`
+- `GET /health` — Returns JSON `{ status: "healthy", service: "curtis-click-portfolio", environment, model, timestamp, uptime, nodeVersion, memoryUsage: { rss, heapTotal, heapUsed } }`
 - `GET /api/health` — API health check alias (returns identical payload)
 - `POST /api/generate-cosmic-scene` — Generates a dynamic cosmic system via Gemini 2.5 Flash or procedural fallback (supports optional `{ archetype, prompt }` JSON payload for targeted generation with archetype validation)
 - `POST /api/log-error` — Ingests client-side telemetry and error logs with structured object parsing, string sanitization, and automated 1MB log rotation
 - `ALL /api/*` — 404 handler preventing unmatched API requests from serving client HTML
 
-The HTTP server includes automatic port collision detection (`EADDRINUSE`) with clean diagnostics advising how to override the target port using the `PORT` environment variable (e.g., `PORT=3000 npm run dev`).
+The HTTP server includes automatic port collision detection (`EADDRINUSE`) with clean diagnostics advising how to override the target port using the `PORT` environment variable (e.g., `PORT=3000 npm run dev`), as well as clean process signal (`SIGTERM`/`SIGINT`) listener deregistration on server shutdown.
 
 ## Environment Configuration
 

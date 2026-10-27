@@ -146,11 +146,14 @@ export function resolveCelestialCollision(
 export function swallowEntity(bh: CelestialEntity, victim: CelestialEntity): void {
   victim.isSwallowing = true;
   victim.destroyedBy = "blackhole";
-  const newMass = (bh.mass || 100) + (victim.mass || 50);
+  const bhMass = (bh.mass && isFinite(bh.mass) && bh.mass > 0) ? bh.mass : 100;
+  const victimMass = (victim.mass && isFinite(victim.mass) && victim.mass > 0) ? victim.mass : 50;
+  const newMass = bhMass + victimMass;
   bh.mass = newMass;
 
   // Black hole target radius swells from ingested mass
-  const targetRadius = Math.min(bh.radius * 1.5, Math.sqrt(newMass / 15));
+  const baseRad = (bh.radius && isFinite(bh.radius) && bh.radius > 0) ? bh.radius : 50;
+  const targetRadius = Math.min(baseRad * 1.5, Math.sqrt(newMass / 15));
   bh.targetRadius = targetRadius;
 }
 

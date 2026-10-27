@@ -47,7 +47,14 @@ export function calculateForwardTrajectory(
   steps: number = 75,
   initialVz: number = 0.0
 ): SlingshotTrajectoryPoint[] {
-  if (!isFinite(originX) || !isFinite(originY) || !isFinite(pullX) || !isFinite(pullY)) {
+  if (
+    !isFinite(originX) ||
+    !isFinite(originY) ||
+    !isFinite(pullX) ||
+    !isFinite(pullY) ||
+    !isFinite(initialVz) ||
+    steps <= 0
+  ) {
     return [];
   }
 
@@ -172,7 +179,20 @@ export function updateActiveProbes(
 
   for (let pIdx = 0; pIdx < probes.length; pIdx++) {
     const probe = probes[pIdx];
-    if (probe.isSwallowed || probe.life <= 0) continue;
+    if (
+      !probe ||
+      probe.isSwallowed ||
+      probe.life <= 0 ||
+      !isFinite(probe.x) ||
+      !isFinite(probe.y) ||
+      !isFinite(probe.z) ||
+      !isFinite(probe.vx) ||
+      !isFinite(probe.vy) ||
+      !isFinite(probe.vz) ||
+      isNaN(probe.life)
+    ) {
+      continue;
+    }
 
     probe.life -= 0.0035;
 

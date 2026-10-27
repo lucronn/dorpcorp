@@ -14,8 +14,13 @@ export function createNeutronStarBirthEvent(
   star.isDestroyed = true;
 
   const isNeutronStar = Math.random() > 0.5;
-  const starMass = star.mass ?? (star.radius * star.radius * 2);
-  const remnantMass = isNeutronStar ? starMass * 0.6 : starMass * 1.5;
+  const validMass =
+    star.mass && isFinite(star.mass) && star.mass > 0
+      ? star.mass
+      : star.radius > 0
+      ? star.radius * star.radius * 2
+      : 100;
+  const remnantMass = isNeutronStar ? validMass * 0.6 : validMass * 1.5;
 
   const remnantId = `${isNeutronStar ? "neutron-star" : "micro-singularity"}-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 7)}`;
   const remnant: CelestialEntity = {

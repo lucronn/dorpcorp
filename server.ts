@@ -215,6 +215,8 @@ export async function startServer(portOverride?: number) {
     res.json({
       status: "healthy",
       service: "curtis-click-portfolio",
+      environment: process.env.NODE_ENV || "development",
+      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
       timestamp: new Date().toISOString(),
       uptime: Math.floor(process.uptime()),
       nodeVersion: process.version,
@@ -445,8 +447,16 @@ export async function startServer(portOverride?: number) {
     }, 10000).unref();
   };
 
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
-  process.on("SIGINT", () => shutdown("SIGINT"));
+  const sigtermHandler = () => shutdown("SIGTERM");
+  const sigintHandler = () => shutdown("SIGINT");
+
+  process.on("SIGTERM", sigtermHandler);
+  process.on("SIGINT", sigintHandler);
+
+  server.once("close", () => {
+    process.removeListener("SIGTERM", sigtermHandler);
+    process.removeListener("SIGINT", sigintHandler);
+  });
 
   return { app, server };
 }

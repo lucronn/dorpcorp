@@ -56,6 +56,7 @@ export default function App() {
   });
 
   const handleTriggerTDE = useCallback(() => {
+    setIsInterstellar(true);
     if ((window as any).triggerTDE) {
       (window as any).triggerTDE();
     } else if ((window as any).__cosmicCanvas?.triggerTDE) {
@@ -64,6 +65,7 @@ export default function App() {
   }, []);
 
   const handleLaunchProbe = useCallback(() => {
+    setIsInterstellar(true);
     if ((window as any).__cosmicCanvas?.launchProbe) {
       (window as any).__cosmicCanvas.launchProbe();
     } else {
@@ -236,7 +238,7 @@ export default function App() {
     audio.setCinematicMode(isCinematicMode);
   }, [isCinematicMode]);
 
-  // Global hotkeys [A], [W], [N] for Autopilot & Interstellar Sandbox state sync
+  // Global hotkeys [A], [C], [W], [N], [T], [P] for Autopilot, Cinema & Interstellar Sandbox state sync
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
@@ -248,7 +250,18 @@ export default function App() {
           }
           return next;
         });
-      } else if (e.key === 'w' || e.key === 'W' || e.key === 'n' || e.key === 'N') {
+      } else if (e.key === 'c' || e.key === 'C') {
+        setIsCinematicMode((prev) => !prev);
+      } else if (
+        e.key === 'w' ||
+        e.key === 'W' ||
+        e.key === 'n' ||
+        e.key === 'N' ||
+        e.key === 't' ||
+        e.key === 'T' ||
+        e.key === 'p' ||
+        e.key === 'P'
+      ) {
         setIsInterstellar(true);
       }
     };

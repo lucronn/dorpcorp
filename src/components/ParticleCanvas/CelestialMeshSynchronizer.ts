@@ -89,7 +89,7 @@ export function updateCelestial3DMeshes(
   activeWormholeRef: React.MutableRefObject<any>,
   particlesRef: React.MutableRefObject<Particle[]>,
   swallowEntity: (bh: CelestialEntity, victim: CelestialEntity) => void,
-  mergeEntities: (e1: CelestialEntity, e2: CelestialEntity) => CollisionResult | null | void,
+  resolveCollision: (e1: CelestialEntity, e2: CelestialEntity) => CollisionResult | null | void,
   celestialMeshInstancesRef: React.MutableRefObject<CelestialMeshInstance[]>,
   mouseRef: React.MutableRefObject<{ x: number; y: number }>,
   cameraRef: React.MutableRefObject<BABYLON.Camera | null>,
@@ -278,8 +278,8 @@ export function updateCelestial3DMeshes(
             swallowEntity(e2, e1);
           } else if (!e1.isMerging && !e2.isMerging) {
             const colResult = e1.radius >= e2.radius
-              ? mergeEntities(e1, e2)
-              : mergeEntities(e2, e1);
+              ? resolveCollision(e1, e2)
+              : resolveCollision(e2, e1);
 
             if (colResult && colResult.kineticEnergyDissipated > 0 && sceneRef.current) {
               const contactX = colResult.contactPointX - ww / 2;

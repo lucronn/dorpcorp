@@ -920,7 +920,14 @@ class AudioEngine {
     if (this.ctx && this.ctx.state !== "closed") {
       this.ctx.close().catch(() => {});
     }
+    this.ctx = null;
+    this.masterGain = null;
+    this.reverbBus = null;
+    this.dryBus = null;
+    this.analyser = null;
+    this.droneFilter = null;
     this.isInitialized = false;
+    this.isMuted = true;
   }
 }
 

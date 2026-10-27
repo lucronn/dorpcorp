@@ -15,7 +15,11 @@ import {
 } from "../src/components/ParticleCanvas/PhysicsUtils";
 import { CelestialEntity } from "../src/components/ParticleCanvas/types";
 import { createNeutronStarBirthEvent } from "../src/components/ParticleCanvas/scenes/neutronstarbirth";
-import { calculateForwardTrajectory } from "../src/components/ParticleCanvas/SlingshotEngine";
+import {
+  calculateForwardTrajectory,
+  updateActiveProbes,
+  SlingshotProbe,
+} from "../src/components/ParticleCanvas/SlingshotEngine";
 import { createInitialTdeState, triggerTidalDisruptionEvent, updateTidalDisruption } from "../src/components/ParticleCanvas/TidalDisruptionEngine";
 import { audio } from "../src/utils/audio";
 import { getProceduralFallbackSystem, startServer } from "../server";
@@ -194,6 +198,34 @@ async function runAllTests() {
     assert.ok(bh.targetRadius !== undefined && bh.targetRadius > 0);
   });
 
+  runTest("swallowEntity: defends against non-finite or non-positive masses and radii with safe swelling", () => {
+    const corruptedBh: CelestialEntity = {
+      type: "blackhole",
+      x: 0,
+      y: 0,
+      radius: NaN,
+      mass: NaN,
+      color: "#ff8844",
+    };
+    const corruptedVictim: CelestialEntity = {
+      type: "planet",
+      x: 5,
+      y: 5,
+      radius: -10,
+      mass: -100,
+      color: "#4488ff",
+    };
+
+    swallowEntity(corruptedBh, corruptedVictim);
+    assert.equal(corruptedVictim.isSwallowing, true);
+    assert.ok(typeof corruptedBh.mass === "number" && corruptedBh.mass > 0 && isFinite(corruptedBh.mass));
+    assert.ok(
+      typeof corruptedBh.targetRadius === "number" &&
+      corruptedBh.targetRadius > 0 &&
+      isFinite(corruptedBh.targetRadius)
+    );
+  });
+
   runTest("updateCollisionFlares and disposeCollisionFlares: handles life decay, scaling, and clean disposal", () => {
     let meshDisposed = false;
     let matDisposed = false;
@@ -328,6 +360,22 @@ async function runAllTests() {
     assert.equal(supernovaSoundPlayed, true, "Must trigger supernova audio event");
   });
 
+  runTest("createNeutronStarBirthEvent: defends against non-positive/NaN star masses with positive remnant mass", () => {
+    const corruptedStar: CelestialEntity = {
+      id: "corrupted-star-01",
+      type: "star",
+      x: 200,
+      y: 200,
+      radius: 0,
+      mass: NaN,
+      color: "#ffaa44",
+    };
+    const list: CelestialEntity[] = [corruptedStar];
+    const res = createNeutronStarBirthEvent(corruptedStar, list, () => {}, { playSupernova: () => {} });
+    assert.equal(corruptedStar.isDestroyed, true);
+    assert.ok(typeof res.remnant.mass === "number" && res.remnant.mass > 0 && isFinite(res.remnant.mass));
+  });
+
   runTest("calculateForwardTrajectory: produces deterministic, sub-lightspeed trajectory with event horizon capture", () => {
     const bh: CelestialEntity = {
       type: "blackhole",
@@ -418,6 +466,84 @@ async function runAllTests() {
     });
   });
 
+  runTest("updateActiveProbes: safely filters out non-finite / NaN coordinates, velocities, and life values", () => {
+    const validProbe: SlingshotProbe = {
+      id: "valid-probe",
+      x: 100,
+      y: 100,
+      z: 0,
+      vx: 1.0,
+      vy: 1.0,
+      vz: 0,
+      color: "#4deeea",
+      trail: [],
+      life: 0.9,
+      maxLife: 1.0,
+      isSwallowed: false,
+      maxSpeedReached: 1.41,
+      lastWhipTime: 0,
+    };
+    const nanPosProbe: SlingshotProbe = {
+      id: "nan-pos",
+      x: NaN,
+      y: 100,
+      z: 0,
+      vx: 1.0,
+      vy: 1.0,
+      vz: 0,
+      color: "#4deeea",
+      trail: [],
+      life: 0.9,
+      maxLife: 1.0,
+      isSwallowed: false,
+      maxSpeedReached: 1.0,
+      lastWhipTime: 0,
+    };
+    const infVelProbe: SlingshotProbe = {
+      id: "inf-vel",
+      x: 100,
+      y: 100,
+      z: 0,
+      vx: Infinity,
+      vy: 0,
+      vz: 0,
+      color: "#4deeea",
+      trail: [],
+      life: 0.9,
+      maxLife: 1.0,
+      isSwallowed: false,
+      maxSpeedReached: 1.0,
+      lastWhipTime: 0,
+    };
+    const nanLifeProbe: SlingshotProbe = {
+      id: "nan-life",
+      x: 100,
+      y: 100,
+      z: 0,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      color: "#4deeea",
+      trail: [],
+      life: NaN,
+      maxLife: 1.0,
+      isSwallowed: false,
+      maxSpeedReached: 1.0,
+      lastWhipTime: 0,
+    };
+
+    const ripples = { current: [] as any[] };
+    const result = updateActiveProbes(
+      [validProbe, nanPosProbe, infVelProbe, nanLifeProbe],
+      [],
+      ripples
+    );
+
+    assert.equal(result.length, 1, "Only valid probe must survive update loop");
+    assert.equal(result[0]!.id, "valid-probe");
+    assert.ok(isFinite(result[0]!.x) && isFinite(result[0]!.y));
+  });
+
   runTest("TidalDisruptionEngine: validates quiescent initial state and hyperbolic inbound trajectory trigger", () => {
     const tde = createInitialTdeState();
     assert.equal(tde.stage, "IDLE");
@@ -483,6 +609,25 @@ async function runAllTests() {
     assert.equal(tde.starRadius, 0);
   });
 
+  runTest("TidalDisruptionEngine: defends against non-finite, zero, or negative screen dimensions in trigger and update", () => {
+    const tde = createInitialTdeState();
+    const entities: CelestialEntity[] = [
+      { type: "blackhole", x: 200, y: 200, radius: 50, color: "#ff8844" },
+    ];
+    // Test with zero and negative dimensions
+    const ok = triggerTidalDisruptionEvent(tde, entities, 0, -500);
+    assert.equal(ok, true, "Must trigger successfully despite invalid dimensions");
+    assert.ok(isFinite(tde.starX) && isFinite(tde.starY), "Coordinates must remain strictly finite");
+
+    // Test update with NaN dimensions
+    const cameraShake = { current: 0 };
+    const ripples = { current: [] as any[] };
+    assert.doesNotThrow(() => {
+      updateTidalDisruption(tde, entities, NaN, Infinity, cameraShake, ripples);
+    });
+    assert.ok(isFinite(tde.starX) && isFinite(tde.starY), "Coordinates must remain finite after update");
+  });
+
   runTest("AudioEngine: handles modulation bounds, mute toggles, and clean disposal", () => {
     assert.equal(audio.getMuteState(), true, "Audio should initially be muted");
     audio.setMute(false);
@@ -501,6 +646,13 @@ async function runAllTests() {
       audio.setCinematicMode(true);
       audio.setCinematicMode(false);
       audio.pingInteraction();
+      audio.dispose();
+    });
+
+    // Verify audio engine state after disposal and clean reinitialization
+    assert.equal(audio.getMuteState(), true, "Audio should reset to muted on disposal");
+    assert.doesNotThrow(() => {
+      audio.init();
       audio.dispose();
     });
   });
@@ -698,11 +850,13 @@ async function runAllTests() {
     });
   };
 
-  await runTest("GET /health: returns healthy status, uptime, nodeVersion, and memoryUsage diagnostics", async () => {
+  await runTest("GET /health: returns healthy status, uptime, nodeVersion, environment, model, and memoryUsage diagnostics", async () => {
     const res = await makeRequest("/health");
     assert.equal(res.status, 200);
     assert.equal(res.body.status, "healthy");
     assert.equal(res.body.service, "curtis-click-portfolio");
+    assert.ok(typeof res.body.environment === "string" && res.body.environment.length > 0);
+    assert.ok(typeof res.body.model === "string" && res.body.model.length > 0);
     assert.ok(typeof res.body.uptime === "number");
     assert.ok(typeof res.body.nodeVersion === "string" && res.body.nodeVersion.startsWith("v"));
     assert.ok(typeof res.body.memoryUsage === "object");
@@ -794,8 +948,19 @@ async function runAllTests() {
     );
   });
 
-  // Close test server
-  await new Promise<void>((resolve) => server.close(() => resolve()));
+  await runTest("startServer: cleanly removes SIGTERM and SIGINT listeners on process upon server close", async () => {
+    const sigtermCountBefore = process.listenerCount("SIGTERM");
+    const sigintCountBefore = process.listenerCount("SIGINT");
+    assert.ok(sigtermCountBefore > 0, "Server must register SIGTERM listener while running");
+    assert.ok(sigintCountBefore > 0, "Server must register SIGINT listener while running");
+
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+
+    const sigtermCountAfter = process.listenerCount("SIGTERM");
+    const sigintCountAfter = process.listenerCount("SIGINT");
+    assert.equal(sigtermCountAfter, sigtermCountBefore - 1, "SIGTERM listener must be detached on close");
+    assert.equal(sigintCountAfter, sigintCountBefore - 1, "SIGINT listener must be detached on close");
+  });
 
   console.log(`\n========================================`);
   console.log(`  Tests Passed: ${passedTests} / ${totalTests}`);
