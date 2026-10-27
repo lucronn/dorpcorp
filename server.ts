@@ -8,9 +8,19 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // Procedural Fallback Cosmic System Generator
-export function getProceduralFallbackSystem() {
-  const archetypes = ["BLACKHOLE_CENTRIC", "BINARY_PLANETS", "NEBULA_CRADLE", "EXOPLANET_CLUSTER", "SPIRAL_GALAXY"];
-  const chosenArchetype = archetypes[Math.floor(Math.random() * archetypes.length)] || "BLACKHOLE_CENTRIC";
+export function getProceduralFallbackSystem(requestedArchetype?: string) {
+  const archetypes = [
+    "BLACKHOLE_CENTRIC",
+    "BINARY_PLANETS",
+    "NEBULA_CRADLE",
+    "EXOPLANET_CLUSTER",
+    "SPIRAL_GALAXY",
+    "STELLAR_PULSAR",
+  ];
+  const chosenArchetype =
+    requestedArchetype && archetypes.includes(requestedArchetype)
+      ? requestedArchetype
+      : archetypes[Math.floor(Math.random() * archetypes.length)] || "BLACKHOLE_CENTRIC";
 
   const prefixes = ["Aethel", "Vespera", "Helios", "Kalypsos", "Zephyrus", "Hyperion", "Thalassa", "Kronos", "Astraea", "Celestia", "Elysium", "Nebulon", "Xenon"];
   const suffixes = ["Prime", "Resonance", "Anomalous", "Cradle", "Filament", "Spire", "Vortex", "Horizon", "Singularity", "Nursery", "Barycenter", "Clusters", "Borealis"];
@@ -120,6 +130,24 @@ export function getProceduralFallbackSystem() {
         ringColor: "rgba(255, 255, 255, 0.4)"
       });
     }
+  } else if (chosenArchetype === "STELLAR_PULSAR") {
+    systemDesc = `A hyper-dense relativistic magnetar spinning at hundreds of rotations per second. Collimated synchrotron beams and intense magnetic reconnection flares illuminate a diamond-rich remnant planet.`;
+    systemTags = ["★ MAGNETAR", "⚡ RELATIVISTIC BEAMS", "💎 DIAMOND PLANET"];
+
+    entities.push({
+      type: "star",
+      radius: Math.floor(Math.random() * 8 + 22),
+      color: "#ffffff",
+      secondaryColor: "#00ffd2",
+    });
+    entities.push({
+      type: "planet",
+      radius: Math.floor(Math.random() * 8 + 16),
+      color: "#4deeea",
+      secondaryColor: "#a5f3fc",
+      hasRings: true,
+      ringColor: "rgba(77, 238, 234, 0.4)",
+    });
   } else {
     systemDesc = `A spectacular galactic arm composed of countless blue giant stars, swirling dust filaments, and intense interstellar radiation fields centered around an ultra-dense stellar core.`;
     systemTags = ["🌀 GALACTIC FILAMENT", "★ SWIRLING SHADOW", "☄ COLD DUST"];
@@ -191,11 +219,31 @@ export async function startServer(portOverride?: number) {
     });
   });
 
-  // Client error logging endpoint
+  // Client error logging endpoint with size bounding and string sanitization
   app.post("/api/log-error", (req, res) => {
-    console.log("CLIENT ERROR:", req.body?.error);
+    const rawError = req.body?.error;
+    const sanitizedError =
+      typeof rawError === "string"
+        ? rawError.slice(0, 500).replace(/[\r\n]+/g, " ")
+        : "Unknown error";
+
+    console.log("CLIENT ERROR:", sanitizedError);
     try {
-      fs.appendFileSync('client_errors.log', new Date().toISOString() + ': ' + (req.body?.error || 'Unknown error') + '\n');
+      const logFile = "client_errors.log";
+      const maxLogBytes = 1024 * 1024; // 1MB threshold
+
+      // Check file size and truncate/rotate if oversized to prevent unbounded disk growth
+      if (fs.existsSync(logFile)) {
+        const stats = fs.statSync(logFile);
+        if (stats.size > maxLogBytes) {
+          const content = fs.readFileSync(logFile, "utf-8");
+          const lines = content.split("\n");
+          const preservedLines = lines.slice(-250).join("\n");
+          fs.writeFileSync(logFile, preservedLines + "\n");
+        }
+      }
+
+      fs.appendFileSync(logFile, `${new Date().toISOString()}: ${sanitizedError}\n`);
     } catch (e) {
       console.error("Failed to append to client_errors.log:", e);
     }
@@ -203,12 +251,21 @@ export async function startServer(portOverride?: number) {
   });
 
   app.post("/api/generate-cosmic-scene", async (req, res) => {
+    const requestedArchetype =
+      typeof req.body?.archetype === "string" ? req.body.archetype : undefined;
     try {
       const client = getAIClient();
       const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+      const userPrompt =
+        typeof req.body?.prompt === "string" && req.body.prompt.trim()
+          ? ` User requested theme: "${req.body.prompt.trim().slice(0, 200)}".`
+          : "";
+      const archetypeHint = requestedArchetype
+        ? ` Preferred archetype: ${requestedArchetype}.`
+        : "";
       const response = await client.models.generateContent({
         model,
-        contents: "Generate a completely unique, highly imaginative, custom cosmic system. Focus on realistic, high-fidelity space objects, avoiding plain neon colors.",
+        contents: `Generate a completely unique, highly imaginative, custom cosmic system.${userPrompt}${archetypeHint} Focus on realistic, high-fidelity space objects, avoiding plain neon colors.`,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -229,7 +286,7 @@ export async function startServer(portOverride?: number) {
               },
               archetype: {
                 type: Type.STRING,
-                description: "Select most fitting category: 'BLACKHOLE_CENTRIC', 'SPIRAL_GALAXY', 'STELLAR_PULSAR'"
+                description: "Select most fitting category: 'BLACKHOLE_CENTRIC', 'SPIRAL_GALAXY', 'STELLAR_PULSAR', 'BINARY_PLANETS', 'EXOPLANET_CLUSTER', 'NEBULA_CRADLE'"
               },
               entities: {
                 type: Type.ARRAY,
@@ -283,7 +340,7 @@ export async function startServer(portOverride?: number) {
     } catch (err: any) {
       // If we hit a rate limit or other error, fallback quietly without a scary stack trace
       console.log(`[Cosmic Engine] Using procedural fallback system (${err?.status === 429 ? 'Rate Limited' : 'API Unavailable'})`);
-      const fallbackData = getProceduralFallbackSystem();
+      const fallbackData = getProceduralFallbackSystem(requestedArchetype);
       res.json(fallbackData);
     }
   });
@@ -305,10 +362,23 @@ export async function startServer(portOverride?: number) {
     });
     app.use(vite.middlewares);
   } else if (process.env.NODE_ENV === "production") {
-    const distPath = path.join(process.cwd(), "dist");
+    // Resilient static dist directory resolution with fallbacks
+    const candidatePaths = [
+      path.join(process.cwd(), "dist"),
+      __dirname,
+      path.resolve(__dirname, "..", "dist"),
+    ];
+    const distPath =
+      candidatePaths.find((p) => fs.existsSync(path.join(p, "index.html"))) || candidatePaths[0]!;
+
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      const indexPath = path.join(distPath, "index.html");
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(503).send("Application assets unavailable. Run 'npm run build' first.");
+      }
     });
   }
 

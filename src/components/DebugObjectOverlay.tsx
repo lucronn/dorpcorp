@@ -159,7 +159,13 @@ export const DebugObjectOverlay: React.FC<DebugObjectOverlayProps> = ({
     };
 
     animId = requestAnimationFrame(updateProjections);
-    return () => cancelAnimationFrame(animId);
+    return () => {
+      cancelAnimationFrame(animId);
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+        toastTimeoutRef.current = null;
+      }
+    };
   }, [showDebug, celestialEntitiesRef, sceneRef, cameraRef, rendererRef, supernovaRef, activeWormholeRef]);
 
   if (!showDebug) return null;

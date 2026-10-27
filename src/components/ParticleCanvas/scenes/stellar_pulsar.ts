@@ -38,5 +38,35 @@ export function buildStellarPulsarScene(
     isDestroyed: false,
   });
 
+  // Diamond remnant pulsar companion planet (PSR J1719-1438 b analog)
+  const planetRad = isMobile ? 14 : 20;
+  const orbitRad = isMobile ? 220 : 380;
+  const orbitSpeed = 0.0035;
+  entities.push({
+    type: "planet",
+    x: cx + orbitRad,
+    y: cy,
+    radius: planetRad,
+    color: "#4deeea",
+    secondaryColor: "#a5f3fc",
+    hasRings: true,
+    ringColor: "rgba(77, 238, 234, 0.4)",
+    orbitRadius: orbitRad,
+    orbitAngle: 0,
+    orbitSpeed: orbitSpeed,
+    centerX: cx,
+    centerY: cy,
+    vx: 0,
+    vy: orbitRad * orbitSpeed,
+    mass: planetRad * planetRad * 3,
+    scale: 1.0,
+    targetScale: 1.0,
+    currentRadius: planetRad,
+    originalRadius: planetRad,
+    targetRadius: planetRad,
+    isPhysicsEnabled: false,
+    isDestroyed: false,
+  });
+
   return { systemName, systemDesc, systemTags, entities };
 }

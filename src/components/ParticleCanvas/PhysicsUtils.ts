@@ -104,6 +104,9 @@ export {
   createShatterDebris,
   createSpaghettificationDebris,
   swallowEntity,
+  spawnCollisionFlare,
+  updateCollisionFlares,
+  disposeCollisionFlares,
   type CollisionResult,
   type SpawnParticleFn,
 } from "./CollisionEngine";

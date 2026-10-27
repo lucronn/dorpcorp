@@ -1,19 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { reportClientError, isIgnoredErrorMessage } from '../utils/telemetry';
 
 export function ErrorOverlay({ showDebug = false }: { showDebug?: boolean }) {
   const [errors, setErrors] = useState<string[]>([]);
   useEffect(() => {
-    const isIgnored = (msg: string) => {
-      if (!msg) return true;
-      const lower = msg.toLowerCase();
-      return (
-        lower.includes("websocket") ||
-        lower.includes("[vite]") ||
-        lower.includes("hmr") ||
-        lower.includes("failed to connect to websocket")
-      );
-    };
-
     const origError = console.error;
     console.error = (...args) => {
       const msg = args.map(a => {
@@ -33,24 +23,27 @@ export function ErrorOverlay({ showDebug = false }: { showDebug?: boolean }) {
         }
       }).join(' ');
       
-      if (!isIgnored(msg)) {
+      if (!isIgnoredErrorMessage(msg)) {
         setErrors(e => [...e, msg].slice(-5));
+        reportClientError(msg, 'console.error').catch(() => {});
       }
       origError(...args);
     };
 
     const handleError = (event: ErrorEvent) => {
       const errStr = `${event.message || 'Error'} at ${event.lineno}:${event.colno}`;
-      if (!isIgnored(errStr)) {
+      if (!isIgnoredErrorMessage(errStr)) {
         setErrors(e => [...e, errStr].slice(-5));
+        reportClientError(event.error || errStr, 'window.error').catch(() => {});
       }
     };
     
     const handleRejection = (event: PromiseRejectionEvent) => {
       const reason = event.reason ? (event.reason.message || String(event.reason)) : 'Unknown';
       const errStr = `Unhandled Rejection: ${reason}`;
-      if (!isIgnored(errStr)) {
+      if (!isIgnoredErrorMessage(errStr)) {
         setErrors(e => [...e, errStr].slice(-5));
+        reportClientError(event.reason || errStr, 'window.unhandledrejection').catch(() => {});
       }
     };
 

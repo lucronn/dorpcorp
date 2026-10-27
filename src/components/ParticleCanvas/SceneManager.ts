@@ -10,12 +10,29 @@ import { transitionToNewEntities } from "./TransitionManager";
 
 export async function fetchNextGeminiScene(
   isFetchingRef: React.MutableRefObject<boolean>,
-  nextGeminiSceneRef: React.MutableRefObject<any>
+  nextGeminiSceneRef: React.MutableRefObject<any>,
+  requestedArchetype?: string,
+  prompt?: string
 ): Promise<void> {
   if (isFetchingRef.current) return;
   isFetchingRef.current = true;
   try {
-    const res = await fetch("/api/generate-cosmic-scene", { method: "POST" });
+    const forcedArch =
+      requestedArchetype ||
+      (typeof window !== "undefined" && (window as any).__forcedNextArchetype
+        ? (window as any).__forcedNextArchetype
+        : undefined);
+
+    const payload: { archetype?: string; prompt?: string } = {};
+    if (forcedArch) payload.archetype = forcedArch;
+    if (prompt) payload.prompt = prompt;
+
+    const hasPayload = Object.keys(payload).length > 0;
+    const res = await fetch("/api/generate-cosmic-scene", {
+      method: "POST",
+      headers: hasPayload ? { "Content-Type": "application/json" } : undefined,
+      body: hasPayload ? JSON.stringify(payload) : undefined,
+    });
     if (res.ok) {
       const data = await res.json();
       if (data && data.systemName) {

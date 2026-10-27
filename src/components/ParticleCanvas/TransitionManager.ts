@@ -194,7 +194,9 @@ export class CosmicTransitionStateMachine {
     onComplete?: () => void;
   }): Promise<void> {
     if (this.activePromise) {
-      await this.activePromise;
+      try {
+        await this.activePromise;
+      } catch (_) {}
     }
 
     this.abortController = new AbortController();
@@ -246,7 +248,9 @@ export class CosmicTransitionStateMachine {
     onComplete?: () => void;
   }): Promise<void> {
     if (this.activePromise) {
-      await this.activePromise;
+      try {
+        await this.activePromise;
+      } catch (_) {}
     }
 
     this.abortController = new AbortController();

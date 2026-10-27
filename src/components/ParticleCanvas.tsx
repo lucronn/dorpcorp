@@ -11,6 +11,7 @@ import {
   createDustSplash as _createDustSplash,
   createShatterDebris as _createShatterDebris,
   createSpaghettificationDebris as _createSpaghettificationDebris,
+  disposeCollisionFlares,
 } from "./ParticleCanvas/CollisionEngine";
 import {
   fetchNextGeminiScene as _fetchNextGeminiScene,
@@ -306,8 +307,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   const interstellarSceneGeneratedTimeRef = useRef<number>(Date.now());
 
   // Helper Wrappers using modularized managers
-  const fetchNextGeminiScene = () =>
-    _fetchNextGeminiScene(isFetchingGeminiRef, nextGeminiSceneRef);
+  const fetchNextGeminiScene = (requestedArchetype?: string, prompt?: string) =>
+    _fetchNextGeminiScene(isFetchingGeminiRef, nextGeminiSceneRef, requestedArchetype, prompt);
 
   const registerAndSaveSequence = (
     systemName: string,
@@ -1105,37 +1106,47 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       mappingTimersRef.current.forEach(clearTimeout);
       mappingTimersRef.current = [];
 
-      collisionFlaresRef.current.forEach((flare) => {
-        if (flare.mesh.material) {
-          flare.mesh.material.dispose(false, true);
-        }
-        flare.mesh.dispose();
-      });
-      collisionFlaresRef.current = [];
+      disposeCollisionFlares(collisionFlaresRef.current);
 
       // 1. Remove event listeners and pointer observers
       cleanupEvents();
 
-      // 2. Dispose all post-processes and rendering pipelines while scene and engine are still active
+      // 2. Dispose all active celestial mesh subsystems (e.g., Hawking radiation systems)
+      celestialMeshInstancesRef.current.forEach((inst) => {
+        if (inst.hawkingSystem && typeof inst.hawkingSystem.dispose === "function") {
+          inst.hawkingSystem.dispose();
+        }
+      });
+      celestialMeshInstancesRef.current = [];
+
+      // 3. Dispose all post-processes, custom FX instances, and rendering pipelines while scene and engine are still active
       lensingPostProcessRef.current?.dispose();
       wormholePostProcessRef.current?.dispose();
       dofPostProcessRef.current?.dispose();
       shatterPostProcessRef.current?.dispose();
       activeTdeFxRef.current?.dispose();
+      activeSupernovaFxRef.current?.dispose();
+      activeSupernovaFxRef.current = null;
+      glowLayerRef.current?.dispose();
+      glowLayerRef.current = null;
+      hudTextureRef.current?.dispose();
+      hudTextureRef.current = null;
+      hudPlaneRef.current?.dispose();
+      hudPlaneRef.current = null;
       composerRef.current?.dispose();
 
-      // 3. Dispose the scene (frees meshes, materials, and textures)
+      // 4. Dispose the scene (frees meshes, materials, and textures)
       if (sceneRef.current) {
         sceneRef.current.dispose();
       }
 
-      // 4. Terminate render loop and dispose the engine last
+      // 5. Terminate render loop and dispose the engine last
       if (rendererRef.current) {
         rendererRef.current.stopRenderLoop();
         rendererRef.current.dispose();
       }
 
-      // 5. Clean up window globals
+      // 6. Clean up window globals
       delete (window as any).triggerTDE;
       delete (window as any).activateSequence;
       delete (window as any).__cosmicCanvas;
@@ -1146,8 +1157,12 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       delete (window as any).__anamorphicFlare;
       delete (window as any).__dofEnabled;
       delete (window as any).__targetHorizonZoom;
+      delete (window as any).__horizonZoom;
+      delete (window as any).__shatterIntensity;
+      delete (window as any).__hasShatteredSound;
       delete (window as any).__hawkingActive;
       delete (window as any).__hawkingIntensity;
+      delete (window as any).__forcedNextArchetype;
     };
   }, []);
 

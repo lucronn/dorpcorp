@@ -8,7 +8,7 @@ export const drawStageLayoutTemplate = (
   mode: "full" | "tracer",
   opacity: number = 1.0,
 ) => {
-  if (width <= 0 || height <= 0) return;
+  if (!ctx || width <= 0 || height <= 0) return;
 
   const isTracer = mode === "tracer";
   if (isTracer) return; // Hide all faint background vectors/text so only particles are seen
@@ -71,6 +71,7 @@ export const drawStageLayoutTemplate = (
   } else if (index >= 2 && index <= 5) {
     const pIndex = index - 2;
     const p = projects[pIndex];
+    if (!p) return;
     const isMobile = width < 640;
 
     const containerPad = isMobile ? 24 : 48;
@@ -154,6 +155,7 @@ export const particleText = (
   letterSpacing: string = '0px',
   lineWidthMultiplier: number = 0.05
 ): { x: number; y: number; color: string, isProjectText: boolean }[] => {
+  if (typeof document === "undefined") return [];
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -272,6 +274,7 @@ export const generateTargetsForStage = (
   } else if (index >= 2 && index <= 5) {
     const pIndex = index - 2;
     const p = projects[pIndex];
+    if (!p) return;
     const isMobile = width < 640;
     const containerPad = isMobile ? 24 : 48;
     const hudMaxW = Math.min(1100, width - containerPad * 2);

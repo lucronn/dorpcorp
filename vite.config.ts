@@ -15,9 +15,18 @@ export default defineConfig(() => {
       chunkSizeWarningLimit: 7000,
       rollupOptions: {
         output: {
-          manualChunks: {
-            babylon: ['@babylonjs/core'],
-            vendor: ['react', 'react-dom', 'motion', 'lucide-react'],
+          manualChunks(id) {
+            if (id.includes('node_modules/@babylonjs/core')) {
+              return 'babylon';
+            }
+            if (
+              id.includes('node_modules/react') ||
+              id.includes('node_modules/react-dom') ||
+              id.includes('node_modules/motion') ||
+              id.includes('node_modules/lucide-react')
+            ) {
+              return 'vendor';
+            }
           },
         },
       },

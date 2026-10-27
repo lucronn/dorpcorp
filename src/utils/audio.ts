@@ -97,7 +97,13 @@ class AudioEngine {
   init() {
     if (this.isInitialized) return;
     try {
+      if (typeof window === "undefined") {
+        return;
+      }
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) {
+        return;
+      }
       this.ctx = new AudioCtx();
 
       // Master output gain

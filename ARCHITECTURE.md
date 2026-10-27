@@ -54,11 +54,13 @@ flowchart TD
   - Enforces strict teardown order upon component unmount:
     1. Clear active timeouts and interval timers.
     2. Detach event listeners and remove pointer observers.
-    3. Dispose active post-processes (`lensingPostProcessRef`, `wormholePostProcessRef`, `dofPostProcessRef`, `shatterPostProcessRef`, `activeTdeFxRef`).
-    4. Dispose rendering pipeline (`composerRef`).
-    5. Dispose the Babylon scene (`sceneRef`).
-    6. Stop render loop and dispose the Babylon Engine (`rendererRef`) last.
-    7. Clean up all attached global window properties.
+    3. Dispose all celestial mesh subsystems (e.g., active `hawkingSystem` quantum particle emitters).
+    4. Dispose active post-processes and custom FX (`lensingPostProcessRef`, `wormholePostProcessRef`, `dofPostProcessRef`, `shatterPostProcessRef`, `activeTdeFxRef`, `activeSupernovaFxRef`).
+    5. Dispose `glowLayerRef`, `hudTextureRef`, and `hudPlaneRef`.
+    6. Dispose rendering pipeline (`composerRef`).
+    7. Dispose the Babylon scene (`sceneRef`).
+    8. Stop render loop and dispose the Babylon Engine (`rendererRef`) last.
+    9. Clean up all attached global window properties (`__horizonZoom`, `__shatterIntensity`, `__hasShatteredSound`, `__forcedNextArchetype`, `__hawkingActive`, `__hawkingIntensity`).
 
 ### 2.3 Post-Processing GLSL Shaders
 - **[`BlackholeLensingPostProcess.ts`](file:///home/corp/curtis-click-portfolio/src/components/ParticleCanvas/BlackholeLensingPostProcess.ts)**: General relativistic deflection shader warping background space into Einstein rings around Kerr singularities.
@@ -75,10 +77,13 @@ flowchart TD
 - **Gemini Cosmic System Generation**:
   - Lazily initializes `@google/genai` client using `GEMINI_API_KEY`.
   - Configurable model via `GEMINI_MODEL` (defaults to `gemini-2.5-flash`).
-  - Automatic fallback to `getProceduralFallbackSystem()` on network errors or rate limits (`429`).
+  - Supports client-requested archetype overrides and themes in the POST payload.
+  - Automatic fallback to `getProceduralFallbackSystem(requestedArchetype)` on network errors or rate limits (`429`) across 6 core archetypes (`BLACKHOLE_CENTRIC`, `BINARY_PLANETS`, `NEBULA_CRADLE`, `EXOPLANET_CLUSTER`, `SPIRAL_GALAXY`, `STELLAR_PULSAR`).
 - **Container Health Probes**:
   - `GET /health` and `GET /api/health` return service status, ISO timestamp, and process uptime.
   - Dedicated `ALL /api/*` 404 handler prevents missing API routes from inadvertently returning HTML.
+- **Telemetry Ingestion & Bounded Logging**:
+  - `POST /api/log-error` sanitizes error payloads (500 character ceiling) and rotates/truncates `client_errors.log` if size exceeds 1MB, ensuring storage stability.
 - **Port Conflict Handling (`EADDRINUSE`)**:
   - Handles occupied ports gracefully with clear diagnostic output recommending port override via `PORT=<port>`.
 - **Graceful Shutdown**:
@@ -88,14 +93,20 @@ flowchart TD
 
 ## 4. Verification & Testing ([`scripts/test-integrity.ts`](file:///home/corp/curtis-click-portfolio/scripts/test-integrity.ts))
 
-The project includes an automated 19-test integrity test suite verifying:
+The project includes an automated 26-test integrity test suite verifying:
 1. **Hex Color Utilities**: 6-digit hex preservation, 3-digit shorthand expansion (`#fff` -> `#ffffff`), and NaN-free blending.
 2. **Physics & Noise Calculations**: `valueNoise2D` bounds, `fBmNoise2D` octave aggregation, `computeCurlNoise` vector output, and `resolveCelestialCollision` momentum conservation.
-3. **Cosmic Generator Contracts**: Entity counts, valid archetypes across 50 iterations, positive radii, and required tags.
-4. **Astrophysics Mechanics**:
+3. **Collision Flares & Accretion Dynamics**: `swallowEntity` mass transfer and radius swelling, as well as `updateCollisionFlares` decay and `disposeCollisionFlares` GPU material cleanup.
+4. **Cosmic Generator Contracts**: Entity counts, all 6 valid archetypes across 70 iterations, positive radii, required tags, and targeted archetype overrides.
+5. **Procedural Scene Builders**: Verification of all 6 scene builders (`buildBlackholeCentricScene`, `buildSpiralGalaxyScene`, `buildStellarPulsarScene`, `buildBinaryPlanetsScene`, `buildExoplanetClusterScene`, `buildNebulaCradleScene`).
+6. **Astrophysics Mechanics**:
    - `createNeutronStarBirthEvent`: core collapse remnant mass safety and collapse semantics.
    - `calculateForwardTrajectory`: deterministic prediction, sub-lightspeed ceiling (55.0), and event horizon capture.
    - `TidalDisruptionEngine`: initial quiescent state, hyperbolic inbound trajectory trigger, and double-trigger prevention.
-5. **Audio Engine Clean Teardown**: `audio.dispose()` timer and Web Audio context termination.
-6. **Static Assets & Production Bundles**: `public/favicon.svg`, `index.html` metadata, `dist/server.cjs` bundle size, and `dist/index.html`.
-7. **Server Integration & Fault Tolerance**: Ephemeral port binding, `/health` response verification, procedural fallback upon API invocation, 404 routing, and clean promise rejection on port conflict (`EADDRINUSE`).
+7. **Audio Engine Boundary Conditions**: `audio.getMuteState()`, parameter clamping, SSR/Node runtime guard, and clean teardown.
+8. **Cosmic Transition State Machine & Particle Utilities**:
+   - `CosmicTransitionStateMachine`: asynchronous stages (`SUPERNOVA_IMPLODE` -> `SUPERNOVA_DETONATE` -> `SUPERNOVA_REBIRTH` -> `TRANSITION_COMPLETE`), abort signal propagation, and clean cancellation.
+   - `ParticleUtils`: SSR safety for `particleText` in headless Node environments and defensive out-of-bounds guards in `drawStageLayoutTemplate`.
+9. **Static Assets & Production Bundles**: `public/favicon.svg`, `index.html` metadata, `dist/server.cjs` bundle size, `dist/index.html`, and clean 3-bundle chunk assets in `dist/assets` (`babylon`, `vendor`, `index`).
+10. **Client Telemetry Pipeline**: Client-side error filtering, duplicate deduplication, rate limiting, and safe payload transmission to `/api/log-error`.
+11. **Server Integration & Fault Tolerance**: Ephemeral port binding, `/health` response verification, requested archetype support, log error sanitization & bounding, 404 routing, and clean promise rejection on port conflict (`EADDRINUSE`).

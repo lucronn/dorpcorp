@@ -9,6 +9,9 @@ import {
   fBmNoise2D,
   computeCurlNoise,
   resolveCelestialCollision,
+  swallowEntity,
+  updateCollisionFlares,
+  disposeCollisionFlares,
 } from "../src/components/ParticleCanvas/PhysicsUtils";
 import { CelestialEntity } from "../src/components/ParticleCanvas/types";
 import { createNeutronStarBirthEvent } from "../src/components/ParticleCanvas/scenes/neutronstarbirth";
@@ -16,6 +19,15 @@ import { calculateForwardTrajectory } from "../src/components/ParticleCanvas/Sli
 import { createInitialTdeState, triggerTidalDisruptionEvent } from "../src/components/ParticleCanvas/TidalDisruptionEngine";
 import { audio } from "../src/utils/audio";
 import { getProceduralFallbackSystem, startServer } from "../server";
+import { buildBlackholeCentricScene } from "../src/components/ParticleCanvas/scenes/blackhole_centric";
+import { buildSpiralGalaxyScene } from "../src/components/ParticleCanvas/scenes/spiral_galaxy";
+import { buildStellarPulsarScene } from "../src/components/ParticleCanvas/scenes/stellar_pulsar";
+import { buildBinaryPlanetsScene } from "../src/components/ParticleCanvas/scenes/binary_planets";
+import { buildExoplanetClusterScene } from "../src/components/ParticleCanvas/scenes/exoplanet_cluster";
+import { buildNebulaCradleScene } from "../src/components/ParticleCanvas/scenes/nebula_cradle";
+import { isIgnoredErrorMessage, reportClientError, resetTelemetryThrottling } from "../src/utils/telemetry";
+import { CosmicTransitionStateMachine } from "../src/components/ParticleCanvas/TransitionManager";
+import { drawStageLayoutTemplate, particleText } from "../src/components/ParticleCanvas/ParticleUtils";
 
 let totalTests = 0;
 let passedTests = 0;
@@ -128,9 +140,69 @@ async function runAllTests() {
     assert.ok(e2.vx! > 0, "Body 2 must bounce rightward");
   });
 
+  runTest("swallowEntity: updates victim state and expands black hole mass & targetRadius safely", () => {
+    const bh: CelestialEntity = {
+      type: "blackhole",
+      x: 0,
+      y: 0,
+      radius: 50,
+      mass: 5000,
+      color: "#ff8844",
+    };
+    const victim: CelestialEntity = {
+      type: "planet",
+      x: 10,
+      y: 0,
+      radius: 20,
+      mass: 400,
+      color: "#4488ff",
+    };
+
+    swallowEntity(bh, victim);
+    assert.equal(victim.isSwallowing, true);
+    assert.equal(victim.destroyedBy, "blackhole");
+    assert.equal(bh.mass, 5400);
+    assert.ok(bh.targetRadius !== undefined && bh.targetRadius > 0);
+  });
+
+  runTest("updateCollisionFlares and disposeCollisionFlares: handles life decay, scaling, and clean disposal", () => {
+    let meshDisposed = false;
+    let matDisposed = false;
+    const dummyMat: any = {
+      alpha: 0.95,
+      dispose: () => { matDisposed = true; },
+    };
+    const dummyMesh: any = {
+      isDisposed: () => meshDisposed,
+      scaling: { setAll: (_v: number) => {} },
+      material: dummyMat,
+      dispose: () => { meshDisposed = true; },
+    };
+    const flares = [
+      { mesh: dummyMesh as any, life: 0.01, maxLife: 1.0, initialRadius: 20 },
+    ];
+
+    // Flare life expires after dt step
+    const remaining = updateCollisionFlares(flares, 0.02);
+    assert.equal(remaining.length, 0);
+    assert.equal(meshDisposed, true);
+    assert.equal(matDisposed, true);
+
+    // Test disposeCollisionFlares
+    meshDisposed = false;
+    matDisposed = false;
+    const flares2 = [
+      { mesh: dummyMesh as any, life: 0.8, maxLife: 1.0, initialRadius: 20 },
+    ];
+    disposeCollisionFlares(flares2);
+    assert.equal(flares2.length, 0);
+    assert.equal(meshDisposed, true);
+    assert.equal(matDisposed, true);
+  });
+
   console.log("\n==> Testing Procedural Cosmic System Generator & 3D Scene Architecture");
 
-  runTest("getProceduralFallbackSystem: validates structure across 50 iterations and covers all 5 archetypes", () => {
+  runTest("getProceduralFallbackSystem: validates structure across 70 iterations and covers all 6 archetypes", () => {
     const encounteredArchetypes = new Set<string>();
     const expectedArchetypes = [
       "BLACKHOLE_CENTRIC",
@@ -138,9 +210,10 @@ async function runAllTests() {
       "NEBULA_CRADLE",
       "EXOPLANET_CLUSTER",
       "SPIRAL_GALAXY",
+      "STELLAR_PULSAR",
     ];
 
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 70; i++) {
       const system = getProceduralFallbackSystem();
       assert.ok(system.systemName.length > 3, "System name must be populated");
       assert.ok(system.systemDesc.length > 20, "System description must be populated");
@@ -157,7 +230,41 @@ async function runAllTests() {
     }
 
     expectedArchetypes.forEach((archetype) => {
-      assert.ok(encounteredArchetypes.has(archetype), `Archetype ${archetype} must be generated within 50 runs`);
+      assert.ok(encounteredArchetypes.has(archetype), `Archetype ${archetype} must be generated within 70 runs`);
+    });
+
+    // Targeted archetype generation check
+    const targetedPulsar = getProceduralFallbackSystem("STELLAR_PULSAR");
+    assert.equal(targetedPulsar.archetype, "STELLAR_PULSAR");
+    const targetedSpiral = getProceduralFallbackSystem("SPIRAL_GALAXY");
+    assert.equal(targetedSpiral.archetype, "SPIRAL_GALAXY");
+  });
+
+  runTest("Procedural Scene Builders: validates all 6 procedural scene builders contract", () => {
+    const builders = [
+      { name: "buildBlackholeCentricScene", fn: buildBlackholeCentricScene },
+      { name: "buildSpiralGalaxyScene", fn: buildSpiralGalaxyScene },
+      { name: "buildStellarPulsarScene", fn: buildStellarPulsarScene },
+      { name: "buildBinaryPlanetsScene", fn: buildBinaryPlanetsScene },
+      { name: "buildExoplanetClusterScene", fn: buildExoplanetClusterScene },
+      { name: "buildNebulaCradleScene", fn: buildNebulaCradleScene },
+    ];
+
+    builders.forEach(({ name, fn }) => {
+      const desktop = fn(1920, 1080, false);
+      assert.ok(desktop.systemName.length > 3, `${name}: systemName must be populated`);
+      assert.ok(desktop.systemDesc.length > 20, `${name}: systemDesc must be populated`);
+      assert.equal(desktop.systemTags.length, 3, `${name}: must have 3 tags`);
+      assert.ok(desktop.entities.length >= 1, `${name}: must contain >= 1 entities`);
+
+      const mobile = fn(375, 667, true);
+      assert.ok(mobile.entities.length >= 1, `${name} (mobile): must contain >= 1 entities`);
+
+      desktop.entities.forEach((e) => {
+        assert.ok(e.radius > 0, `${name}: radius must be positive`);
+        assert.ok(typeof e.color === "string" && e.color.length > 0, `${name}: color must be non-empty`);
+        assert.ok(["blackhole", "planet", "star", "nebula", "galaxy"].includes(e.type), `${name}: entity type ${e.type} must be valid`);
+      });
     });
   });
 
@@ -247,9 +354,59 @@ async function runAllTests() {
     assert.equal(retriggered, false, "Must reject triggering while TDE is already active");
   });
 
-  runTest("AudioEngine: disposes timers and audio context cleanly", () => {
+  runTest("AudioEngine: handles modulation bounds, mute toggles, and clean disposal", () => {
+    assert.equal(audio.getMuteState(), true, "Audio should initially be muted");
+    audio.setMute(false);
+    assert.equal(audio.getMuteState(), false, "Audio should be unmuted");
+    audio.setMute(true);
+    assert.equal(audio.getMuteState(), true, "Audio should be muted again");
+
+    // Boundary conditions should never throw
     assert.doesNotThrow(() => {
+      audio.setTimeDilation(-5.0);
+      audio.setTimeDilation(10.0);
+      audio.setTimeDilation(1.0);
+      audio.setGravitationalProximity(-1.0);
+      audio.setGravitationalProximity(2.0);
+      audio.setGravitationalProximity(0.5);
+      audio.setCinematicMode(true);
+      audio.setCinematicMode(false);
+      audio.pingInteraction();
       audio.dispose();
+    });
+  });
+
+  await runTest("CosmicTransitionStateMachine: validates initial state, lifecycle transitions, and clean cancellation", async () => {
+    const sm = new CosmicTransitionStateMachine();
+    const info = sm.getInfo();
+    assert.equal(info.stage, "IDLE_BLACKHOLE");
+    assert.equal(info.progress, 0);
+    assert.equal(info.isTransitioning, false);
+
+    // Test transition initiation and abort cancellation
+    let imploded = false;
+    const transitionPromise = sm.executeBlackHoleToSupernovaTransition({
+      onImplode: () => { imploded = true; },
+    });
+    assert.equal(sm.getInfo().isTransitioning, true);
+    assert.equal(imploded, true);
+
+    sm.cancel();
+    await transitionPromise;
+    assert.equal(sm.getInfo().stage, "IDLE_BLACKHOLE");
+    assert.equal(sm.getInfo().isTransitioning, false);
+  });
+
+  runTest("ParticleUtils: validates SSR safety for particleText and defensive bounds handling in drawStageLayoutTemplate", () => {
+    // SSR / Node environment guard: particleText must return empty array without throwing ReferenceError
+    const coords = particleText("TEST", 24, 1, 1, 1, 0, 0, "#4deeea", 400, 200);
+    assert.deepEqual(coords, []);
+
+    // drawStageLayoutTemplate boundary handling: out of bounds or null context should never throw
+    assert.doesNotThrow(() => {
+      drawStageLayoutTemplate(null as any, 0, 0, 0, "full");
+      drawStageLayoutTemplate(null as any, -1, 100, 100, "full");
+      drawStageLayoutTemplate(null as any, 99, 100, 100, "full");
     });
   });
 
@@ -279,7 +436,39 @@ async function runAllTests() {
 
       const distHtml = path.join(distPath, "index.html");
       assert.ok(fs.existsSync(distHtml), "dist/index.html must exist after build");
+
+      // Verify clean 3-bundle assets in dist/assets
+      const assetsDir = path.join(distPath, "assets");
+      if (fs.existsSync(assetsDir)) {
+        const assetFiles = fs.readdirSync(assetsDir);
+        const hasBabylonBundle = assetFiles.some((f) => f.startsWith("babylon-") && f.endsWith(".js"));
+        const hasVendorBundle = assetFiles.some((f) => f.startsWith("vendor-") && f.endsWith(".js"));
+        const hasIndexBundle = assetFiles.some((f) => f.startsWith("index-") && f.endsWith(".js"));
+        assert.ok(hasBabylonBundle, "dist/assets must contain bundled babylon chunk");
+        assert.ok(hasVendorBundle, "dist/assets must contain bundled vendor chunk");
+        assert.ok(hasIndexBundle, "dist/assets must contain bundled index chunk");
+      }
     }
+  });
+
+  await runTest("Telemetry Pipeline: validates client error filtering, duplicate deduplication, and throttling", async () => {
+    resetTelemetryThrottling();
+    assert.equal(isIgnoredErrorMessage("WebSocket connection to 'ws://...' failed"), true);
+    assert.equal(isIgnoredErrorMessage("[vite] connecting..."), true);
+    assert.equal(isIgnoredErrorMessage("HMR update error"), true);
+    assert.equal(isIgnoredErrorMessage("NullPointerException in WebGL render pipeline"), false);
+
+    // Test reporting valid error
+    const ok = await reportClientError("Test WebGL Shader Compilation Warning", "test-suite");
+    assert.equal(ok, true, "Telemetry should accept valid non-ignored error");
+
+    // Test duplicate deduplication within throttle window
+    const duplicate = await reportClientError("Test WebGL Shader Compilation Warning", "test-suite");
+    assert.equal(duplicate, false, "Telemetry should deduplicate identical errors");
+
+    // Test ignored error rejection
+    const ignored = await reportClientError("WebSocket failed to connect to websocket", "test-suite");
+    assert.equal(ignored, false, "Telemetry should ignore websocket noise");
   });
 
   console.log("\n==> Testing HTTP Server Endpoints & Integration");
@@ -347,20 +536,37 @@ async function runAllTests() {
     assert.ok(res.body.entities.length >= 2);
   });
 
+  await runTest("POST /api/generate-cosmic-scene: supports requested archetype override", async () => {
+    const res = await makeRequest("/api/generate-cosmic-scene", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archetype: "STELLAR_PULSAR" }),
+    } as any);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.archetype, "STELLAR_PULSAR");
+    assert.ok(res.body.entities.length >= 2);
+  });
+
   await runTest("ALL /api/unknown: returns 404 JSON error instead of HTML SPA", async () => {
     const res = await makeRequest("/api/non-existent-endpoint");
     assert.equal(res.status, 404);
     assert.equal(res.body.error, "Endpoint not found");
   });
 
-  await runTest("POST /api/log-error: records client diagnostics", async () => {
+  await runTest("POST /api/log-error: records and sanitizes client diagnostics with size bounding", async () => {
+    const hugeMsg = "Synthetic client test error " + "X".repeat(1200);
     const res = await makeRequest("/api/log-error", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "Synthetic client test error" }),
+      body: JSON.stringify({ error: hugeMsg }),
     } as any);
     assert.equal(res.status, 200);
     assert.equal(res.body.ok, true);
+
+    const logPath = path.join(process.cwd(), "client_errors.log");
+    assert.ok(fs.existsSync(logPath), "client_errors.log must exist");
+    const stat = fs.statSync(logPath);
+    assert.ok(stat.size < 2 * 1024 * 1024, "client_errors.log must be bounded (<2MB)");
   });
 
   await runTest("startServer: rejects cleanly on port conflict without crashing", async () => {

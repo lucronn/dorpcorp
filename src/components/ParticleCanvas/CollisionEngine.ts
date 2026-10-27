@@ -263,3 +263,54 @@ export function spawnCollisionFlare(
     initialRadius: radius,
   });
 }
+
+/**
+ * Updates active collision flares, animating decay and cleanly disposing meshes and materials upon expiration.
+ */
+export function updateCollisionFlares(
+  flaresList: Array<{ mesh: BABYLON.Mesh; life: number; maxLife: number; initialRadius: number }>,
+  dt: number = 0.016
+): Array<{ mesh: BABYLON.Mesh; life: number; maxLife: number; initialRadius: number }> {
+  const activeFlares: typeof flaresList = [];
+  for (let i = 0; i < flaresList.length; i++) {
+    const flare = flaresList[i]!;
+    flare.life -= dt * 1.5;
+    if (flare.life <= 0) {
+      if (flare.mesh && !flare.mesh.isDisposed()) {
+        if (flare.mesh.material) {
+          flare.mesh.material.dispose(false, true);
+        }
+        flare.mesh.dispose();
+      }
+    } else {
+      if (flare.mesh && !flare.mesh.isDisposed()) {
+        const progress = Math.max(0, flare.life / flare.maxLife);
+        const currentScale = 1.0 + (1.0 - progress) * 0.8;
+        flare.mesh.scaling.setAll(currentScale);
+        if (flare.mesh.material && "alpha" in flare.mesh.material) {
+          (flare.mesh.material as any).alpha = 0.95 * progress;
+        }
+      }
+      activeFlares.push(flare);
+    }
+  }
+  return activeFlares;
+}
+
+/**
+ * Cleanly disposes all collision flare meshes and their allocated WebGL materials.
+ */
+export function disposeCollisionFlares(
+  flaresList: Array<{ mesh: BABYLON.Mesh; life: number; maxLife: number; initialRadius: number }>
+): void {
+  for (let i = 0; i < flaresList.length; i++) {
+    const flare = flaresList[i];
+    if (flare?.mesh && !flare.mesh.isDisposed()) {
+      if (flare.mesh.material) {
+        flare.mesh.material.dispose(false, true);
+      }
+      flare.mesh.dispose();
+    }
+  }
+  flaresList.length = 0;
+}
