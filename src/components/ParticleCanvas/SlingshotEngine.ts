@@ -80,7 +80,10 @@ export function calculateForwardTrajectory(
 
     for (let i = 0; i < celestialEntities.length; i++) {
       const entity = celestialEntities[i];
-      if (!entity || entity.isDestroyed) continue;
+      if (!entity || entity.isDestroyed || (entity.scale !== undefined && entity.scale <= 0.01) || entity.radius <= 0) continue;
+
+      const scale = entity.scale !== undefined && entity.scale > 0 ? entity.scale : 1.0;
+      const effectiveRadius = entity.radius * scale;
 
       const dx = entity.x - px;
       const dy = entity.y - py;
@@ -89,7 +92,7 @@ export function calculateForwardTrajectory(
       const dist = Math.sqrt(distSq) || 1;
 
       if (entity.type === "blackhole") {
-        const rs = entity.radius;
+        const rs = effectiveRadius;
         // Event Horizon capture detection
         if (dist <= rs * 1.15) {
           isHorizonBound = true;
@@ -100,13 +103,13 @@ export function calculateForwardTrajectory(
         // Paczyński-Wiita General Relativistic Pseudo-Potential
         // Accurately reproduces ISCO (Innermost Stable Circular Orbit) and event horizon plunge
         const effDist = Math.max(rs * 0.15, dist - rs);
-        const gForce = (entity.mass || entity.radius * 6500) / (dist * effDist * effDist);
+        const gForce = ((entity.mass || entity.radius * 6500) * scale) / (dist * effDist * effDist);
         ax += (dx / dist) * gForce;
         ay += (dy / dist) * gForce;
         az += (dz / dist) * gForce * 0.4;
       } else {
-        const softDist = Math.max(entity.radius * 0.8, dist);
-        const gForce = (entity.mass || entity.radius * 120) / (softDist * softDist);
+        const softDist = Math.max(effectiveRadius * 0.8, dist);
+        const gForce = ((entity.mass || entity.radius * 120) * scale) / (softDist * softDist);
         ax += (dx / dist) * gForce;
         ay += (dy / dist) * gForce;
         az += (dz / dist) * gForce * 0.3;
@@ -170,7 +173,10 @@ export function updateActiveProbes(
 
     for (let i = 0; i < celestialEntities.length; i++) {
       const entity = celestialEntities[i];
-      if (!entity || entity.isDestroyed) continue;
+      if (!entity || entity.isDestroyed || (entity.scale !== undefined && entity.scale <= 0.01) || entity.radius <= 0) continue;
+
+      const scale = entity.scale !== undefined && entity.scale > 0 ? entity.scale : 1.0;
+      const effectiveRadius = entity.radius * scale;
 
       const dx = entity.x - probe.x;
       const dy = entity.y - probe.y;
@@ -181,26 +187,26 @@ export function updateActiveProbes(
       if (entity.type === "blackhole") {
         if (dist < closestDistToBh) {
           closestDistToBh = dist;
-          nearestBhRadius = entity.radius;
+          nearestBhRadius = effectiveRadius;
         }
 
         // Event Horizon Relativistic Absorption
-        if (dist <= entity.radius * 1.08) {
+        if (dist <= effectiveRadius * 1.08) {
           probe.isSwallowed = true;
           audio.playProbeSwallowed();
           ripplesRef.current.push({ x: entity.x, y: entity.y, life: 1.0 });
           break;
         }
 
-        const rs = entity.radius;
+        const rs = effectiveRadius;
         const effDist = Math.max(rs * 0.15, dist - rs);
-        const gForce = (entity.mass || entity.radius * 6500) / (dist * effDist * effDist);
+        const gForce = ((entity.mass || entity.radius * 6500) * scale) / (dist * effDist * effDist);
         ax += (dx / dist) * gForce;
         ay += (dy / dist) * gForce;
         az += (dz / dist) * gForce * 0.4;
       } else {
-        const softDist = Math.max(entity.radius * 0.8, dist);
-        const gForce = (entity.mass || entity.radius * 120) / (softDist * softDist);
+        const softDist = Math.max(effectiveRadius * 0.8, dist);
+        const gForce = ((entity.mass || entity.radius * 120) * scale) / (softDist * softDist);
         ax += (dx / dist) * gForce;
         ay += (dy / dist) * gForce;
         az += (dz / dist) * gForce * 0.3;

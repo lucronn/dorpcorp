@@ -960,8 +960,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     };
 
     engine.runRenderLoop(() => {
+      if (scene.isDisposed || !rendererRef.current) return;
       render();
-      scene.render();
+      if (!scene.isDisposed) {
+        scene.render();
+      }
     });
 
     const cleanupEvents = setupParticleCanvasEvents({

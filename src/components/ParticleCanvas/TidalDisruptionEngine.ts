@@ -334,7 +334,9 @@ export function updateTidalDisruption(
     tde.fragments = activeFragments;
 
     // Transition to Accretion Surge when star mass is completely shredded into accretion stream
-    if (tde.starMass <= 0.03 && tde.fragments.length <= 4) {
+    const isMassDepleted = tde.starMass <= 0.03 && tde.fragments.length <= 4;
+    const isProgressionTimedOut = tde.starMass <= 0.01 && (Date.now() - tde.startTime > 6500);
+    if (isMassDepleted || isProgressionTimedOut) {
       tde.starMass = 0;
       tde.starRadius = 0;
       tde.stage = "ACCRETION_SURGE";
@@ -448,5 +450,5 @@ export function updateTidalDisruption(
 
     nextStreamers.push(p);
   }
-  tde.streamers = nextStreamers;
+  tde.streamers = nextStreamers.length > 400 ? nextStreamers.slice(-400) : nextStreamers;
 }

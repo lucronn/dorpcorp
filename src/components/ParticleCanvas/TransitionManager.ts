@@ -305,8 +305,8 @@ export function triggerCalmCosmicShift(
     time: Date.now(),
     exploded: false,
     isCalmShift: true,
-    x: window.innerWidth / 2,
-    y: window.innerHeight / 2,
+    x: typeof window !== "undefined" ? window.innerWidth / 2 : 960,
+    y: typeof window !== "undefined" ? window.innerHeight / 2 : 540,
   };
 
   fetchNextGeminiScene();

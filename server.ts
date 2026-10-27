@@ -221,7 +221,14 @@ export async function startServer(portOverride?: number) {
 
   // Client error logging endpoint with size bounding and string sanitization
   app.post("/api/log-error", (req, res) => {
-    const rawError = req.body?.error;
+    let rawError = req.body?.error;
+    if (typeof rawError !== "string" && rawError !== undefined && rawError !== null) {
+      try {
+        rawError = JSON.stringify(rawError);
+      } catch {
+        rawError = String(rawError);
+      }
+    }
     const sanitizedError =
       typeof rawError === "string"
         ? rawError.slice(0, 500).replace(/[\r\n]+/g, " ")
@@ -336,6 +343,19 @@ export async function startServer(portOverride?: number) {
         cleanText = cleanText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
       }
       const data = JSON.parse(cleanText);
+      const validArchetypes = [
+        "BLACKHOLE_CENTRIC",
+        "BINARY_PLANETS",
+        "NEBULA_CRADLE",
+        "EXOPLANET_CLUSTER",
+        "SPIRAL_GALAXY",
+        "STELLAR_PULSAR",
+      ];
+      if (!data.archetype || !validArchetypes.includes(data.archetype)) {
+        data.archetype = (requestedArchetype && validArchetypes.includes(requestedArchetype))
+          ? requestedArchetype
+          : "BLACKHOLE_CENTRIC";
+      }
       res.json(data);
     } catch (err: any) {
       // If we hit a rate limit or other error, fallback quietly without a scary stack trace

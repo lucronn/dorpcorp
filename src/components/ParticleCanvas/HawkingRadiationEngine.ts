@@ -105,13 +105,17 @@ export function createHawkingRadiationSystem(
       ps.maxLifeTime = 2.6 + currentIntensity * 1.4;
 
       // Share real-time telemetry with the HUD
-      (window as any).__hawkingIntensity = currentIntensity;
-      (window as any).__hawkingActive = true;
+      if (typeof window !== "undefined") {
+        (window as any).__hawkingIntensity = currentIntensity;
+        (window as any).__hawkingActive = true;
+      }
     },
     dispose() {
       try {
-        (window as any).__hawkingActive = false;
-        (window as any).__hawkingIntensity = 0;
+        if (typeof window !== "undefined") {
+          (window as any).__hawkingActive = false;
+          (window as any).__hawkingIntensity = 0;
+        }
         ps.stop();
         ps.dispose();
         sparkTex.dispose();

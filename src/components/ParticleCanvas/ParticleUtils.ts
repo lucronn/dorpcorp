@@ -155,7 +155,7 @@ export const particleText = (
   letterSpacing: string = '0px',
   lineWidthMultiplier: number = 0.05
 ): { x: number; y: number; color: string, isProjectText: boolean }[] => {
-  if (typeof document === "undefined") return [];
+  if (typeof document === "undefined" || width <= 0 || height <= 0) return [];
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -179,7 +179,8 @@ export const particleText = (
   const tData = ctx.getImageData(0, 0, width, height).data;
   const coords: { x: number; y: number; color: string, isProjectText: boolean }[] = [];
 
-  const isMobileDevice = /iPad|iPhone|iPod|Android/i.test(navigator.userAgent) || width < 768;
+  const userAgentStr = typeof navigator !== "undefined" ? navigator.userAgent : "";
+  const isMobileDevice = /iPad|iPhone|iPod|Android/i.test(userAgentStr) || width < 768;
   const totalPixels = width * height;
 
   let baseDensity = isMobileDevice ? 2 : 1;
@@ -249,7 +250,7 @@ export const generateTargetsForStage = (
   width: number,
   height: number,
 ): { x: number; y: number; color: string, isProjectText: boolean }[] => {
-  if (width <= 0 || height <= 0) return [];
+  if (typeof document === "undefined" || width <= 0 || height <= 0) return [];
 
   let coords: { x: number; y: number; color: string, isProjectText: boolean }[] = [];
 
@@ -286,8 +287,8 @@ export const generateTargetsForStage = (
         ? 90
         : 130;
     
-    const measureCanvas = document.createElement("canvas");
-    const mctx = measureCanvas.getContext("2d");
+    const measureCanvas = typeof document !== "undefined" ? document.createElement("canvas") : null;
+    const mctx = measureCanvas ? measureCanvas.getContext("2d") : null;
     let appliedTitleFontSize = titleFontSize;
     if (mctx) {
       mctx.font = `bold ${appliedTitleFontSize}px "Playfair Display", Georgia, serif`;

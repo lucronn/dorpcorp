@@ -1,7 +1,7 @@
 import * as BABYLON from "@babylonjs/core";
 import { Particle } from "../../types";
 import { CelestialEntity, ParticleFilters } from "./types";
-import { computeCurlNoise } from "./PhysicsUtils";
+import { computeCurlNoise, normalizeHexColor } from "./PhysicsUtils";
 
 export interface SimulationContext {
   currentW: number;
@@ -238,7 +238,7 @@ export function simulateParticles(
         } else {
           let r = 1.0, g = 1.0, b = 1.0;
           if (p.color && typeof p.color === "string" && p.color.startsWith("#")) {
-            const hex = p.color.slice(1);
+            const hex = normalizeHexColor(p.color).slice(1);
             if (hex.length === 6) {
               r = parseInt(hex.slice(0, 2), 16) / 255;
               g = parseInt(hex.slice(2, 4), 16) / 255;
@@ -344,7 +344,7 @@ export function simulateParticles(
       } else {
         let r = 1.0, g = 1.0, b = 1.0;
         if (p.color && typeof p.color === "string" && p.color.startsWith("#")) {
-          const hex = p.color.slice(1);
+          const hex = normalizeHexColor(p.color).slice(1);
           if (hex.length === 6) {
             r = parseInt(hex.slice(0, 2), 16) / 255;
             g = parseInt(hex.slice(2, 4), 16) / 255;

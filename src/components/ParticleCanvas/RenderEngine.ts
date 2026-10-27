@@ -10,6 +10,7 @@ import { SupernovaFXInstance } from "./SupernovaFX";
 import { SlingshotAimState, SlingshotProbe, updateActiveProbes } from "./SlingshotEngine";
 import { TdeState, updateTidalDisruption } from "./TidalDisruptionEngine";
 import { spawnTidalDisruptionFX, TidalDisruptionFXInstance } from "./TidalDisruptionFX";
+import { updateCollisionFlares } from "./CollisionEngine";
 
 export interface RenderEngineContext {
   particlesRef: React.MutableRefObject<Particle[]>;
@@ -375,29 +376,16 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
 
   ctx.ripplesRef.current.forEach((r) => (r.life -= 0.02));
   ctx.ripplesRef.current = ctx.ripplesRef.current.filter((r) => r.life > 0);
+  if (ctx.ripplesRef.current.length > 25) {
+    ctx.ripplesRef.current = ctx.ripplesRef.current.slice(-25);
+  }
 
   if (ctx.collisionFlaresRef.current.length > 0) {
-    const remainingFlares: typeof ctx.collisionFlaresRef.current = [];
-    const objSpeedMult = (ctx.objectParticleSpeedRef.current ?? 0.15) / 0.15;
-    const flareDecay = Math.max(0.12, 0.12 * Math.max(0.3, objSpeedMult));
-    ctx.collisionFlaresRef.current.forEach((flare) => {
-      flare.life -= flareDecay;
-      if (flare.life > 0) {
-        const progress = 1.0 - flare.life;
-        const s = 1.0 + progress * 0.6;
-        flare.mesh.scaling.set(s, s, s);
-        if (flare.mesh.material) {
-          flare.mesh.material.alpha = flare.life * flare.life;
-        }
-        remainingFlares.push(flare);
-      } else {
-        if (flare.mesh.material) {
-          flare.mesh.material.dispose(false, true);
-        }
-        flare.mesh.dispose();
-      }
-    });
-    ctx.collisionFlaresRef.current = remainingFlares;
+    const dtSeconds = Math.min(0.05, (dt || 16.666) / 1000);
+    ctx.collisionFlaresRef.current = updateCollisionFlares(
+      ctx.collisionFlaresRef.current,
+      dtSeconds
+    );
   }
 
   ctx.cameraShakeRef.current *= 0.88;

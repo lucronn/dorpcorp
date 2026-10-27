@@ -16,7 +16,7 @@ import {
 import { CelestialEntity } from "../src/components/ParticleCanvas/types";
 import { createNeutronStarBirthEvent } from "../src/components/ParticleCanvas/scenes/neutronstarbirth";
 import { calculateForwardTrajectory } from "../src/components/ParticleCanvas/SlingshotEngine";
-import { createInitialTdeState, triggerTidalDisruptionEvent } from "../src/components/ParticleCanvas/TidalDisruptionEngine";
+import { createInitialTdeState, triggerTidalDisruptionEvent, updateTidalDisruption } from "../src/components/ParticleCanvas/TidalDisruptionEngine";
 import { audio } from "../src/utils/audio";
 import { getProceduralFallbackSystem, startServer } from "../server";
 import { buildBlackholeCentricScene } from "../src/components/ParticleCanvas/scenes/blackhole_centric";
@@ -26,8 +26,8 @@ import { buildBinaryPlanetsScene } from "../src/components/ParticleCanvas/scenes
 import { buildExoplanetClusterScene } from "../src/components/ParticleCanvas/scenes/exoplanet_cluster";
 import { buildNebulaCradleScene } from "../src/components/ParticleCanvas/scenes/nebula_cradle";
 import { isIgnoredErrorMessage, reportClientError, resetTelemetryThrottling } from "../src/utils/telemetry";
-import { CosmicTransitionStateMachine } from "../src/components/ParticleCanvas/TransitionManager";
-import { drawStageLayoutTemplate, particleText } from "../src/components/ParticleCanvas/ParticleUtils";
+import { CosmicTransitionStateMachine, triggerCalmCosmicShift } from "../src/components/ParticleCanvas/TransitionManager";
+import { drawStageLayoutTemplate, particleText, generateTargetsForStage } from "../src/components/ParticleCanvas/ParticleUtils";
 
 let totalTests = 0;
 let passedTests = 0;
@@ -326,6 +326,37 @@ async function runAllTests() {
     assert.ok(hasCaptured, "Direct trajectory towards black hole must trigger event horizon capture");
   });
 
+  runTest("calculateForwardTrajectory: filters out zero-scale and despawning entities from trajectory prediction", () => {
+    const bhActive: CelestialEntity = {
+      type: "blackhole",
+      x: 300,
+      y: 300,
+      radius: 50,
+      color: "#ff8844",
+      mass: 50000,
+      scale: 1.0,
+    };
+    const bhZeroScale: CelestialEntity = {
+      type: "blackhole",
+      x: 300,
+      y: 300,
+      radius: 50,
+      color: "#ff8844",
+      mass: 50000,
+      scale: 0.0,
+    };
+
+    // Trajectory with zero-scale black hole should not capture
+    const trajNoGravity = calculateForwardTrajectory(280, 280, 260, 260, [bhZeroScale], 40);
+    const hasCapturedZeroScale = trajNoGravity.some((pt) => pt.isHorizonBound);
+    assert.equal(hasCapturedZeroScale, false, "Zero-scale entity must not capture trajectory");
+
+    // Trajectory with active black hole captures
+    const trajActive = calculateForwardTrajectory(280, 280, 260, 260, [bhActive], 40);
+    const hasCapturedActive = trajActive.some((pt) => pt.isHorizonBound);
+    assert.equal(hasCapturedActive, true, "Active entity must capture trajectory");
+  });
+
   runTest("TidalDisruptionEngine: validates quiescent initial state and hyperbolic inbound trajectory trigger", () => {
     const tde = createInitialTdeState();
     assert.equal(tde.stage, "IDLE");
@@ -352,6 +383,43 @@ async function runAllTests() {
     // Re-triggering while active must be safely rejected
     const retriggered = triggerTidalDisruptionEvent(tde, entities, 1200, 800);
     assert.equal(retriggered, false, "Must reject triggering while TDE is already active");
+  });
+
+  runTest("TidalDisruptionEngine: progression safeguard advances ROCHE_RUPTURE to ACCRETION_SURGE upon mass shredding", () => {
+    const tde = createInitialTdeState();
+    tde.isActive = true;
+    tde.stage = "ROCHE_RUPTURE";
+    tde.starMass = 0.005;
+    tde.startTime = Date.now() - 7000;
+    tde.fragments = [
+      {
+        x: 100,
+        y: 100,
+        z: 0,
+        vx: 1,
+        vy: 1,
+        radius: 4,
+        color: "#fff",
+        life: 1,
+        decay: 0.001,
+        rotation: 0,
+        rotSpeed: 0,
+        stretchX: 1,
+        stretchY: 1,
+      },
+    ];
+
+    const entities: CelestialEntity[] = [
+      { type: "blackhole", x: 500, y: 500, radius: 60, color: "#ff8844" },
+    ];
+    const cameraShake = { current: 0 };
+    const ripples = { current: [] as any[] };
+
+    updateTidalDisruption(tde, entities, 1000, 1000, cameraShake, ripples);
+
+    assert.equal(tde.stage, "ACCRETION_SURGE", "TDE must transition to ACCRETION_SURGE when star mass is depleted");
+    assert.equal(tde.starMass, 0);
+    assert.equal(tde.starRadius, 0);
   });
 
   runTest("AudioEngine: handles modulation bounds, mute toggles, and clean disposal", () => {
@@ -401,6 +469,8 @@ async function runAllTests() {
     // SSR / Node environment guard: particleText must return empty array without throwing ReferenceError
     const coords = particleText("TEST", 24, 1, 1, 1, 0, 0, "#4deeea", 400, 200);
     assert.deepEqual(coords, []);
+    assert.deepEqual(particleText("TEST", 24, 1, 1, 1, 0, 0, "#4deeea", 0, 0), []);
+    assert.deepEqual(particleText("TEST", 24, 1, 1, 1, 0, 0, "#4deeea", -50, -50), []);
 
     // drawStageLayoutTemplate boundary handling: out of bounds or null context should never throw
     assert.doesNotThrow(() => {
@@ -408,6 +478,35 @@ async function runAllTests() {
       drawStageLayoutTemplate(null as any, -1, 100, 100, "full");
       drawStageLayoutTemplate(null as any, 99, 100, 100, "full");
     });
+  });
+
+  runTest("ParticleUtils: validates SSR safety in generateTargetsForStage across all stage indices", () => {
+    for (let s = -2; s <= 8; s++) {
+      assert.doesNotThrow(() => {
+        const targets = generateTargetsForStage(s, 1920, 1080);
+        assert.ok(Array.isArray(targets));
+        assert.equal(targets.length, 0); // In SSR/Node, document is undefined so empty targets returned safely
+      });
+    }
+    assert.deepEqual(generateTargetsForStage(0, 0, 0), []);
+    assert.deepEqual(generateTargetsForStage(0, -100, -100), []);
+  });
+
+  runTest("TransitionManager: validates SSR safety in triggerCalmCosmicShift without window object", () => {
+    const celestialEntitiesRef = { current: [{ isDestroyed: false } as CelestialEntity] };
+    const supernovaRef = { current: null as any };
+    let fetched = false;
+    assert.doesNotThrow(() => {
+      triggerCalmCosmicShift(celestialEntitiesRef as any, supernovaRef as any, () => {
+        fetched = true;
+      });
+    });
+    assert.equal(fetched, true);
+    assert.equal(celestialEntitiesRef.current[0]!.isDestroyed, true);
+    assert.ok(supernovaRef.current);
+    assert.equal(supernovaRef.current.isCalmShift, true);
+    assert.equal(supernovaRef.current.x, 960);
+    assert.equal(supernovaRef.current.y, 540);
   });
 
   console.log("\n==> Testing Static Assets & Build Artifacts");
@@ -567,6 +666,29 @@ async function runAllTests() {
     assert.ok(fs.existsSync(logPath), "client_errors.log must exist");
     const stat = fs.statSync(logPath);
     assert.ok(stat.size < 2 * 1024 * 1024, "client_errors.log must be bounded (<2MB)");
+  });
+
+  await runTest("POST /api/log-error: serializes structured object error payloads cleanly", async () => {
+    const res = await makeRequest("/api/log-error", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ error: { message: "WebGL Context Lost", code: "CONTEXT_LOST_WEBGL" } }),
+    } as any);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+  });
+
+  runTest("getProceduralFallbackSystem: handles unknown archetype by defaulting to valid one", () => {
+    const fallback = getProceduralFallbackSystem("NON_EXISTENT_ARCHETYPE");
+    const validArchetypes = [
+      "BLACKHOLE_CENTRIC",
+      "BINARY_PLANETS",
+      "NEBULA_CRADLE",
+      "EXOPLANET_CLUSTER",
+      "SPIRAL_GALAXY",
+      "STELLAR_PULSAR",
+    ];
+    assert.ok(validArchetypes.includes(fallback.archetype), `Archetype must be valid, got ${fallback.archetype}`);
   });
 
   await runTest("startServer: rejects cleanly on port conflict without crashing", async () => {

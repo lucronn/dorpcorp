@@ -11,6 +11,7 @@ import {
 import { createCircularGlowTexture } from "./TextureUtils";
 import { createNeutronStarBirthEvent } from "./scenes/neutronstarbirth";
 import { createHawkingRadiationSystem } from "./HawkingRadiationEngine";
+import { spawnCollisionFlare, createShatterDebris, blendHexColors, CollisionResult } from "./PhysicsUtils";
 
 export function getSpacetimeFabricDistortion(
   wx: number,
@@ -88,7 +89,7 @@ export function updateCelestial3DMeshes(
   activeWormholeRef: React.MutableRefObject<any>,
   particlesRef: React.MutableRefObject<Particle[]>,
   swallowEntity: (bh: CelestialEntity, victim: CelestialEntity) => void,
-  mergeEntities: (e1: CelestialEntity, e2: CelestialEntity) => void,
+  mergeEntities: (e1: CelestialEntity, e2: CelestialEntity) => CollisionResult | null | void,
   celestialMeshInstancesRef: React.MutableRefObject<CelestialMeshInstance[]>,
   mouseRef: React.MutableRefObject<{ x: number; y: number }>,
   cameraRef: React.MutableRefObject<BABYLON.Camera | null>,
@@ -107,8 +108,8 @@ export function updateCelestial3DMeshes(
     const group = celestialGroupRef.current;
     if (!scene || !group) return;
 
-    const ww = window.innerWidth;
-    const wh = window.innerHeight;
+    const ww = typeof window !== "undefined" ? window.innerWidth : 1920;
+    const wh = typeof window !== "undefined" ? window.innerHeight : 1080;
     const entities = celestialEntitiesRef.current;
 
     let meshTransitionT = 0;
@@ -276,10 +277,39 @@ export function updateCelestial3DMeshes(
           } else if (e2.type === "blackhole") {
             swallowEntity(e2, e1);
           } else if (!e1.isMerging && !e2.isMerging) {
-            if (e1.radius >= e2.radius) {
-              mergeEntities(e1, e2);
-            } else {
-              mergeEntities(e2, e1);
+            const colResult = e1.radius >= e2.radius
+              ? mergeEntities(e1, e2)
+              : mergeEntities(e2, e1);
+
+            if (colResult && colResult.kineticEnergyDissipated > 0 && sceneRef.current) {
+              const contactX = colResult.contactPointX - ww / 2;
+              const contactY = -(colResult.contactPointY - wh / 2);
+              const contactZ = colResult.contactPointZ || 0;
+              const flareColor = blendHexColors(e1.color || "#ffffff", e2.color || "#ffffff", 0.5);
+
+              spawnCollisionFlare(
+                sceneRef.current,
+                contactX,
+                contactY,
+                contactZ,
+                Math.min(35, Math.max(8, (e1.radius + e2.radius) * 0.3)),
+                flareColor,
+                collisionFlaresRef.current
+              );
+
+              if (spawnTailParticleRef.current) {
+                createShatterDebris(
+                  colResult.contactPointX,
+                  colResult.contactPointY,
+                  flareColor,
+                  14,
+                  spawnTailParticleRef.current
+                );
+              }
+
+              if (colResult.kineticEnergyDissipated > 40 && audio?.playInteractiveMallet) {
+                audio.playInteractiveMallet(0.85, colResult.contactPointX / ww);
+              }
             }
           }
         }
