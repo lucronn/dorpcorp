@@ -138,8 +138,12 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
 
   const idleTime = now - ctx.lastUserActivityRef.current;
   const isIdle = idleTime > 10000;
-  ctx.isScreensaverActiveRef.current = false;
-  ctx.screensaverOpacityRef.current = 0.0;
+  if (ctx.isScreensaverActiveRef) {
+    ctx.isScreensaverActiveRef.current = false;
+  }
+  if (ctx.screensaverOpacityRef) {
+    ctx.screensaverOpacityRef.current = 0.0;
+  }
 
   const shockwaveInterval = 60000;
   if (ctx.stageRef.current === 0) {

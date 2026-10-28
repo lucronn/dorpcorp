@@ -514,7 +514,7 @@ export function spawnTidalDisruptionFX(scene: BABYLON.Scene): TidalDisruptionFXI
   ) => {
     if (isDisposed) return;
 
-    if (!tde.isActive) {
+    if (!tde || !tde.isActive) {
       coreMesh.setEnabled(false);
       envMesh.setEnabled(false);
       accretionMesh.setEnabled(false);

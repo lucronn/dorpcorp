@@ -9,6 +9,9 @@ export function createGalaxyMesh(
   initScale: number,
   scene: BABYLON.Scene
 ): BABYLON.TransformNode {
+  if (!scene || (scene as any).isDisposed) {
+    return null as any;
+  }
   const galaxyContainer = new BABYLON.TransformNode("galaxy_group", scene);
   galaxyContainer.position.set(wx, wy, -50);
 

@@ -12,7 +12,7 @@ export function setupDepthOfFieldPostProcess(
   cameraZRef?: React.MutableRefObject<number>,
   dofEnabledRef?: React.MutableRefObject<boolean>
 ): void {
-  if (dofPostProcessRef.current) return;
+  if (!camera || !scene || scene.isDisposed || !engine || dofPostProcessRef.current) return;
 
   BABYLON.Effect.ShadersStore["cinematicDofFragmentShader"] = `
     precision highp float;
@@ -172,9 +172,9 @@ export function setupDepthOfFieldPostProcess(
     let focusUvY = 0.5;
     let focusRadiusNorm = 0.22;
 
-    const entities = celestialEntitiesRef.current;
-    const activeBh = entities.find((e) => e.type === "blackhole" && !e.isDestroyed);
-    const targetEntity = activeBh || entities.find((e) => !e.isDestroyed);
+    const entities = Array.isArray(celestialEntitiesRef?.current) ? celestialEntitiesRef.current : [];
+    const activeBh = entities.find((e) => e && e.type === "blackhole" && !e.isDestroyed);
+    const targetEntity = activeBh || entities.find((e) => e && !e.isDestroyed);
 
     if (targetEntity) {
       const cssW = (typeof window !== "undefined" ? window.innerWidth : ww) || ww;

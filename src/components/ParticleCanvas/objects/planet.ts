@@ -8,6 +8,9 @@ export function createPlanetMesh(
   initScale: number,
   scene: BABYLON.Scene
 ): BABYLON.TransformNode {
+  if (!scene || (scene as any).isDisposed) {
+    return null as any;
+  }
   // Celestial bodies are rendered via pristine particle gravitation rather than cartoon plastic spheres
   const planetContainer = new BABYLON.TransformNode("planet_group", scene);
   planetContainer.position.set(wx, wy, 0);

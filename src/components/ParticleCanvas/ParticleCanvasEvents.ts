@@ -108,9 +108,15 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
   };
 
   const resetActivity = () => {
-    ctx.lastUserActivityRef.current = Date.now();
-    ctx.isScreensaverActiveRef.current = false;
-    ctx.screensaverOpacityRef.current = 0.0;
+    if (ctx.lastUserActivityRef) {
+      ctx.lastUserActivityRef.current = Date.now();
+    }
+    if (ctx.isScreensaverActiveRef) {
+      ctx.isScreensaverActiveRef.current = false;
+    }
+    if (ctx.screensaverOpacityRef) {
+      ctx.screensaverOpacityRef.current = 0.0;
+    }
   };
 
   let isDragging = false;

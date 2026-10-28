@@ -142,7 +142,7 @@ export function spawnSupernovaFX(
       ? new BABYLON.GPUParticleSystem(name, { capacity }, scene)
       : new BABYLON.ParticleSystem(name, Math.min(capacity, 15000), scene);
     ps.particleTexture = texture;
-    ps.emitter = worldPos.clone();
+    ps.emitter = safePos.clone();
     disposables.push(ps);
     return ps;
   };
@@ -185,7 +185,7 @@ export function spawnSupernovaFX(
   psRingPolar.particleEmitterType = ringPolarEmitter;
   
   const polarDummy = BABYLON.MeshBuilder.CreateBox("sn_polar_dummy", {size: 0.1}, scene);
-  polarDummy.position = worldPos.clone();
+  polarDummy.position = safePos.clone();
   polarDummy.rotation.x = -Math.PI / 3.8;
   polarDummy.rotation.z = Math.PI / 5;
   polarDummy.isVisible = false;
@@ -227,7 +227,7 @@ export function spawnSupernovaFX(
   jetSEmitter.directionRandomizer = 0.1;
   
   const jetSDummy = BABYLON.MeshBuilder.CreateBox("sn_jet_s_dummy", {size: 0.1}, scene);
-  jetSDummy.position = worldPos.clone();
+  jetSDummy.position = safePos.clone();
   jetSDummy.rotation.x = Math.PI; 
   jetSDummy.isVisible = false;
   psJetS.emitter = jetSDummy;

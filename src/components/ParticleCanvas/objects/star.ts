@@ -9,6 +9,9 @@ export function createStarMesh(
   initScale: number,
   scene: BABYLON.Scene
 ): BABYLON.TransformNode {
+  if (!scene || (scene as any).isDisposed) {
+    return null as any;
+  }
   const starContainer = new BABYLON.TransformNode("star_group", scene);
   starContainer.position.set(wx, wy, 0);
 

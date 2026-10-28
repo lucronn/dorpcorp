@@ -1325,6 +1325,28 @@ async function runAllTests() {
     engine.dispose();
   });
 
+  runTest("spawnSupernovaFX: safely handles null or undefined worldPos without throwing", () => {
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    assert.doesNotThrow(() => {
+      const sn1 = spawnSupernovaFX(scene, null as any);
+      assert.ok(sn1);
+      assert.equal(sn1.isDisposed, false);
+      sn1.update(Date.now() + 500);
+      sn1.dispose();
+      assert.equal(sn1.isDisposed, true);
+
+      const sn2 = spawnSupernovaFX(scene, undefined as any);
+      assert.ok(sn2);
+      assert.equal(sn2.isDisposed, false);
+      sn2.update(Date.now() + 500);
+      sn2.dispose();
+      assert.equal(sn2.isDisposed, true);
+    });
+    scene.dispose();
+    engine.dispose();
+  });
+
   runTest("spawnTidalDisruptionFX: safely handles null or disposed scene returning no-op instance", () => {
     const noopNull = spawnTidalDisruptionFX(null as any);
     assert.equal(noopNull.isDisposed, true);
@@ -1395,6 +1417,19 @@ async function runAllTests() {
     engine.dispose();
   });
 
+  runTest("spawnTidalDisruptionFX: update safely handles null or undefined tde state without throwing", () => {
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    const tdeFx = spawnTidalDisruptionFX(scene);
+    assert.doesNotThrow(() => {
+      tdeFx.update(Date.now(), null as any, null, 1920, 1080);
+      tdeFx.update(Date.now(), undefined as any, null, 1920, 1080);
+    });
+    tdeFx.dispose();
+    scene.dispose();
+    engine.dispose();
+  });
+
   runTest("PostProcess Shaders: validates BlackholeLensing, DepthOfField, and FrameShatter in headless runtime", () => {
     const engine = new BABYLON.NullEngine();
     const scene = new BABYLON.Scene(engine);
@@ -1458,6 +1493,55 @@ async function runAllTests() {
     dofRef.current?.dispose();
     shatterRef.current?.dispose();
     scene.dispose();
+    engine.dispose();
+  });
+
+  runTest("PostProcess Shaders: setup and onApply defend against null camera, disposed scene, and non-array entities", () => {
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    const camera = new BABYLON.TargetCamera("testCam", new BABYLON.Vector3(0, 0, -500), scene);
+
+    const lensingRef = { current: null as any };
+    const dofRef = { current: null as any };
+    const shatterRef = { current: null as any };
+    const nullEntitiesRef = { current: null as any };
+    const undefinedEntitiesRef = { current: undefined as any };
+
+    // Safe guards on invalid / null camera or disposed scene
+    scene.dispose();
+    assert.doesNotThrow(() => {
+      setupBlackholeLensingPostProcess(null as any, scene, engine, lensingRef, nullEntitiesRef);
+      setupDepthOfFieldPostProcess(camera, scene, engine, dofRef, undefined, nullEntitiesRef);
+      setupFrameShatterPostProcess(camera, scene, engine, shatterRef, nullEntitiesRef, { current: 0 });
+    });
+    assert.equal(lensingRef.current, null);
+    assert.equal(dofRef.current, null);
+    assert.equal(shatterRef.current, null);
+
+    // Re-create active scene to test onApply with non-array entities
+    const activeScene = new BABYLON.Scene(engine);
+    const activeCam = new BABYLON.TargetCamera("activeCam", new BABYLON.Vector3(0, 0, -500), activeScene);
+    setupBlackholeLensingPostProcess(activeCam, activeScene, engine, lensingRef, nullEntitiesRef);
+    setupDepthOfFieldPostProcess(activeCam, activeScene, engine, dofRef, undefined, undefinedEntitiesRef);
+    setupFrameShatterPostProcess(activeCam, activeScene, engine, shatterRef, nullEntitiesRef, { current: 0 });
+
+    const mockEffect: any = {
+      setFloat: () => {},
+      setFloat2: () => {},
+      setFloat3: () => {},
+      setArray3: () => {},
+    };
+
+    assert.doesNotThrow(() => {
+      lensingRef.current?.onApply?.(mockEffect);
+      dofRef.current?.onApply?.(mockEffect);
+      shatterRef.current?.onApply?.(mockEffect);
+    });
+
+    lensingRef.current?.dispose();
+    dofRef.current?.dispose();
+    shatterRef.current?.dispose();
+    activeScene.dispose();
     engine.dispose();
   });
 
@@ -1774,6 +1858,35 @@ async function runAllTests() {
     engine.dispose();
   });
 
+  runTest("CelestialMeshBuilder: all 5 object constructors defend against disposed or null scene", () => {
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    scene.dispose();
+
+    assert.doesNotThrow(() => {
+      const bh = createBlackholeMesh({ type: "blackhole", radius: 50 } as any, 0, 0, 1.0, scene);
+      assert.equal(bh, null);
+      const star = createStarMesh({ type: "star", radius: 25 } as any, 0, 0, 1.0, scene);
+      assert.equal(star, null);
+      const gal = createGalaxyMesh({ type: "galaxy", radius: 40 } as any, 0, 0, 1.0, scene);
+      assert.equal(gal, null);
+      const planet = createPlanetMesh({ type: "planet", radius: 15 } as any, 0, 0, 1.0, scene);
+      assert.equal(planet, null);
+      const neb = createNebulaMesh({ type: "nebula", radius: 60 } as any, 0, 0, 1.0, scene);
+      assert.equal(neb, null);
+    });
+
+    assert.doesNotThrow(() => {
+      assert.equal(createBlackholeMesh(null as any, 0, 0, 1.0, null as any), null);
+      assert.equal(createStarMesh(null as any, 0, 0, 1.0, null as any), null);
+      assert.equal(createGalaxyMesh(null as any, 0, 0, 1.0, null as any), null);
+      assert.equal(createPlanetMesh(null as any, 0, 0, 1.0, null as any), null);
+      assert.equal(createNebulaMesh(null as any, 0, 0, 1.0, null as any), null);
+    });
+
+    engine.dispose();
+  });
+
   runTest("CelestialMeshSynchronizer: updateCelestial3DMeshes safely handles null celestialEntitiesRef and non-finite audio metrics", () => {
     const engine = new BABYLON.NullEngine();
     const scene = new BABYLON.Scene(engine);
@@ -1830,10 +1943,58 @@ async function runAllTests() {
     assert.ok(isFinite(bands.bass) && isFinite(bands.mid) && isFinite(bands.treble));
   });
 
+  runTest("AudioEngine: probe audio triggers and tidal disruption sound effects handle uninitialized or closed contexts defensively", () => {
+    assert.doesNotThrow(() => {
+      audio.playProbeLaunch();
+      audio.playProbeSlingshot(1.0);
+      audio.playProbeSlingshot(NaN);
+      audio.playProbeSlingshot(-5.0);
+      audio.playProbeSwallowed();
+      audio.playTidalDisruption("approach");
+      audio.playTidalDisruption("spaghettify");
+      audio.playTidalDisruption("grb");
+    });
+  });
+
   runTest("ParticleCanvasEvents: validates SSR safety and clean teardown in headless environments", () => {
     assert.doesNotThrow(() => {
       const cleanup = setupParticleCanvasEvents({} as any);
       assert.equal(typeof cleanup, "function");
+      cleanup();
+    });
+  });
+
+  runTest("ParticleCanvasEvents: setup and activity reset handle missing optional refs gracefully", () => {
+    assert.doesNotThrow(() => {
+      const cleanup = setupParticleCanvasEvents({
+        rendererRef: { current: null },
+        hudPlaneRef: { current: null },
+        cameraRef: { current: null },
+        fovRef: { current: 45 },
+        mouseRef: { current: { x: 0, y: 0, lastMoved: 0 } },
+        stageRef: { current: 0 },
+        mapParticlesToStage: () => {},
+        updateHudTexture: () => {},
+        lastUserActivityRef: { current: 0 },
+        isScreensaverActiveRef: { current: false },
+        screensaverOpacityRef: undefined,
+        inputControllerRef: { current: {} },
+        ripplesRef: { current: [] },
+        celestialEntitiesRef: { current: [] },
+        isInterstellarRef: { current: false },
+        supernovaRef: { current: null },
+        cameraShakeRef: { current: 0 },
+        audio: {},
+        fetchNextGeminiScene: () => {},
+        lastScrollYRef: { current: 0 },
+        scrollVelocityRef: { current: 0 },
+        isTransitActiveRef: { current: false },
+        sceneRef: { current: null },
+        startWormholeTransit: async () => {},
+        lensingPostProcessRef: { current: null },
+        wormholePostProcessRef: { current: null },
+        activeSupernovaFxRef: { current: null },
+      });
       cleanup();
     });
   });

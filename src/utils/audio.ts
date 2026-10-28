@@ -764,158 +764,170 @@ class AudioEngine {
 
   playTidalDisruption(stage: "approach" | "spaghettify" | "grb" = "spaghettify") {
     if (!this.ctx || this.isMuted || !this.masterGain) return;
-    const now = this.ctx.currentTime;
+    try {
+      const now = this.ctx.currentTime;
+      if (!isFinite(now)) return;
 
-    if (stage === "approach") {
+      if (stage === "approach") {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const filter = this.ctx.createBiquadFilter();
+
+        osc.type = "sawtooth";
+        osc.frequency.setValueAtTime(65, now);
+        osc.frequency.exponentialRampToValueAtTime(130, now + 1.8);
+
+        filter.type = "lowpass";
+        filter.frequency.setValueAtTime(200, now);
+        filter.frequency.exponentialRampToValueAtTime(800, now + 1.8);
+        filter.Q.setValueAtTime(2.5, now);
+
+        gain.gain.setValueAtTime(0.0, now);
+        gain.gain.linearRampToValueAtTime(0.14, now + 0.6);
+        gain.gain.linearRampToValueAtTime(0.0, now + 2.0);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.masterGain);
+
+        osc.start(now);
+        osc.stop(now + 2.1);
+      } else if (stage === "spaghettify") {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const filter = this.ctx.createBiquadFilter();
+
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(420, now);
+        osc.frequency.exponentialRampToValueAtTime(48, now + 1.4);
+
+        filter.type = "bandpass";
+        filter.frequency.setValueAtTime(550, now);
+        filter.frequency.exponentialRampToValueAtTime(130, now + 1.4);
+        filter.Q.setValueAtTime(3.5, now);
+
+        gain.gain.setValueAtTime(0.0, now);
+        gain.gain.linearRampToValueAtTime(0.24, now + 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
+        gain.gain.linearRampToValueAtTime(0.0, now + 1.6);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.masterGain);
+
+        osc.start(now);
+        osc.stop(now + 1.65);
+      } else if (stage === "grb") {
+        const oscHigh = this.ctx.createOscillator();
+        const gainHigh = this.ctx.createGain();
+        oscHigh.type = "sawtooth";
+        oscHigh.frequency.setValueAtTime(1200, now);
+        oscHigh.frequency.exponentialRampToValueAtTime(160, now + 1.2);
+
+        gainHigh.gain.setValueAtTime(0.0, now);
+        gainHigh.gain.linearRampToValueAtTime(0.3, now + 0.04);
+        gainHigh.gain.exponentialRampToValueAtTime(0.001, now + 1.4);
+        gainHigh.gain.linearRampToValueAtTime(0.0, now + 1.5);
+
+        const filterHigh = this.ctx.createBiquadFilter();
+        filterHigh.type = "bandpass";
+        filterHigh.frequency.setValueAtTime(1000, now);
+        filterHigh.Q.setValueAtTime(2.2, now);
+
+        oscHigh.connect(filterHigh);
+        filterHigh.connect(gainHigh);
+        gainHigh.connect(this.masterGain);
+        oscHigh.start(now);
+        oscHigh.stop(now + 1.55);
+
+        this.playSupernova();
+      }
+    } catch (_) {}
+  }
+
+  playProbeLaunch() {
+    if (!this.ctx || this.isMuted || !this.masterGain) return;
+    try {
+      const now = this.ctx.currentTime;
+      if (!isFinite(now)) return;
+
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
-      const filter = this.ctx.createBiquadFilter();
-
-      osc.type = "sawtooth";
-      osc.frequency.setValueAtTime(65, now);
-      osc.frequency.exponentialRampToValueAtTime(130, now + 1.8);
-
-      filter.type = "lowpass";
-      filter.frequency.setValueAtTime(200, now);
-      filter.frequency.exponentialRampToValueAtTime(800, now + 1.8);
-      filter.Q.setValueAtTime(2.5, now);
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(587.33, now);
+      osc.frequency.exponentialRampToValueAtTime(1174.66, now + 0.18);
 
       gain.gain.setValueAtTime(0.0, now);
-      gain.gain.linearRampToValueAtTime(0.14, now + 0.6);
-      gain.gain.linearRampToValueAtTime(0.0, now + 2.0);
+      gain.gain.linearRampToValueAtTime(0.18, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      gain.gain.linearRampToValueAtTime(0.0, now + 0.32);
 
-      osc.connect(filter);
-      filter.connect(gain);
+      osc.connect(gain);
       gain.connect(this.masterGain);
-
       osc.start(now);
-      osc.stop(now + 2.1);
-    } else if (stage === "spaghettify") {
+      osc.stop(now + 0.33);
+    } catch (_) {}
+  }
+
+  playProbeSlingshot(speedFactor: number = 1.0) {
+    if (!this.ctx || this.isMuted || !this.masterGain) return;
+    try {
+      const now = this.ctx.currentTime;
+      if (!isFinite(now)) return;
+
+      const safeSpeedFactor = isFinite(speedFactor) && speedFactor > 0 ? speedFactor : 1.0;
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
       const filter = this.ctx.createBiquadFilter();
 
       osc.type = "triangle";
-      osc.frequency.setValueAtTime(420, now);
-      osc.frequency.exponentialRampToValueAtTime(48, now + 1.4);
+      const baseFreq = 340 + Math.min(500, safeSpeedFactor * 100);
+      osc.frequency.setValueAtTime(baseFreq * 0.7, now);
+      osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.6, now + 0.14);
+      osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.8, now + 0.36);
 
       filter.type = "bandpass";
-      filter.frequency.setValueAtTime(550, now);
-      filter.frequency.exponentialRampToValueAtTime(130, now + 1.4);
-      filter.Q.setValueAtTime(3.5, now);
+      filter.frequency.setValueAtTime(baseFreq, now);
+      filter.Q.setValueAtTime(2.8, now);
 
       gain.gain.setValueAtTime(0.0, now);
-      gain.gain.linearRampToValueAtTime(0.24, now + 0.08);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
-      gain.gain.linearRampToValueAtTime(0.0, now + 1.6);
+      gain.gain.linearRampToValueAtTime(0.16, now + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+      gain.gain.linearRampToValueAtTime(0.0, now + 0.42);
 
       osc.connect(filter);
       filter.connect(gain);
       gain.connect(this.masterGain);
 
       osc.start(now);
-      osc.stop(now + 1.65);
-    } else if (stage === "grb") {
-      const oscHigh = this.ctx.createOscillator();
-      const gainHigh = this.ctx.createGain();
-      oscHigh.type = "sawtooth";
-      oscHigh.frequency.setValueAtTime(1200, now);
-      oscHigh.frequency.exponentialRampToValueAtTime(160, now + 1.2);
-
-      gainHigh.gain.setValueAtTime(0.0, now);
-      gainHigh.gain.linearRampToValueAtTime(0.3, now + 0.04);
-      gainHigh.gain.exponentialRampToValueAtTime(0.001, now + 1.4);
-      gainHigh.gain.linearRampToValueAtTime(0.0, now + 1.5);
-
-      const filterHigh = this.ctx.createBiquadFilter();
-      filterHigh.type = "bandpass";
-      filterHigh.frequency.setValueAtTime(1000, now);
-      filterHigh.Q.setValueAtTime(2.2, now);
-
-      oscHigh.connect(filterHigh);
-      filterHigh.connect(gainHigh);
-      gainHigh.connect(this.masterGain);
-      oscHigh.start(now);
-      oscHigh.stop(now + 1.55);
-
-      this.playSupernova();
-    }
-  }
-
-  playProbeLaunch() {
-    if (!this.ctx || this.isMuted || !this.masterGain) return;
-    const now = this.ctx.currentTime;
-
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(587.33, now);
-    osc.frequency.exponentialRampToValueAtTime(1174.66, now + 0.18);
-
-    gain.gain.setValueAtTime(0.0, now);
-    gain.gain.linearRampToValueAtTime(0.18, now + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-    gain.gain.linearRampToValueAtTime(0.0, now + 0.32);
-
-    osc.connect(gain);
-    gain.connect(this.masterGain);
-    osc.start(now);
-    osc.stop(now + 0.33);
-  }
-
-  playProbeSlingshot(speedFactor: number = 1.0) {
-    if (!this.ctx || this.isMuted || !this.masterGain) return;
-    const now = this.ctx.currentTime;
-
-    const safeSpeedFactor = isFinite(speedFactor) && speedFactor > 0 ? speedFactor : 1.0;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    const filter = this.ctx.createBiquadFilter();
-
-    osc.type = "triangle";
-    const baseFreq = 340 + Math.min(500, safeSpeedFactor * 100);
-    osc.frequency.setValueAtTime(baseFreq * 0.7, now);
-    osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.6, now + 0.14);
-    osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.8, now + 0.36);
-
-    filter.type = "bandpass";
-    filter.frequency.setValueAtTime(baseFreq, now);
-    filter.Q.setValueAtTime(2.8, now);
-
-    gain.gain.setValueAtTime(0.0, now);
-    gain.gain.linearRampToValueAtTime(0.16, now + 0.05);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
-    gain.gain.linearRampToValueAtTime(0.0, now + 0.42);
-
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.masterGain);
-
-    osc.start(now);
-    osc.stop(now + 0.44);
+      osc.stop(now + 0.44);
+    } catch (_) {}
   }
 
   playProbeSwallowed() {
     if (!this.ctx || this.isMuted || !this.masterGain) return;
-    const now = this.ctx.currentTime;
+    try {
+      const now = this.ctx.currentTime;
+      if (!isFinite(now)) return;
 
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
 
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(280, now);
-    osc.frequency.exponentialRampToValueAtTime(36, now + 0.35);
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(280, now);
+      osc.frequency.exponentialRampToValueAtTime(36, now + 0.35);
 
-    gain.gain.setValueAtTime(0.0, now);
-    gain.gain.linearRampToValueAtTime(0.2, now + 0.03);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
-    gain.gain.linearRampToValueAtTime(0.0, now + 0.4);
+      gain.gain.setValueAtTime(0.0, now);
+      gain.gain.linearRampToValueAtTime(0.2, now + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+      gain.gain.linearRampToValueAtTime(0.0, now + 0.4);
 
-    osc.connect(gain);
-    gain.connect(this.masterGain);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
 
-    osc.start(now);
-    osc.stop(now + 0.42);
+      osc.start(now);
+      osc.stop(now + 0.42);
+    } catch (_) {}
   }
 
   dispose() {

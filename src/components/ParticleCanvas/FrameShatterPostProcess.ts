@@ -10,7 +10,7 @@ export function setupFrameShatterPostProcess(
   celestialEntitiesRef: React.MutableRefObject<CelestialEntity[]>,
   shatterIntensityRef: React.MutableRefObject<number>
 ): void {
-  if (shatterPostProcessRef.current) return;
+  if (!camera || !scene || scene.isDisposed || !engine || shatterPostProcessRef.current) return;
 
   BABYLON.Effect.ShadersStore["frameShatterFragmentShader"] = `
     precision highp float;
@@ -131,14 +131,18 @@ export function setupFrameShatterPostProcess(
     effect.setFloat2("uScreenResolution", ww, wh);
     effect.setFloat("uTime", (typeof performance !== "undefined" ? performance.now() : Date.now()) * 0.001);
 
-    const intensity = shatterIntensityRef.current || 0.0;
+    const intensity =
+      shatterIntensityRef && typeof shatterIntensityRef.current === "number" && isFinite(shatterIntensityRef.current)
+        ? shatterIntensityRef.current
+        : 0.0;
     effect.setFloat("uShatterIntensity", intensity);
 
     // Compute 3D projected screen space center of black hole
     let screenX = 0.5;
     let screenY = 0.5;
-    const bh = celestialEntitiesRef.current.find(
-      (e) => !e.isDestroyed && e.type === "blackhole"
+    const entities = Array.isArray(celestialEntitiesRef?.current) ? celestialEntitiesRef.current : [];
+    const bh = entities.find(
+      (e) => e && !e.isDestroyed && e.type === "blackhole"
     );
     if (bh) {
       const cssW = (typeof window !== "undefined" ? window.innerWidth : ww) || ww;

@@ -15,6 +15,9 @@ export function createBlackholeMesh(
   initScale: number,
   scene: BABYLON.Scene
 ): BABYLON.TransformNode {
+  if (!scene || (scene as any).isDisposed) {
+    return null as any;
+  }
   const bhContainer = new BABYLON.TransformNode("bh_group", scene);
   bhContainer.position.set(wx, wy, 0);
 

@@ -293,7 +293,7 @@ export const InterstellarHUD: React.FC<InterstellarHUDProps> = ({
 
               {/* Action hints / tags */}
               <div className="flex flex-wrap gap-1 pt-1 shrink-0">
-                {sequenceInfo.tags.slice(0, 3).map((tag) => (
+                {(Array.isArray(sequenceInfo.tags) ? sequenceInfo.tags : []).slice(0, 3).map((tag) => (
                   <span
                     key={tag}
                     className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[7.5px] font-mono text-white/70 tracking-wider uppercase"

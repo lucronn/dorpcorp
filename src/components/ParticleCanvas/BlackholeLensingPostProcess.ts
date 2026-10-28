@@ -10,7 +10,7 @@ export function setupBlackholeLensingPostProcess(
   lensingPostProcessRef: React.MutableRefObject<BABYLON.PostProcess | null>,
   celestialEntitiesRef: React.MutableRefObject<CelestialEntity[]>
 ): void {
-  if (lensingPostProcessRef.current) return;
+  if (!camera || !scene || scene.isDisposed || !engine || lensingPostProcessRef.current) return;
 
   BABYLON.Effect.ShadersStore["blackholeLensingFragmentShader"] = `
     precision highp float;
@@ -177,8 +177,9 @@ export function setupBlackholeLensingPostProcess(
     const bhColors: number[] = [];
     let count = 0;
 
-    const activeBhs = celestialEntitiesRef.current.filter(
-      (e) => e.type === "blackhole" && !e.isDestroyed
+    const entities = Array.isArray(celestialEntitiesRef?.current) ? celestialEntitiesRef.current : [];
+    const activeBhs = entities.filter(
+      (e) => e && e.type === "blackhole" && !e.isDestroyed
     );
 
     const cssW = (typeof window !== "undefined" ? window.innerWidth : ww) || ww;
