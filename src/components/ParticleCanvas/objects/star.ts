@@ -12,8 +12,10 @@ export function createStarMesh(
   if (!scene || (scene as any).isDisposed) {
     return null as any;
   }
+  const safeWx = isFinite(wx) ? wx : 0;
+  const safeWy = isFinite(wy) ? wy : 0;
   const starContainer = new BABYLON.TransformNode("star_group", scene);
-  starContainer.position.set(wx, wy, 0);
+  starContainer.position.set(safeWx, safeWy, 0);
 
   const starColorStr = entity?.color || "#ffaa44";
   const starSecondaryColorStr = entity?.secondaryColor || starColorStr;
@@ -110,6 +112,7 @@ export function createStarMesh(
     beltMesh.parent = starContainer;
   }
 
-  starContainer.scaling.set(initScale, initScale, initScale);
+  const safeScale = isFinite(initScale) && initScale > 0 ? initScale : 1.0;
+  starContainer.scaling.set(safeScale, safeScale, safeScale);
   return starContainer;
 }

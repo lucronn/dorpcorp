@@ -18,8 +18,10 @@ export function createBlackholeMesh(
   if (!scene || (scene as any).isDisposed) {
     return null as any;
   }
+  const safeWx = isFinite(wx) ? wx : 0;
+  const safeWy = isFinite(wy) ? wy : 0;
   const bhContainer = new BABYLON.TransformNode("bh_group", scene);
-  bhContainer.position.set(wx, wy, 0);
+  bhContainer.position.set(safeWx, safeWy, 0);
 
   const primaryColor = entity?.color || "#ff6600";
   const secondaryColor = entity?.secondaryColor || "#ffd778";
@@ -281,6 +283,7 @@ export function createBlackholeMesh(
   coronaMesh.renderingGroupId = 1;
   coronaMesh.parent = bhContainer;
 
-  bhContainer.scaling.set(initScale, initScale, initScale);
+  const safeScale = isFinite(initScale) && initScale > 0 ? initScale : 1.0;
+  bhContainer.scaling.set(safeScale, safeScale, safeScale);
   return bhContainer;
 }

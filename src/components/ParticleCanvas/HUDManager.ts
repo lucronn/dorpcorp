@@ -6,7 +6,7 @@ export function updateHudTexture(
   hudPlane: BABYLON.Mesh | null,
   hudTexture: BABYLON.DynamicTexture | null
 ): void {
-  if (!hudPlane || !hudTexture || hudPlane.isDisposed() || hudTexture.isDisposed()) return;
+  if (!hudPlane || !hudTexture || hudPlane.isDisposed() || (hudTexture as any).isDisposed?.() || (hudTexture as any).isDisposed === true) return;
   const ww = typeof window !== "undefined" && isFinite(window.innerWidth) && window.innerWidth > 0
     ? window.innerWidth
     : 1920;

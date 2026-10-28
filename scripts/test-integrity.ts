@@ -128,6 +128,15 @@ async function runAllTests() {
     assert.equal(normalizeHexColor("#123f"), "#112233");
   });
 
+  runTest("normalizeHexColor: handles 8-digit #rrggbbaa, whitespace trimming, and uppercase normalization", () => {
+    assert.equal(normalizeHexColor("#ffffff80"), "#ffffff");
+    assert.equal(normalizeHexColor("#112233ff"), "#112233");
+    assert.equal(normalizeHexColor("  #FFFFFF  "), "#ffffff");
+    assert.equal(normalizeHexColor("  #FFF8  "), "#ffffff");
+    assert.equal(normalizeHexColor(null as any), "#ffffff");
+    assert.equal(normalizeHexColor(undefined as any), "#ffffff");
+  });
+
   runTest("parseColorToRgb: supports 4-digit shorthand #rgba format without defaulting to white", () => {
     const parsed = parseColorToRgb("#369f");
     assert.equal(parsed.r, 51);
@@ -138,6 +147,13 @@ async function runAllTests() {
     assert.equal(parsed3.r, 51);
     assert.equal(parsed3.g, 102);
     assert.equal(parsed3.b, 153);
+  });
+
+  runTest("parseColorToRgb: supports named colors (black, white, transparent) and protects against false defaults", () => {
+    assert.deepEqual(parseColorToRgb("black"), { r: 0, g: 0, b: 0 });
+    assert.deepEqual(parseColorToRgb("white"), { r: 255, g: 255, b: 255 });
+    assert.deepEqual(parseColorToRgb("transparent"), { r: 0, g: 0, b: 0 });
+    assert.deepEqual(parseColorToRgb("  BLACK  "), { r: 0, g: 0, b: 0 });
   });
 
   runTest("blendHexColors: handles 6-digit hex colors with proper weighting", () => {
@@ -170,6 +186,18 @@ async function runAllTests() {
     assert.equal(colInf.a, 1.0);
     const colNeg = parseColorToBabylonColor4("#ffffff", -5);
     assert.equal(colNeg.a, 0.0);
+  });
+
+  runTest("parseColorToBabylonColor4: extracts decimal alpha from rgba string when alpha is omitted", () => {
+    const colRgba = parseColorToBabylonColor4("rgba(120, 140, 160, 0.45)");
+    assert.equal(colRgba.r, 120 / 255);
+    assert.equal(colRgba.g, 140 / 255);
+    assert.equal(colRgba.b, 160 / 255);
+    assert.equal(Math.round(colRgba.a * 100) / 100, 0.45);
+
+    // Explicit alpha takes precedence if provided
+    const colOverride = parseColorToBabylonColor4("rgba(120, 140, 160, 0.45)", 0.9);
+    assert.equal(colOverride.a, 0.9);
   });
 
   runTest("valueNoise2D: returns deterministic values between 0.0 and 1.0", () => {
@@ -835,6 +863,32 @@ async function runAllTests() {
     assert.ok(updated[0]!.trail[0]!.alpha >= 0, "Trail alpha must be non-negative");
   });
 
+  runTest("updateActiveProbes: bounds probe list to MAX_ACTIVE_PROBES (25) to prevent unbounded memory growth", () => {
+    const manyProbes: SlingshotProbe[] = [];
+    for (let i = 0; i < 40; i++) {
+      manyProbes.push({
+        id: `probe-${i}`,
+        x: 100 + i,
+        y: 100,
+        z: 0,
+        vx: 1.0,
+        vy: 1.0,
+        vz: 0,
+        color: "#4deeea",
+        trail: [],
+        life: 0.8,
+        maxLife: 1.0,
+        isSwallowed: false,
+        maxSpeedReached: 10,
+        lastWhipTime: 0,
+      });
+    }
+
+    const ripplesRef = { current: [] };
+    const updated = updateActiveProbes(manyProbes, [], ripplesRef);
+    assert.ok(updated.length <= 25, `Expected <= 25 active probes, got ${updated.length}`);
+  });
+
   runTest("TidalDisruptionEngine: validates quiescent initial state and hyperbolic inbound trajectory trigger", () => {
     const tde = createInitialTdeState();
     assert.equal(tde.stage, "IDLE");
@@ -1114,6 +1168,9 @@ async function runAllTests() {
   runTest("ParticleUtils: safely defends against NaN and non-finite dimensions in particleText, drawStageLayoutTemplate, and generateTargetsForStage", () => {
     assert.deepEqual(particleText("TEST", 24, 1, 1, 1, 0, 0, "#4deeea", NaN, NaN), []);
     assert.deepEqual(particleText("TEST", 24, 1, 1, 1, 0, 0, "#4deeea", Infinity, -Infinity), []);
+    assert.deepEqual(particleText("TEST", NaN, 1, 1, 1, 0, 0, "#4deeea", 800, 600), []);
+    assert.deepEqual(particleText("TEST", -10, 1, 1, 1, 0, 0, "#4deeea", 800, 600), []);
+    assert.deepEqual(particleText("TEST", 0, 1, 1, 1, 0, 0, "#4deeea", 800, 600), []);
     assert.doesNotThrow(() => {
       drawStageLayoutTemplate(null as any, 0, NaN, NaN, "full");
       drawStageLayoutTemplate(null as any, 0, Infinity, -Infinity, "full");
@@ -1127,6 +1184,35 @@ async function runAllTests() {
       transitionToNewEntities(null as any, null as any, NaN, NaN, { current: false }, { current: 0 });
       triggerCalmCosmicShift(null as any, { current: null });
     });
+  });
+
+  runTest("TransitionManager: transitionToNewEntities safely clamps non-finite spawn coordinates and sets worldPos in triggerCalmCosmicShift", () => {
+    const current: CelestialEntity[] = [
+      { id: "old1", type: "star", radius: 30, x: 100, y: 100, color: "#ffaa00", isDestroyed: false }
+    ];
+    const incoming: CelestialEntity[] = [
+      { id: "new1", type: "planet", radius: 25, x: 300, y: 400, color: "#2255aa", isDestroyed: false }
+    ];
+    const transActive = { current: false };
+    const transTime = { current: 0 };
+
+    transitionToNewEntities(current, incoming, NaN, Infinity, transActive, transTime);
+    assert.equal(transActive.current, true);
+    assert.ok(transTime.current > 0);
+
+    const added = current.find((e) => e.id === "new1");
+    assert.ok(added);
+    assert.equal(added.x, 0);
+    assert.equal(added.y, 0);
+    assert.equal(added.startX, 0);
+    assert.equal(added.startY, 0);
+    assert.equal(added.targetX, 300);
+    assert.equal(added.targetY, 400);
+
+    const snRef = { current: null as any };
+    triggerCalmCosmicShift({ current: [] }, snRef);
+    assert.ok(snRef.current);
+    assert.ok(snRef.current.worldPos instanceof BABYLON.Vector3);
   });
 
   runTest("RenderEngine: validates executeRenderFrame SSR / headless safety without window error", () => {
@@ -1887,6 +1973,44 @@ async function runAllTests() {
     engine.dispose();
   });
 
+  runTest("CelestialMeshBuilder: all 5 object constructors defend against non-finite initScale and non-finite coordinates", () => {
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+
+    try {
+      const bh = createBlackholeMesh({ id: "bh1", type: "blackhole", radius: 50, x: 100, y: 100 } as any, NaN, Infinity, NaN, scene);
+      assert.ok(bh && !bh.isDisposed());
+      assert.equal(bh.position.x, 0);
+      assert.equal(bh.position.y, 0);
+      assert.equal(bh.scaling.x, 1.0);
+
+      const star = createStarMesh({ id: "s1", type: "star", radius: 40, x: 200, y: 200 } as any, -Infinity, NaN, -5, scene);
+      assert.ok(star && !star.isDisposed());
+      assert.equal(star.position.x, 0);
+      assert.equal(star.position.y, 0);
+      assert.equal(star.scaling.x, 1.0);
+
+      const gal = createGalaxyMesh({ id: "g1", type: "galaxy", radius: 100, x: 0, y: 0 } as any, NaN, NaN, Infinity, scene);
+      assert.ok(gal && !gal.isDisposed());
+      assert.equal(gal.scaling.x, 1.0);
+
+      const planet = createPlanetMesh({ id: "p1", type: "planet", radius: 25, x: 50, y: 50 } as any, NaN, 100, NaN, scene);
+      assert.ok(planet && !planet.isDisposed());
+      assert.equal(planet.position.x, 0);
+      assert.equal(planet.position.y, 100);
+      assert.equal(planet.scaling.x, 1.0);
+
+      const neb = createNebulaMesh({ id: "n1", type: "nebula", radius: 150, x: 50, y: 50 } as any, 200, NaN, 0, scene);
+      assert.ok(neb && !neb.isDisposed());
+      assert.equal(neb.position.x, 200);
+      assert.equal(neb.position.y, 0);
+      assert.equal(neb.scaling.x, 1.0);
+    } finally {
+      scene.dispose();
+      engine.dispose();
+    }
+  });
+
   runTest("CelestialMeshSynchronizer: updateCelestial3DMeshes safely handles null celestialEntitiesRef and non-finite audio metrics", () => {
     const engine = new BABYLON.NullEngine();
     const scene = new BABYLON.Scene(engine);
@@ -2067,6 +2191,20 @@ async function runAllTests() {
       closest: (sel: string) => sel.includes("input"),
     };
     assert.equal(isUIElement(dummyInput), true, "Input element should return true");
+
+    const dummySelect: any = {
+      tagName: "OPTION",
+      id: "opt-1",
+      closest: (sel: string) => sel.includes("select"),
+    };
+    assert.equal(isUIElement(dummySelect), true, "Element inside select should return true");
+
+    const dummyTextareaSpan: any = {
+      tagName: "SPAN",
+      id: "txt-span",
+      closest: (sel: string) => sel.includes("textarea"),
+    };
+    assert.equal(isUIElement(dummyTextareaSpan), true, "Element inside textarea should return true");
   });
 
   runTest("Hotkeys & UI classification: validates hotkey action bindings and input element exclusion", () => {

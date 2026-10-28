@@ -78,8 +78,15 @@ export const CinematicOverlay: React.FC<CinematicOverlayProps> = ({
   // Keyboard shortcuts handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if user is in an input or textarea
-      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
+      // Don't trigger if user is in an input, textarea, select, or contenteditable element
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
 
       if (e.key === 'c' || e.key === 'C') {
         onToggleCinematicMode();

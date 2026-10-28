@@ -28,7 +28,7 @@ Interactive 3D developer portfolio and cosmic web visualizer built with React 19
 | `npm run dev` | `tsx server.ts` | Start development server with Vite middleware |
 | `npm run build` | `vite build && esbuild server.ts ...` | Build client assets to `dist/` and server to `dist/server.cjs` |
 | `npm run lint` | `tsc --noEmit` | Run TypeScript type checking without emitting files |
-| `npm test` | `tsc --noEmit && tsx scripts/test-integrity.ts` | Execute TypeScript check and the automated 101-test integrity test suite |
+| `npm test` | `tsc --noEmit && tsx scripts/test-integrity.ts` | Execute TypeScript check and the automated 107-test integrity test suite |
 | `npm start` | `node dist/server.cjs` | Run the compiled production server on port 8080 (or `$PORT`) |
 | `npm run clean` | `rm -rf dist server.js client_errors.log` | Clean build outputs and local log files |
 

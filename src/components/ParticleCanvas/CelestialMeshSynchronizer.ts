@@ -501,8 +501,15 @@ export function updateCelestial3DMeshes(
             entity.destroyedBy = "blackhole";
 
             if (sceneRef.current) {
-              const flareMesh = BABYLON.MeshBuilder.CreateTorus("bh_devour_flare_3d_torus", { diameter: bh.radius * 2.8, thickness: bh.radius * 0.4, tessellation: 32 }, sceneRef.current);
-              flareMesh.position.set(bh.x - ww / 2, -(bh.y - wh / 2), -5);
+              const safeBhRadius = isFinite(bh.radius) && bh.radius > 0 ? bh.radius : 50;
+              const safeBhX = isFinite(bh.x) ? bh.x : ww / 2;
+              const safeBhY = isFinite(bh.y) ? bh.y : wh / 2;
+              const flareMesh = BABYLON.MeshBuilder.CreateTorus(
+                "bh_devour_flare_3d_torus",
+                { diameter: safeBhRadius * 2.8, thickness: safeBhRadius * 0.4, tessellation: 32 },
+                sceneRef.current
+              );
+              flareMesh.position.set(safeBhX - ww / 2, -(safeBhY - wh / 2), -5);
               flareMesh.renderingGroupId = 1;
               const flareMat = new BABYLON.StandardMaterial("devourMat", sceneRef.current);
               const flareTex = createCircularGlowTexture(bh.color, sceneRef.current);
@@ -513,12 +520,25 @@ export function updateCelestial3DMeshes(
               flareMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
               flareMesh.material = flareMat;
 
-              collisionFlaresRef.current.push({
-                mesh: flareMesh,
-                life: 1.0,
-                maxLife: 1.0,
-                initialRadius: bh.radius * 2.8,
-              });
+              if (Array.isArray(collisionFlaresRef.current)) {
+                const MAX_ACTIVE_FLARES = 50;
+                while (collisionFlaresRef.current.length >= MAX_ACTIVE_FLARES) {
+                  const oldest = collisionFlaresRef.current.shift();
+                  if (oldest?.mesh && !oldest.mesh.isDisposed()) {
+                    if (oldest.mesh.material) {
+                      oldest.mesh.material.dispose(false, true);
+                    }
+                    oldest.mesh.dispose();
+                  }
+                }
+
+                collisionFlaresRef.current.push({
+                  mesh: flareMesh,
+                  life: 1.0,
+                  maxLife: 1.0,
+                  initialRadius: safeBhRadius * 2.8,
+                });
+              }
             }
 
             if (audio.playInteractiveMallet) audio.playInteractiveMallet(0.95, bh.x / ww);

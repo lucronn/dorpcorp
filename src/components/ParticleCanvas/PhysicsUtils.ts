@@ -1,11 +1,16 @@
 import { CelestialEntity } from "./types";
 
 export const normalizeHexColor = (hex: string): string => {
-  if (typeof hex !== "string" || !hex.startsWith("#")) return hex;
-  if (hex.length === 4 || hex.length === 5) {
-    return `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`;
+  if (typeof hex !== "string") return "#ffffff";
+  const cleaned = hex.trim().toLowerCase();
+  if (!cleaned.startsWith("#")) return hex;
+  if (cleaned.length === 4 || cleaned.length === 5) {
+    return `#${cleaned[1]}${cleaned[1]}${cleaned[2]}${cleaned[2]}${cleaned[3]}${cleaned[3]}`;
   }
-  return hex;
+  if (cleaned.length === 9) {
+    return cleaned.slice(0, 7);
+  }
+  return cleaned;
 };
 
 export const blendHexColors = (c1: string, c2: string, weight: number): string => {

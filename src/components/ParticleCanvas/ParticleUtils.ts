@@ -155,7 +155,7 @@ export const particleText = (
   letterSpacing: string = '0px',
   lineWidthMultiplier: number = 0.05
 ): { x: number; y: number; color: string, isProjectText: boolean }[] => {
-  if (typeof document === "undefined" || !isFinite(width) || !isFinite(height) || width <= 0 || height <= 0) return [];
+  if (typeof document === "undefined" || !isFinite(width) || !isFinite(height) || width <= 0 || height <= 0 || !isFinite(size) || size <= 0) return [];
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;

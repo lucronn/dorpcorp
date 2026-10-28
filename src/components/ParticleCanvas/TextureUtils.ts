@@ -4,6 +4,9 @@ export const parseColorToRgb = (color: string) => {
   let r = 255, g = 255, b = 255;
   if (!color || typeof color !== "string") return { r, g, b };
   const cleaned = color.trim().toLowerCase();
+  if (cleaned === "black") return { r: 0, g: 0, b: 0 };
+  if (cleaned === "white") return { r: 255, g: 255, b: 255 };
+  if (cleaned === "transparent") return { r: 0, g: 0, b: 0 };
   if (cleaned.startsWith("#")) {
     const hex = cleaned.replace("#", "");
     if (hex.length === 3 || hex.length === 4) {
@@ -40,9 +43,20 @@ export const parseColorToBabylonColor3 = (color: string) => {
   return new BABYLON.Color3(r / 255, g / 255, b / 255);
 };
 
-export const parseColorToBabylonColor4 = (color: string, alpha: number = 1.0) => {
+export const parseColorToBabylonColor4 = (color: string, alpha?: number) => {
   const { r, g, b } = parseColorToRgb(color);
-  const safeAlpha = isNaN(alpha) || !isFinite(alpha) ? 1.0 : Math.max(0, Math.min(1, alpha));
+  let explicitAlpha: number | undefined = alpha;
+  if (explicitAlpha === undefined && typeof color === "string" && color.trim().toLowerCase().startsWith("rgba")) {
+    const parts = color.trim().toLowerCase().match(/[\d.]+/g);
+    if (parts && parts.length >= 4) {
+      const parsedA = parseFloat(parts[3]!);
+      if (!isNaN(parsedA)) {
+        explicitAlpha = parsedA;
+      }
+    }
+  }
+  const effectiveAlpha = explicitAlpha !== undefined ? explicitAlpha : 1.0;
+  const safeAlpha = isNaN(effectiveAlpha) || !isFinite(effectiveAlpha) ? 1.0 : Math.max(0, Math.min(1, effectiveAlpha));
   return new BABYLON.Color4(r / 255, g / 255, b / 255, safeAlpha);
 };
 

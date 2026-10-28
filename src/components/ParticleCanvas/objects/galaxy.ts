@@ -12,8 +12,10 @@ export function createGalaxyMesh(
   if (!scene || (scene as any).isDisposed) {
     return null as any;
   }
+  const safeWx = isFinite(wx) ? wx : 0;
+  const safeWy = isFinite(wy) ? wy : 0;
   const galaxyContainer = new BABYLON.TransformNode("galaxy_group", scene);
-  galaxyContainer.position.set(wx, wy, -50);
+  galaxyContainer.position.set(safeWx, safeWy, -50);
 
   const galaxyColorStr = entity?.color || "#88aaff";
   const galaxySecondaryColorStr = entity?.secondaryColor || galaxyColorStr;
@@ -67,6 +69,7 @@ export function createGalaxyMesh(
   haloMesh.material = coreMat;
   haloMesh.parent = galaxyContainer;
 
-  galaxyContainer.scaling.set(initScale, initScale, initScale);
+  const safeScale = isFinite(initScale) && initScale > 0 ? initScale : 1.0;
+  galaxyContainer.scaling.set(safeScale, safeScale, safeScale);
   return galaxyContainer;
 }

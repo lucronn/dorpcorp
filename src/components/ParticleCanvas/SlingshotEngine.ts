@@ -179,9 +179,11 @@ export function updateActiveProbes(
   const dt = 0.85;
   const now = Date.now();
   const nextProbes: SlingshotProbe[] = [];
+  const MAX_ACTIVE_PROBES = 25;
+  const activeProbesList = probes.length > MAX_ACTIVE_PROBES ? probes.slice(-MAX_ACTIVE_PROBES) : probes;
 
-  for (let pIdx = 0; pIdx < probes.length; pIdx++) {
-    const probe = probes[pIdx];
+  for (let pIdx = 0; pIdx < activeProbesList.length; pIdx++) {
+    const probe = activeProbesList[pIdx];
     if (
       !probe ||
       probe.isSwallowed ||

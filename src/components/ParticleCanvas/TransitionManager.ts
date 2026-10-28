@@ -40,13 +40,18 @@ export function transitionToNewEntities(
   });
 
   newEntities.forEach((target, i) => {
+    const targetRadius = isFinite(target.radius) && target.radius > 0 ? target.radius : 20;
+    const targetX = isFinite(target.x) ? target.x : safeSpawnX;
+    const targetY = isFinite(target.y) ? target.y : safeSpawnY;
+    const targetZ = isFinite(target.z) ? target.z : 0;
+
     const curNew: CelestialEntity = {
       ...target,
-      x: spawnX,
-      y: spawnY,
+      x: safeSpawnX,
+      y: safeSpawnY,
       z: -200,
-      startX: spawnX,
-      startY: spawnY,
+      startX: safeSpawnX,
+      startY: safeSpawnY,
       startZ: -200,
       scale: 0.0,
       startScale: 0.0,
@@ -54,10 +59,10 @@ export function transitionToNewEntities(
       isDestroyed: false,
       id: target.id || `${target.type}-${i}-${Math.random().toString(36).substring(2, 9)}`,
       startRadius: 1,
-      targetX: target.x,
-      targetY: target.y,
-      targetZ: target.z ?? 0,
-      targetRadius: target.radius,
+      targetX,
+      targetY,
+      targetZ,
+      targetRadius,
     };
     currentEntities.push(curNew);
   });
@@ -325,6 +330,7 @@ export function triggerCalmCosmicShift(
     isCalmShift: true,
     x: screenW / 2,
     y: screenH / 2,
+    worldPos: new BABYLON.Vector3(0, 0, 0),
   };
 
   if (typeof fetchNextGeminiScene === "function") {

@@ -54,6 +54,8 @@ export function isUIElement(target: HTMLElement | null): boolean {
     (target.closest(".pointer-events-auto") ||
       target.closest("button") ||
       target.closest("input") ||
+      target.closest("select") ||
+      target.closest("textarea") ||
       target.closest("a") ||
       target.closest("[role='dialog']"))
   ) {
@@ -579,7 +581,11 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
 
   const handleKeyDown = (e: KeyboardEvent) => {
     const target = e.target as HTMLElement | null;
-    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || (target as any).isContentEditable)) {
+    if (
+      target &&
+      (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
+        (target as any).isContentEditable)
+    ) {
       return;
     }
 
@@ -600,6 +606,10 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
     } else if (e.key === "p" || e.key === "P") {
       // Hotkey: Launch glowing probe comet towards mouse or black hole
       if (ctx.probesRef) {
+        const MAX_ACTIVE_PROBES = 25;
+        if (ctx.probesRef.current.length >= MAX_ACTIVE_PROBES) {
+          ctx.probesRef.current = ctx.probesRef.current.slice(-MAX_ACTIVE_PROBES + 1);
+        }
         const ww = window.innerWidth;
         const wh = window.innerHeight;
         const spawnX = ctx.mouseRef.current.x > 0 ? ctx.mouseRef.current.x : ww * 0.25;
@@ -633,6 +643,9 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
           ctx.audio.playProbeLaunch();
         }
         if (Array.isArray(ctx.ripplesRef?.current)) {
+          if (ctx.ripplesRef.current.length >= 25) {
+            ctx.ripplesRef.current.shift();
+          }
           ctx.ripplesRef.current.push({ x: spawnX, y: spawnY, life: 0.6 });
         }
       }
