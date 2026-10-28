@@ -244,6 +244,27 @@ export async function startServer(portOverride?: number) {
     });
   });
 
+  // Version & service metadata discovery endpoints
+  app.get(["/version", "/api/version"], (req, res) => {
+    res.json({
+      version: "1.0.0",
+      service: "curtis-click-portfolio",
+      name: "Curtis Click - AI Engineer",
+      environment: process.env.NODE_ENV || "development",
+      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+      nodeVersion: process.version,
+      uptime: Math.floor(process.uptime()),
+      archetypes: [
+        "BLACKHOLE_CENTRIC",
+        "BINARY_PLANETS",
+        "NEBULA_CRADLE",
+        "EXOPLANET_CLUSTER",
+        "SPIRAL_GALAXY",
+        "STELLAR_PULSAR",
+      ],
+    });
+  });
+
   // Client error logging endpoint with size bounding and string sanitization
   app.post("/api/log-error", (req, res) => {
     let rawError =

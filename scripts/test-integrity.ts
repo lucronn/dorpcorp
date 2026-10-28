@@ -200,6 +200,31 @@ async function runAllTests() {
     assert.equal(colOverride.a, 0.9);
   });
 
+  runTest("parseColorToBabylonColor4: extracts alpha from 8-digit #rrggbbaa and 4-digit #rgba hex codes when alpha is omitted", () => {
+    const col8Hex = parseColorToBabylonColor4("#ffffff80");
+    assert.equal(col8Hex.r, 1.0);
+    assert.equal(col8Hex.g, 1.0);
+    assert.equal(col8Hex.b, 1.0);
+    assert.equal(Math.round(col8Hex.a * 100) / 100, Math.round((0x80 / 255) * 100) / 100);
+
+    const col4Hex = parseColorToBabylonColor4("#fff8");
+    assert.equal(col4Hex.r, 1.0);
+    assert.equal(col4Hex.g, 1.0);
+    assert.equal(col4Hex.b, 1.0);
+    assert.equal(Math.round(col4Hex.a * 100) / 100, Math.round((0x88 / 255) * 100) / 100);
+
+    // Explicit alpha parameter takes precedence over embedded hex alpha
+    const colExplicit = parseColorToBabylonColor4("#ffffff80", 0.35);
+    assert.equal(colExplicit.a, 0.35);
+  });
+
+  runTest("parseColorToRgb: correctly parses decimal rgb and rgba channel values without splitting tokens", () => {
+    const colDecRgba = parseColorToRgb("rgba(120.4, 180.6, 240.2, 0.5)");
+    assert.equal(colDecRgba.r, 120);
+    assert.equal(colDecRgba.g, 181);
+    assert.equal(colDecRgba.b, 240);
+  });
+
   runTest("valueNoise2D: returns deterministic values between 0.0 and 1.0", () => {
     const val1 = valueNoise2D(12.5, 45.3);
     const val2 = valueNoise2D(12.5, 45.3);
@@ -448,6 +473,24 @@ async function runAllTests() {
 
     disposeCollisionFlares(flaresList);
     assert.equal(flaresList.length, 0);
+    scene.dispose();
+    engine.dispose();
+  });
+
+  runTest("spawnCollisionFlare: sanitizes arbitrary, malformed, or 8-digit hex strings without throwing", () => {
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    const flaresList: Array<{ mesh: BABYLON.Mesh; life: number; maxLife: number; initialRadius: number }> = [];
+
+    assert.doesNotThrow(() => {
+      spawnCollisionFlare(scene, 0, 0, 0, 15, "#invalid-hex", flaresList);
+      spawnCollisionFlare(scene, 0, 0, 0, 15, "#ffffff80", flaresList);
+      spawnCollisionFlare(scene, 0, 0, 0, 15, 12345 as any, flaresList);
+      spawnCollisionFlare(scene, 0, 0, 0, 15, "#f008", flaresList);
+    });
+
+    assert.equal(flaresList.length, 4);
+    disposeCollisionFlares(flaresList);
     scene.dispose();
     engine.dispose();
   });
@@ -735,6 +778,16 @@ async function runAllTests() {
     assert.equal(zeroPull[0]!.y, 150);
   });
 
+  runTest("calculateForwardTrajectory: defends against non-finite or NaN steps by returning empty array and clamps excessive step count", () => {
+    assert.deepEqual(calculateForwardTrajectory(100, 100, 80, 80, [], NaN), []);
+    assert.deepEqual(calculateForwardTrajectory(100, 100, 80, 80, [], Infinity), []);
+    assert.deepEqual(calculateForwardTrajectory(100, 100, 80, 80, [], -10), []);
+
+    // Excessive step count is safely clamped to max 150 points
+    const points = calculateForwardTrajectory(100, 100, 80, 80, [], 500);
+    assert.ok(points.length <= 151, `Trajectory points must be clamped to safe step threshold, got ${points.length}`);
+  });
+
   runTest("updateActiveProbes: safely filters out non-finite / NaN coordinates, velocities, and life values", () => {
     const validProbe: SlingshotProbe = {
       id: "valid-probe",
@@ -889,6 +942,43 @@ async function runAllTests() {
     assert.ok(updated.length <= 25, `Expected <= 25 active probes, got ${updated.length}`);
   });
 
+  runTest("updateActiveProbes: bounds ripplesRef capacity to max 25 and safely handles missing audio methods", () => {
+    const bh: CelestialEntity = {
+      type: "blackhole",
+      x: 100,
+      y: 100,
+      radius: 50,
+      color: "#ff8844",
+      mass: 50000,
+    };
+    const ripples = {
+      current: Array.from({ length: 30 }, (_, i) => ({ x: i, y: i, life: 1.0 })),
+    };
+    const swallowingProbe: SlingshotProbe = {
+      id: "swallow-probe",
+      x: 100,
+      y: 100,
+      z: 0,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      color: "#4deeea",
+      trail: [],
+      life: 1.0,
+      maxLife: 1.0,
+      isSwallowed: false,
+      maxSpeedReached: 10,
+      lastWhipTime: 0,
+    };
+
+    assert.doesNotThrow(() => {
+      updateActiveProbes([swallowingProbe], [bh], ripples);
+    });
+
+    assert.ok(ripples.current.length <= 25, `Ripples list must be bounded to 25, got ${ripples.current.length}`);
+    assert.equal(swallowingProbe.isSwallowed, true);
+  });
+
   runTest("TidalDisruptionEngine: validates quiescent initial state and hyperbolic inbound trajectory trigger", () => {
     const tde = createInitialTdeState();
     assert.equal(tde.stage, "IDLE");
@@ -1032,6 +1122,22 @@ async function runAllTests() {
       triggerTidalDisruptionEvent(tde, null as any, 1920, 1080);
       updateTidalDisruption(tde, null as any, 1920, 1080, { current: 0 }, { current: [] });
     });
+  });
+
+  runTest("TidalDisruptionEngine: bounds ripplesRef capacity to max 25 during disruption events and safely handles missing audio methods", () => {
+    const tde = createInitialTdeState();
+    tde.isActive = true;
+    tde.stage = "STAR_APPROACH";
+    tde.starX = 500;
+    tde.starY = 500;
+    const bh: CelestialEntity = { type: "blackhole", x: 500, y: 500, radius: 65, color: "#ff8800" };
+    const ripples = {
+      current: Array.from({ length: 30 }, (_, i) => ({ x: i, y: i, life: 1.0 })),
+    };
+    assert.doesNotThrow(() => {
+      updateTidalDisruption(tde, [bh], 1920, 1080, { current: 0 }, ripples);
+    });
+    assert.ok(ripples.current.length <= 25, `Ripples list must be capped at 25, got ${ripples.current.length}`);
   });
 
   runTest("AudioEngine: handles modulation bounds, mute toggles, and clean disposal", () => {
@@ -2058,6 +2164,60 @@ async function runAllTests() {
     engine.dispose();
   });
 
+  runTest("CelestialMeshSynchronizer: updateCelestial3DMeshes forces depth buffer write on event_horizon_core_3d", () => {
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    const sceneRef = { current: scene };
+    const group = new BABYLON.TransformNode("grp", scene);
+    const celestialGroupRef = { current: group };
+
+    const ehMesh = BABYLON.MeshBuilder.CreateSphere("event_horizon_core_3d", { diameter: 20 }, scene);
+    const ehMat = new BABYLON.StandardMaterial("ehMat", scene);
+    ehMat.disableDepthWrite = true;
+    ehMat.forceDepthWrite = false;
+    ehMesh.material = ehMat;
+    ehMesh.parent = group;
+
+    const celestialEntitiesRef = { current: [] };
+
+    updateCelestial3DMeshes(
+      sceneRef,
+      celestialGroupRef,
+      celestialEntitiesRef,
+      { current: false },
+      { current: 0 },
+      { current: 0 },
+      {},
+      { current: true },
+      { current: null },
+      () => {},
+      () => {},
+      () => {},
+      { current: 0 },
+      { current: null },
+      { current: [] },
+      () => {},
+      () => {},
+      { current: [] },
+      { current: { x: 0, y: 0 } },
+      { current: null },
+      { current: false },
+      { current: 0.15 },
+      { current: 0 },
+      { current: 0 },
+      { current: 0 },
+      { current: [] },
+      { current: null }
+    );
+
+    assert.equal(ehMat.disableDepthWrite, false, "disableDepthWrite must be false for event horizon");
+    assert.equal(ehMat.forceDepthWrite, true, "forceDepthWrite must be true for event horizon");
+    assert.equal(ehMat.alpha, 1.0, "alpha must be 1.0 for event horizon");
+
+    scene.dispose();
+    engine.dispose();
+  });
+
   runTest("AudioEngine: getMusicAmplitude and getFrequencyBands handle uninitialized, muted, and empty analyser safely", () => {
     assert.equal(audio.getMusicAmplitude(), 0);
     const bands = audio.getFrequencyBands();
@@ -2207,6 +2367,24 @@ async function runAllTests() {
     assert.equal(isUIElement(dummyTextareaSpan), true, "Element inside textarea should return true");
   });
 
+  runTest("isUIElement: correctly identifies elements with isContentEditable as interactive UI", () => {
+    const dummyEditableDiv: any = {
+      tagName: "DIV",
+      id: "rich-editor",
+      isContentEditable: true,
+      closest: () => null,
+    };
+    assert.equal(isUIElement(dummyEditableDiv), true, "ContentEditable DIV must return true");
+
+    const nonEditableDiv: any = {
+      tagName: "DIV",
+      id: "wrapper",
+      isContentEditable: false,
+      closest: () => null,
+    };
+    assert.equal(isUIElement(nonEditableDiv), true);
+  });
+
   runTest("Hotkeys & UI classification: validates hotkey action bindings and input element exclusion", () => {
     // Ensure interactive input and textarea targets are recognized as UI elements
     const mockInput = { tagName: "INPUT", id: "search", closest: () => null } as any;
@@ -2332,6 +2510,23 @@ async function runAllTests() {
     const res = await makeRequest("/api/health");
     assert.equal(res.status, 200);
     assert.equal(res.body.status, "healthy");
+  });
+
+  await runTest("GET /version and GET /api/version: returns application version, service name, nodeVersion, uptime, and supported archetypes", async () => {
+    const res1 = await makeRequest("/version");
+    assert.equal(res1.status, 200);
+    assert.equal(res1.body.version, "1.0.0");
+    assert.equal(res1.body.service, "curtis-click-portfolio");
+    assert.equal(res1.body.name, "Curtis Click - AI Engineer");
+    assert.ok(Array.isArray(res1.body.archetypes) && res1.body.archetypes.length === 6);
+    assert.ok(res1.body.archetypes.includes("BLACKHOLE_CENTRIC"));
+    assert.ok(res1.body.archetypes.includes("STELLAR_PULSAR"));
+
+    const res2 = await makeRequest("/api/version");
+    assert.equal(res2.status, 200);
+    assert.equal(res2.body.version, res1.body.version);
+    assert.equal(res2.body.service, res1.body.service);
+    assert.equal(res2.body.name, res1.body.name);
   });
 
   await runTest("POST /api/generate-cosmic-scene: returns valid procedural system on fallback", async () => {

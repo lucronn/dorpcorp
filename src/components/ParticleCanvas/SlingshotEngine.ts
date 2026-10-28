@@ -53,11 +53,13 @@ export function calculateForwardTrajectory(
     !isFinite(pullX) ||
     !isFinite(pullY) ||
     !isFinite(initialVz) ||
+    !isFinite(steps) ||
     steps <= 0
   ) {
     return [];
   }
 
+  const safeSteps = Math.min(150, Math.max(1, Math.floor(steps)));
   const entities = Array.isArray(celestialEntities) ? celestialEntities : [];
   const points: SlingshotTrajectoryPoint[] = [];
   
@@ -83,7 +85,7 @@ export function calculateForwardTrajectory(
 
   points.push({ x: px, y: py, z: pz, isHorizonBound: false, speed: launchMag });
 
-  for (let s = 0; s < steps; s++) {
+  for (let s = 0; s < safeSteps; s++) {
     if (isHorizonBound) break;
 
     let ax = 0;
@@ -236,8 +238,11 @@ export function updateActiveProbes(
         // Event Horizon Relativistic Absorption
         if (dist <= effectiveRadius * 1.08) {
           probe.isSwallowed = true;
-          audio.playProbeSwallowed();
+          if (audio?.playProbeSwallowed) audio.playProbeSwallowed();
           if (Array.isArray(ripplesRef?.current)) {
+            while (ripplesRef.current.length >= 25) {
+              ripplesRef.current.shift();
+            }
             ripplesRef.current.push({ x: entity.x, y: entity.y, life: 1.0 });
           }
           break;
@@ -274,8 +279,11 @@ export function updateActiveProbes(
     ) {
       probe.lastWhipTime = now;
       probe.maxSpeedReached = currentSpeed;
-      audio.playProbeSlingshot(currentSpeed / 20.0);
+      if (audio?.playProbeSlingshot) audio.playProbeSlingshot(currentSpeed / 20.0);
       if (Array.isArray(ripplesRef?.current)) {
+        while (ripplesRef.current.length >= 25) {
+          ripplesRef.current.shift();
+        }
         ripplesRef.current.push({ x: probe.x, y: probe.y, life: 0.7 });
       }
     }

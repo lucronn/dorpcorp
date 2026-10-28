@@ -287,9 +287,14 @@ export function spawnCollisionFlare(
   flareMesh.position.set(safeX, safeY, safeZ);
 
   const mat = new BABYLON.StandardMaterial("flareMat", scene);
-  let safeHex = (typeof colorHex === "string" && colorHex.startsWith("#")) ? colorHex : "#ffaa44";
-  if (safeHex.length === 4) {
+  let safeHex = (typeof colorHex === "string" && colorHex.startsWith("#")) ? colorHex.trim() : "#ffaa44";
+  if (safeHex.length === 4 || safeHex.length === 5) {
     safeHex = `#${safeHex[1]}${safeHex[1]}${safeHex[2]}${safeHex[2]}${safeHex[3]}${safeHex[3]}`;
+  } else if (safeHex.length > 7) {
+    safeHex = safeHex.slice(0, 7);
+  }
+  if (!/^#[0-9a-fA-F]{6}$/.test(safeHex)) {
+    safeHex = "#ffaa44";
   }
   mat.emissiveColor = BABYLON.Color3.FromHexString(safeHex);
   mat.disableLighting = true;

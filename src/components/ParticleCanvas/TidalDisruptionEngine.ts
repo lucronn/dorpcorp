@@ -164,7 +164,9 @@ export function triggerTidalDisruptionEvent(
   tdeState.grbShockwaveRadius = 0;
   tdeState.statusMessage = "TDE TRIGGERED: ROGUE STAR INBOUND TO ROCHE LIMIT";
 
-  audio.playTidalDisruption("approach");
+  if (audio?.playTidalDisruption) {
+    audio.playTidalDisruption("approach");
+  }
   return true;
 }
 
@@ -237,9 +239,14 @@ export function updateTidalDisruption(
       tde.stage = "ROCHE_RUPTURE";
       tde.compressionFlash = 1.0;
       tde.statusMessage = "ROCHE LIMIT BREACHED: STELLAR CORE DISRUPTED INTO TIDAL DEBRIS STREAM";
-      audio.playTidalDisruption("spaghettify");
+      if (audio?.playTidalDisruption) {
+        audio.playTidalDisruption("spaghettify");
+      }
       if (cameraShakeRef) cameraShakeRef.current = 24.0;
       if (Array.isArray(ripplesRef?.current)) {
+        while (ripplesRef.current.length >= 25) {
+          ripplesRef.current.shift();
+        }
         ripplesRef.current.push({ x: tde.starX, y: tde.starY, life: 1.0 });
       }
 
@@ -332,6 +339,9 @@ export function updateTidalDisruption(
       if (fdist <= bhRadius * 1.12) {
         // Swallowed by event horizon
         if (Array.isArray(ripplesRef?.current)) {
+          while (ripplesRef.current.length >= 25) {
+            ripplesRef.current.shift();
+          }
           ripplesRef.current.push({ x: frag.x, y: frag.y, life: 0.6 });
         }
         continue;
@@ -388,9 +398,14 @@ export function updateTidalDisruption(
       tde.statusMessage = "RELATIVISTIC GAMMA-RAY BURST (GRB) OUTFLOW DETONATED";
       tde.grbBeamIntensity = 1.0;
       tde.grbShockwaveRadius = 24;
-      audio.playTidalDisruption("grb");
+      if (audio?.playTidalDisruption) {
+        audio.playTidalDisruption("grb");
+      }
       if (cameraShakeRef) cameraShakeRef.current = 28.0;
       if (Array.isArray(ripplesRef?.current)) {
+        while (ripplesRef.current.length >= 25) {
+          ripplesRef.current.shift();
+        }
         ripplesRef.current.push({ x: cx, y: cy, life: 1.0 });
       }
 

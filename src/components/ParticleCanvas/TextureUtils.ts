@@ -25,14 +25,14 @@ export const parseColorToRgb = (color: string) => {
       b = isNaN(pb) ? 255 : pb;
     }
   } else if (cleaned.startsWith("rgb")) {
-    const matches = cleaned.match(/\d+/g);
+    const matches = cleaned.match(/[\d.]+/g);
     if (matches && matches.length >= 3) {
-      const pr = parseInt(matches[0]!, 10);
-      const pg = parseInt(matches[1]!, 10);
-      const pb = parseInt(matches[2]!, 10);
-      r = isNaN(pr) ? 255 : Math.max(0, Math.min(255, pr));
-      g = isNaN(pg) ? 255 : Math.max(0, Math.min(255, pg));
-      b = isNaN(pb) ? 255 : Math.max(0, Math.min(255, pb));
+      const pr = parseFloat(matches[0]!);
+      const pg = parseFloat(matches[1]!);
+      const pb = parseFloat(matches[2]!);
+      r = isNaN(pr) ? 255 : Math.max(0, Math.min(255, Math.round(pr)));
+      g = isNaN(pg) ? 255 : Math.max(0, Math.min(255, Math.round(pg)));
+      b = isNaN(pb) ? 255 : Math.max(0, Math.min(255, Math.round(pb)));
     }
   }
   return { r, g, b };
@@ -46,12 +46,28 @@ export const parseColorToBabylonColor3 = (color: string) => {
 export const parseColorToBabylonColor4 = (color: string, alpha?: number) => {
   const { r, g, b } = parseColorToRgb(color);
   let explicitAlpha: number | undefined = alpha;
-  if (explicitAlpha === undefined && typeof color === "string" && color.trim().toLowerCase().startsWith("rgba")) {
-    const parts = color.trim().toLowerCase().match(/[\d.]+/g);
-    if (parts && parts.length >= 4) {
-      const parsedA = parseFloat(parts[3]!);
-      if (!isNaN(parsedA)) {
-        explicitAlpha = parsedA;
+  if (explicitAlpha === undefined && typeof color === "string") {
+    const cleaned = color.trim().toLowerCase();
+    if (cleaned.startsWith("rgba")) {
+      const parts = cleaned.match(/[\d.]+/g);
+      if (parts && parts.length >= 4) {
+        const parsedA = parseFloat(parts[3]!);
+        if (!isNaN(parsedA)) {
+          explicitAlpha = parsedA;
+        }
+      }
+    } else if (cleaned.startsWith("#")) {
+      const hex = cleaned.replace("#", "");
+      if (hex.length === 4) {
+        const pa = parseInt(hex[3]! + hex[3]!, 16);
+        if (!isNaN(pa)) {
+          explicitAlpha = pa / 255;
+        }
+      } else if (hex.length === 8) {
+        const pa = parseInt(hex.substring(6, 8), 16);
+        if (!isNaN(pa)) {
+          explicitAlpha = pa / 255;
+        }
       }
     }
   }

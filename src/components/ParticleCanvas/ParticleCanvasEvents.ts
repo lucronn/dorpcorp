@@ -49,6 +49,9 @@ export function isUIElement(target: HTMLElement | null): boolean {
   if (target.tagName === "CANVAS" || target.id === "canvas-babylon") {
     return false;
   }
+  if ((target as any).isContentEditable) {
+    return true;
+  }
   if (
     target.closest &&
     (target.closest(".pointer-events-auto") ||

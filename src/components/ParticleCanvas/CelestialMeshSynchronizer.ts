@@ -257,7 +257,7 @@ export function updateCelestial3DMeshes(
             }
           });
 
-          if (audio.playStageSwell) audio.playStageSwell(1);
+          if (audio?.playStageSwell) audio.playStageSwell(1);
 
           registerAndSaveSequence(
             "Wormhole Bridge Activated",
@@ -541,7 +541,7 @@ export function updateCelestial3DMeshes(
               }
             }
 
-            if (audio.playInteractiveMallet) audio.playInteractiveMallet(0.95, bh.x / ww);
+            if (audio?.playInteractiveMallet) audio.playInteractiveMallet(0.95, bh.x / ww);
 
             if (spawnTailParticleRef.current) {
               for (let k = 0; k < 25; k++) {
@@ -754,7 +754,8 @@ export function updateCelestial3DMeshes(
         if (child.material && child.material instanceof BABYLON.StandardMaterial) {
           const mat = child.material;
           if (child.name === "event_horizon_core_3d") {
-            mat.needDepthBufferWrite = true;
+            mat.disableDepthWrite = false;
+            mat.forceDepthWrite = true;
             mat.alpha = 1.0;
             return;
           }
