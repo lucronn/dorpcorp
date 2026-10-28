@@ -10,8 +10,10 @@ export function buildBlackholeCentricScene(
   systemTags: string[];
   entities: CelestialEntity[];
 } {
-  const cx = width / 2;
-  const cy = height / 2;
+  const safeWidth = isFinite(width) && width > 0 ? width : 1920;
+  const safeHeight = isFinite(height) && height > 0 ? height : 1080;
+  const cx = safeWidth / 2;
+  const cy = safeHeight / 2;
   const entities: CelestialEntity[] = [];
 
   const systemName = "Singularity Core";

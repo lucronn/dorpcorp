@@ -35,7 +35,16 @@ export function resolveCelestialCollision(
   const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
   const colDist = e1.radius + e2.radius;
 
-  if (isNaN(dist) || !isFinite(dist) || dist >= colDist || dist <= 0.0001 || e1.radius <= 0 || e2.radius <= 0) {
+  if (
+    isNaN(dist) ||
+    !isFinite(dist) ||
+    dist >= colDist ||
+    dist <= 0.0001 ||
+    !isFinite(e1.radius) ||
+    !isFinite(e2.radius) ||
+    e1.radius <= 0 ||
+    e2.radius <= 0
+  ) {
     return null;
   }
 
@@ -92,8 +101,9 @@ export function resolveCelestialCollision(
     0.5 * m1 * (v1x * v1x + v1y * v1y + v1z * v1z) +
     0.5 * m2 * (v2x * v2x + v2y * v2y + v2z * v2z);
 
-  // Impulse scalar
-  const impulse = (-(1 + restitution) * vn) / (1 / m1 + 1 / m2);
+  // Impulse scalar with sanitized restitution
+  const safeRestitution = isFinite(restitution) && restitution >= 0 ? Math.min(1.0, restitution) : 0.75;
+  const impulse = (-(1 + safeRestitution) * vn) / (1 / m1 + 1 / m2);
 
   // Apply impulse vector
   e1.vx = v1x - (impulse / m1) * nx;
@@ -303,11 +313,13 @@ export function updateCollisionFlares(
   dt: number = 0.016
 ): Array<{ mesh: BABYLON.Mesh; life: number; maxLife: number; initialRadius: number }> {
   if (!Array.isArray(flaresList)) return [];
+  const safeDt = isFinite(dt) && dt >= 0 ? dt : 0.016;
   const activeFlares: typeof flaresList = [];
   for (let i = 0; i < flaresList.length; i++) {
     const flare = flaresList[i]!;
-    flare.life -= dt * 1.5;
-    if (flare.life <= 0) {
+    if (!flare) continue;
+    flare.life -= safeDt * 1.5;
+    if (!isFinite(flare.life) || flare.life <= 0) {
       if (flare.mesh && !flare.mesh.isDisposed()) {
         if (flare.mesh.material) {
           flare.mesh.material.dispose(false, true);

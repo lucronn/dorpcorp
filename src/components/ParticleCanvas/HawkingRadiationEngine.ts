@@ -19,6 +19,17 @@ export function createHawkingRadiationSystem(
   entity: CelestialEntity,
   scene: BABYLON.Scene
 ): HawkingRadiationInstance {
+  if (!scene || (scene as any).isDisposed || !bhContainer) {
+    return {
+      system: null as any,
+      get currentIntensity() {
+        return 0;
+      },
+      update: () => {},
+      dispose: () => {},
+    };
+  }
+
   const capacity = 3500;
   const sparkTex = createCircleTexture(scene);
 

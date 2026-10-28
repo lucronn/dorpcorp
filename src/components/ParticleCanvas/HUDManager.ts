@@ -20,11 +20,12 @@ export function updateHudTexture(
   const context = hudTexture.getContext() as CanvasRenderingContext2D | null;
   if (!context) return;
 
+  const safeStage = isFinite(targetStage) ? Math.max(0, Math.floor(targetStage)) : 0;
   context.save();
   context.resetTransform();
   context.clearRect(0, 0, ww * hudDpr, wh * hudDpr);
   context.scale(hudDpr, hudDpr);
-  drawStageLayoutTemplate(context, targetStage, ww, wh, "full");
+  drawStageLayoutTemplate(context, safeStage, ww, wh, "full");
   context.restore();
   hudTexture.update();
 }

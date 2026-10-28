@@ -12,9 +12,13 @@ export function createGalaxyMesh(
   const galaxyContainer = new BABYLON.TransformNode("galaxy_group", scene);
   galaxyContainer.position.set(wx, wy, -50);
 
+  const galaxyColorStr = entity?.color || "#88aaff";
+  const galaxySecondaryColorStr = entity?.secondaryColor || galaxyColorStr;
+  const safeRadius = isFinite(entity?.radius) && entity.radius > 0 ? entity.radius : 25;
+
   const galTex = generateGalaxyTexture(
-    entity.color,
-    entity.secondaryColor || entity.color,
+    galaxyColorStr,
+    galaxySecondaryColorStr,
     scene
   );
   const galMat = new BABYLON.StandardMaterial("galMat", scene);
@@ -27,14 +31,14 @@ export function createGalaxyMesh(
 
   const galMesh = BABYLON.MeshBuilder.CreateDisc(
     "galaxy_ellipsoid",
-    { radius: entity.radius * 2.8, tessellation: 64 },
+    { radius: safeRadius * 2.8, tessellation: 64 },
     scene
   );
   galMesh.material = galMat;
   galMesh.rotation.x = Math.PI / 3.8;
   galMesh.parent = galaxyContainer;
 
-  const coreTex = createCircularGlowTexture(entity.color, scene);
+  const coreTex = createCircularGlowTexture(galaxyColorStr, scene);
   const coreMat = new BABYLON.StandardMaterial("galaxyCoreMat", scene);
   coreMat.diffuseTexture = coreTex;
   coreMat.emissiveTexture = coreTex;
@@ -45,7 +49,7 @@ export function createGalaxyMesh(
 
   const coreMesh = BABYLON.MeshBuilder.CreateSphere(
     "galaxy_core_3d",
-    { diameter: entity.radius * 1.5, segments: 32 },
+    { diameter: safeRadius * 1.5, segments: 32 },
     scene
   );
   coreMesh.material = coreMat;
@@ -54,7 +58,7 @@ export function createGalaxyMesh(
   // 3D Outer Galactic Bulge Coronal Halo
   const haloMesh = BABYLON.MeshBuilder.CreateSphere(
     "galaxy_halo_3d",
-    { diameter: entity.radius * 2.2, segments: 24 },
+    { diameter: safeRadius * 2.2, segments: 24 },
     scene
   );
   haloMesh.material = coreMat;

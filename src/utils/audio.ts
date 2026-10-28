@@ -419,21 +419,29 @@ class AudioEngine {
 
   getMusicAmplitude(): number {
     if (!this.isInitialized || !this.analyser || this.isMuted) return 0;
-    const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+    const binCount = this.analyser.frequencyBinCount;
+    if (!binCount || binCount <= 0) return 0;
+    const dataArray = new Uint8Array(binCount);
     this.analyser.getByteFrequencyData(dataArray);
+    if (!dataArray || dataArray.length === 0) return 0;
     let sum = 0;
     for (let i = 0; i < dataArray.length; i++) {
       sum += dataArray[i]!;
     }
     const avg = sum / dataArray.length;
-    return avg / 255.0;
+    const result = avg / 255.0;
+    return isFinite(result) ? Math.max(0, result) : 0;
   }
 
   getFrequencyBands(): { bass: number; mid: number; treble: number } {
     if (!this.isInitialized || !this.analyser || this.isMuted) {
       return { bass: 0, mid: 0, treble: 0 };
     }
-    const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+    const binCount = this.analyser.frequencyBinCount;
+    if (!binCount || binCount <= 0) {
+      return { bass: 0, mid: 0, treble: 0 };
+    }
+    const dataArray = new Uint8Array(binCount);
     this.analyser.getByteFrequencyData(dataArray);
 
     let bassSum = 0;
@@ -450,10 +458,14 @@ class AudioEngine {
       trebleSum += dataArray[i] || 0;
     }
 
+    const rawBass = (bassSum / 6) / 255.0;
+    const rawMid = (midSum / 10) / 255.0;
+    const rawTreble = (trebleSum / 16) / 255.0;
+
     return {
-      bass: (bassSum / 6) / 255.0,
-      mid: (midSum / 10) / 255.0,
-      treble: (trebleSum / 16) / 255.0,
+      bass: isFinite(rawBass) ? Math.max(0, rawBass) : 0,
+      mid: isFinite(rawMid) ? Math.max(0, rawMid) : 0,
+      treble: isFinite(rawTreble) ? Math.max(0, rawTreble) : 0,
     };
   }
 

@@ -402,6 +402,12 @@ export async function startServer(portOverride?: number) {
     res.status(404).json({ error: "Endpoint not found" });
   });
 
+  // Terminal API error handler ensuring unhandled API exceptions always return structured JSON
+  app.use("/api/*", (err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const statusCode = err?.status && isFinite(err.status) ? err.status : 500;
+    res.status(statusCode).json({ error: err?.message || "Internal server error" });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test") {
     const { createServer: createViteServer } = await import("vite");

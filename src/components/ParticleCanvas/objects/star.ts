@@ -12,9 +12,13 @@ export function createStarMesh(
   const starContainer = new BABYLON.TransformNode("star_group", scene);
   starContainer.position.set(wx, wy, 0);
 
+  const starColorStr = entity?.color || "#ffaa44";
+  const starSecondaryColorStr = entity?.secondaryColor || starColorStr;
+  const safeRadius = isFinite(entity?.radius) && entity.radius > 0 ? entity.radius : 15;
+
   const starTex = generateStarTexture(
-    entity.color,
-    entity.secondaryColor || entity.color,
+    starColorStr,
+    starSecondaryColorStr,
     scene
   );
   const coreMat = new BABYLON.StandardMaterial("starCoreMat", scene);
@@ -24,7 +28,7 @@ export function createStarMesh(
 
   const coreMesh = BABYLON.MeshBuilder.CreateSphere(
     "star_core",
-    { diameter: entity.radius * 2.0, segments: 64 },
+    { diameter: safeRadius * 2.0, segments: 64 },
     scene
   );
   coreMesh.material = coreMat;
@@ -32,11 +36,11 @@ export function createStarMesh(
 
   const starAtmosMesh = BABYLON.MeshBuilder.CreateSphere(
     "star_atmos",
-    { diameter: entity.radius * 2.16, segments: 64 },
+    { diameter: safeRadius * 2.16, segments: 64 },
     scene
   );
 
-  const starRgb = parseColorToRgb(entity.color);
+  const starRgb = parseColorToRgb(starColorStr);
   const starColor = new BABYLON.Color3(starRgb.r / 255, starRgb.g / 255, starRgb.b / 255);
   const starAtmosMat = new BABYLON.StandardMaterial("starAtmosMat", scene);
   starAtmosMat.emissiveColor = starColor;
@@ -57,7 +61,7 @@ export function createStarMesh(
   starAtmosMesh.parent = starContainer;
 
   // If this star is a relativistic pulsar / magnetar: add collimated synchrotron beams & magnetic tori
-  if (entity.secondaryColor === "#00ffd2") {
+  if (entity?.secondaryColor === "#00ffd2") {
     const beamMat = new BABYLON.StandardMaterial("pulsarBeamMat", scene);
     beamMat.emissiveColor = new BABYLON.Color3(0.0, 1.0, 0.85);
     beamMat.diffuseColor = new BABYLON.Color3(1.0, 1.0, 1.0);
@@ -65,24 +69,24 @@ export function createStarMesh(
     beamMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
     beamMat.alpha = 0.85;
 
-    const beamLength = entity.radius * 7.5;
+    const beamLength = safeRadius * 7.5;
     const beamNorth = BABYLON.MeshBuilder.CreateCylinder(
       "pulsar_beam_north",
-      { height: beamLength, diameterTop: entity.radius * 0.9, diameterBottom: entity.radius * 0.1, tessellation: 24 },
+      { height: beamLength, diameterTop: safeRadius * 0.9, diameterBottom: safeRadius * 0.1, tessellation: 24 },
       scene
     );
     beamNorth.material = beamMat;
-    beamNorth.position.y = beamLength * 0.5 + entity.radius * 0.3;
+    beamNorth.position.y = beamLength * 0.5 + safeRadius * 0.3;
     beamNorth.rotation.z = Math.PI * 0.12; // Precessing magnetic tilt
     beamNorth.parent = starContainer;
 
     const beamSouth = BABYLON.MeshBuilder.CreateCylinder(
       "pulsar_beam_south",
-      { height: beamLength, diameterTop: entity.radius * 0.1, diameterBottom: entity.radius * 0.9, tessellation: 24 },
+      { height: beamLength, diameterTop: safeRadius * 0.1, diameterBottom: safeRadius * 0.9, tessellation: 24 },
       scene
     );
     beamSouth.material = beamMat;
-    beamSouth.position.y = -(beamLength * 0.5 + entity.radius * 0.3);
+    beamSouth.position.y = -(beamLength * 0.5 + safeRadius * 0.3);
     beamSouth.rotation.z = Math.PI * 0.12;
     beamSouth.parent = starContainer;
 
@@ -95,7 +99,7 @@ export function createStarMesh(
 
     const beltMesh = BABYLON.MeshBuilder.CreateTorus(
       "pulsar_mag_belt",
-      { diameter: entity.radius * 3.2, thickness: entity.radius * 0.1, tessellation: 48 },
+      { diameter: safeRadius * 3.2, thickness: safeRadius * 0.1, tessellation: 48 },
       scene
     );
     beltMesh.material = beltMat;

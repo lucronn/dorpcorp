@@ -18,8 +18,9 @@ export function createBlackholeMesh(
   const bhContainer = new BABYLON.TransformNode("bh_group", scene);
   bhContainer.position.set(wx, wy, 0);
 
-  const primaryColor = entity.color || "#ff6600";
-  const secondaryColor = entity.secondaryColor || "#ffd778";
+  const primaryColor = entity?.color || "#ff6600";
+  const secondaryColor = entity?.secondaryColor || "#ffd778";
+  const safeRadius = isFinite(entity?.radius) && entity.radius > 0 ? entity.radius : 15;
   const { r: r1, g: g1, b: b1 } = parseColorToRgb(primaryColor);
   const { r: r2, g: g2, b: b2 } = parseColorToRgb(secondaryColor);
 
@@ -40,7 +41,7 @@ export function createBlackholeMesh(
   // 3D Volumetric Event Horizon Sphere Core (Exact 1:1 Schwarzschild Radius r_s)
   const ehMesh = BABYLON.MeshBuilder.CreateSphere(
     "event_horizon_core_3d",
-    { diameter: entity.radius * 2.0, segments: 64 },
+    { diameter: safeRadius * 2.0, segments: 64 },
     scene
   );
   ehMesh.material = ehMat;
@@ -66,7 +67,7 @@ export function createBlackholeMesh(
   // Primary Equatorial Accretion Disk (Tilted at 68 degrees inclination)
   const diskMesh1 = BABYLON.MeshBuilder.CreateDisc(
     "accretion_layer_1",
-    { radius: entity.radius * 5.6, tessellation: 128 },
+    { radius: safeRadius * 5.6, tessellation: 128 },
     scene
   );
   diskMesh1.material = diskMat;
@@ -77,7 +78,7 @@ export function createBlackholeMesh(
   // Secondary Wispy Outer Plasma Arm Layer (Co-planar with subtle phase offset)
   const diskMesh2 = BABYLON.MeshBuilder.CreateDisc(
     "accretion_layer_2",
-    { radius: entity.radius * 6.4, tessellation: 128 },
+    { radius: safeRadius * 6.4, tessellation: 128 },
     scene
   );
   diskMesh2.material = diskMat;
@@ -91,25 +92,25 @@ export function createBlackholeMesh(
   // Light from the rear of the accretion disk bent by general relativity over the top of the event horizon
   const lensedArchTop = BABYLON.MeshBuilder.CreateDisc(
     "gravitational_lensing_arch",
-    { radius: entity.radius * 3.6, tessellation: 128 },
+    { radius: safeRadius * 3.6, tessellation: 128 },
     scene
   );
   lensedArchTop.material = diskMat;
   lensedArchTop.rotation.x = Math.PI / 16; // Facing forward with slight 11-degree back tilt
-  lensedArchTop.position.z = -entity.radius * 0.12; // Recessed slightly behind the sphere front
+  lensedArchTop.position.z = -safeRadius * 0.12; // Recessed slightly behind the sphere front
   lensedArchTop.renderingGroupId = 1;
   lensedArchTop.parent = bhContainer;
 
   // 4. Gravitational Lensing Arch - LOWER (Light bent underneath the event horizon)
   const lensedArchBottom = BABYLON.MeshBuilder.CreateDisc(
     "gravitational_lensing_arch_lower",
-    { radius: entity.radius * 3.4, tessellation: 128 },
+    { radius: safeRadius * 3.4, tessellation: 128 },
     scene
   );
   lensedArchBottom.material = diskMat;
   lensedArchBottom.rotation.x = -Math.PI / 16; // Inverted tilt under the sphere
   lensedArchBottom.rotation.z = Math.PI; // Inverted so Doppler asymmetry matches
-  lensedArchBottom.position.z = -entity.radius * 0.12;
+  lensedArchBottom.position.z = -safeRadius * 0.12;
   lensedArchBottom.renderingGroupId = 1;
   lensedArchBottom.parent = bhContainer;
 
@@ -126,8 +127,8 @@ export function createBlackholeMesh(
   const photonRingMesh = BABYLON.MeshBuilder.CreateTorus(
     "bh_photon_ring",
     {
-      diameter: entity.radius * 2.85,
-      thickness: entity.radius * 0.08,
+      diameter: safeRadius * 2.85,
+      thickness: safeRadius * 0.08,
       tessellation: 96,
     },
     scene
@@ -139,12 +140,12 @@ export function createBlackholeMesh(
 
   const photonHaloDisc = BABYLON.MeshBuilder.CreateDisc(
     "bh_photon_halo",
-    { radius: entity.radius * 1.5, tessellation: 128 },
+    { radius: safeRadius * 1.5, tessellation: 128 },
     scene
   );
   photonHaloDisc.material = photonRingMat;
   photonHaloDisc.billboardMode = BABYLON.TransformNode.BILLBOARDMODE_ALL;
-  photonHaloDisc.position.z = -entity.radius * 0.05;
+  photonHaloDisc.position.z = -safeRadius * 0.05;
   photonHaloDisc.renderingGroupId = 2;
   photonHaloDisc.parent = bhContainer;
 
@@ -158,9 +159,9 @@ export function createBlackholeMesh(
   jetMat.backFaceCulling = false;
   jetMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
 
-  const jetLength = entity.radius * 8.5;
-  const jetDiameterTop = entity.radius * 0.95;
-  const jetDiameterBottom = entity.radius * 0.12;
+  const jetLength = safeRadius * 8.5;
+  const jetDiameterTop = safeRadius * 0.95;
+  const jetDiameterBottom = safeRadius * 0.12;
 
   // North Jet (+Y along accretion disk rotational normal)
   const jetNorth = BABYLON.MeshBuilder.CreateCylinder(
@@ -174,7 +175,7 @@ export function createBlackholeMesh(
     scene
   );
   jetNorth.material = jetMat;
-  jetNorth.position.y = jetLength * 0.5 + entity.radius * 0.4;
+  jetNorth.position.y = jetLength * 0.5 + safeRadius * 0.4;
   jetNorth.rotation.x = -Math.PI / 2 + Math.PI / 2.65; // Perpendicular to disk normal
   jetNorth.renderingGroupId = 1;
   jetNorth.parent = bhContainer;
@@ -191,7 +192,7 @@ export function createBlackholeMesh(
     scene
   );
   jetSouth.material = jetMat;
-  jetSouth.position.y = -(jetLength * 0.5 + entity.radius * 0.4);
+  jetSouth.position.y = -(jetLength * 0.5 + safeRadius * 0.4);
   jetSouth.rotation.x = -Math.PI / 2 + Math.PI / 2.65;
   jetSouth.renderingGroupId = 1;
   jetSouth.parent = bhContainer;
@@ -208,14 +209,14 @@ export function createBlackholeMesh(
     const pinchNorth = BABYLON.MeshBuilder.CreateTorus(
       `bh_jet_pinch_n_${node}`,
       {
-        diameter: entity.radius * (0.35 + node * 0.22),
-        thickness: entity.radius * 0.04,
+        diameter: safeRadius * (0.35 + node * 0.22),
+        thickness: safeRadius * 0.04,
         tessellation: 32,
       },
       scene
     );
     pinchNorth.material = pinchMat;
-    pinchNorth.position.y = entity.radius * 0.8 + node * (jetLength * 0.26);
+    pinchNorth.position.y = safeRadius * 0.8 + node * (jetLength * 0.26);
     pinchNorth.rotation.x = -Math.PI / 2 + Math.PI / 2.65;
     pinchNorth.renderingGroupId = 1;
     pinchNorth.parent = bhContainer;
@@ -223,14 +224,14 @@ export function createBlackholeMesh(
     const pinchSouth = BABYLON.MeshBuilder.CreateTorus(
       `bh_jet_pinch_s_${node}`,
       {
-        diameter: entity.radius * (0.35 + node * 0.22),
-        thickness: entity.radius * 0.04,
+        diameter: safeRadius * (0.35 + node * 0.22),
+        thickness: safeRadius * 0.04,
         tessellation: 32,
       },
       scene
     );
     pinchSouth.material = pinchMat;
-    pinchSouth.position.y = -(entity.radius * 0.8 + node * (jetLength * 0.26));
+    pinchSouth.position.y = -(safeRadius * 0.8 + node * (jetLength * 0.26));
     pinchSouth.rotation.x = -Math.PI / 2 + Math.PI / 2.65;
     pinchSouth.renderingGroupId = 1;
     pinchSouth.parent = bhContainer;
@@ -247,7 +248,7 @@ export function createBlackholeMesh(
 
   const ergoDisc = BABYLON.MeshBuilder.CreateDisc(
     "bh_ergosphere_ripple",
-    { radius: entity.radius * 2.4, tessellation: 64 },
+    { radius: safeRadius * 2.4, tessellation: 64 },
     scene
   );
   ergoDisc.material = ergoMat;
@@ -268,12 +269,12 @@ export function createBlackholeMesh(
 
   const coronaMesh = BABYLON.MeshBuilder.CreateDisc(
     "bh_corona_haze",
-    { radius: entity.radius * 5.2, tessellation: 64 },
+    { radius: safeRadius * 5.2, tessellation: 64 },
     scene
   );
   coronaMesh.material = coronaMat;
   coronaMesh.billboardMode = BABYLON.TransformNode.BILLBOARDMODE_ALL;
-  coronaMesh.position.z = -entity.radius * 0.2;
+  coronaMesh.position.z = -safeRadius * 0.2;
   coronaMesh.renderingGroupId = 1;
   coronaMesh.parent = bhContainer;
 

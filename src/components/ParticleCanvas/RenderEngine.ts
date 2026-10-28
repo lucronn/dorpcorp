@@ -110,16 +110,23 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
   const dt = isFinite(rawDt) && rawDt > 0 ? rawDt : 16.666;
   const globalTimeMultiplier = Math.min((dt / 16.666) * speedMult, 3.0);
 
-  // Dynamic Web Audio API metrics with temporal smoothing
-  const rawMusicAmp = (ctx.audio as any).getMusicAmplitude();
-  const rawMusicBands = (ctx.audio as any).getFrequencyBands
+  // Dynamic Web Audio API metrics with temporal smoothing & defensive guards
+  const rawMusicAmp = (ctx.audio as any)?.getMusicAmplitude
+    ? (ctx.audio as any).getMusicAmplitude()
+    : 0;
+  const rawMusicBands = (ctx.audio as any)?.getFrequencyBands
     ? (ctx.audio as any).getFrequencyBands()
     : { bass: 0, mid: 0, treble: 0 };
 
-  ctx.smoothedAmpRef.current += (rawMusicAmp - ctx.smoothedAmpRef.current) * 0.03;
-  ctx.smoothedBassRef.current += (rawMusicBands.bass - ctx.smoothedBassRef.current) * 0.03;
-  ctx.smoothedMidRef.current += (rawMusicBands.mid - ctx.smoothedMidRef.current) * 0.03;
-  ctx.smoothedTrebleRef.current += (rawMusicBands.treble - ctx.smoothedTrebleRef.current) * 0.03;
+  const safeMusicAmp = isFinite(rawMusicAmp) && rawMusicAmp >= 0 ? rawMusicAmp : 0;
+  const safeBass = isFinite(rawMusicBands?.bass) && rawMusicBands.bass >= 0 ? rawMusicBands.bass : 0;
+  const safeMid = isFinite(rawMusicBands?.mid) && rawMusicBands.mid >= 0 ? rawMusicBands.mid : 0;
+  const safeTreble = isFinite(rawMusicBands?.treble) && rawMusicBands.treble >= 0 ? rawMusicBands.treble : 0;
+
+  ctx.smoothedAmpRef.current += (safeMusicAmp - ctx.smoothedAmpRef.current) * 0.03;
+  ctx.smoothedBassRef.current += (safeBass - ctx.smoothedBassRef.current) * 0.03;
+  ctx.smoothedMidRef.current += (safeMid - ctx.smoothedMidRef.current) * 0.03;
+  ctx.smoothedTrebleRef.current += (safeTreble - ctx.smoothedTrebleRef.current) * 0.03;
 
   const musicAmpVal = Math.min(0.12, ctx.smoothedAmpRef.current);
   const musicBands = {

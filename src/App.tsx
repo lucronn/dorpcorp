@@ -241,7 +241,8 @@ export default function App() {
   // Global hotkeys [A], [C], [W], [N], [T], [P], [M], [Escape] for Autopilot, Cinema & Interstellar Sandbox state sync
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)) return;
       if (e.key === 'a' || e.key === 'A') {
         setIsAutopilot((prev) => {
           const next = !prev;

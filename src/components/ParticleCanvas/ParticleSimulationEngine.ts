@@ -52,34 +52,54 @@ export function simulateParticles(
     musicAmpVal,
     musicBands,
     musicSpeedFactor,
-    activeBlackholes,
-    activeCollidables,
+    activeBlackholes: rawActiveBlackholes,
+    activeCollidables: rawActiveCollidables,
     activeSupernova,
     snElapsed,
     scrollVelocity,
     ambientParticleSpeed,
     objectParticleSpeed,
     textParticleSpeed,
-    particleFilters,
+    particleFilters: rawParticleFilters,
     globalAlpha,
     isTypographyMode,
     isInterstellar,
     vortexMultiplier,
     attractionMultiplier,
     mousePos,
-    celestialEntities,
+    celestialEntities: rawCelestialEntities,
     spawnTailParticle,
     screensaverOpacity,
     isTransitActive,
     transitProgress,
     transitCx,
     transitCy,
-    activeRipples,
+    activeRipples: rawActiveRipples,
     audio,
   } = ctx;
 
   const currentW = isFinite(rawW) && rawW > 0 ? rawW : 1920;
   const currentH = isFinite(rawH) && rawH > 0 ? rawH : 1080;
+  const activeBlackholes = Array.isArray(rawActiveBlackholes) ? rawActiveBlackholes : [];
+  const activeCollidables = Array.isArray(rawActiveCollidables) ? rawActiveCollidables : [];
+  const celestialEntities = Array.isArray(rawCelestialEntities) ? rawCelestialEntities : [];
+  const activeRipples = Array.isArray(rawActiveRipples) ? rawActiveRipples : [];
+  const particleFilters: ParticleFilters =
+    rawParticleFilters && typeof rawParticleFilters === "object"
+      ? {
+          ambient: rawParticleFilters.ambient !== false,
+          celestial: rawParticleFilters.celestial !== false,
+          bridges: rawParticleFilters.bridges !== false,
+          tails: rawParticleFilters.tails !== false,
+          typography: rawParticleFilters.typography !== false,
+        }
+      : {
+          ambient: true,
+          celestial: true,
+          bridges: true,
+          tails: true,
+          typography: true,
+        };
 
   const floatScaleX = isTypographyMode ? 0 : (1 - attractionMultiplier) * 0.5;
   const floatScaleY = isTypographyMode ? 0 : (1 - attractionMultiplier) * 0.5;

@@ -1,6 +1,5 @@
 import * as BABYLON from "@babylonjs/core";
 import { CelestialEntity } from "../types";
-import { generateNebulaTexture } from "../TextureUtils";
 
 export function createNebulaMesh(
   _entity: CelestialEntity,

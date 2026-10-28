@@ -1,11 +1,5 @@
 import * as BABYLON from "@babylonjs/core";
 import { CelestialEntity } from "../types";
-import {
-  generateAdvancedPlanetTexture,
-  generateProceduralCloudTexture,
-  generateConcentricRingTexture,
-  parseColorToRgb,
-} from "../TextureUtils";
 
 export function createPlanetMesh(
   _entity: CelestialEntity,

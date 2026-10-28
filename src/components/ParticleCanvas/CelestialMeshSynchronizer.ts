@@ -134,7 +134,8 @@ export function updateCelestial3DMeshes(
       typeof window !== "undefined" && isFinite(window.innerHeight) && window.innerHeight > 0
         ? window.innerHeight
         : 1080;
-    const entities = celestialEntitiesRef.current;
+    const entities = celestialEntitiesRef?.current;
+    if (!Array.isArray(entities)) return;
 
     let meshTransitionT = 0;
     let isMeshTransitioning = false;
@@ -183,8 +184,14 @@ export function updateCelestial3DMeshes(
     }
 
     const sceneAge = (Date.now() - interstellarSceneGeneratedTimeRef.current) / 1000;
-    const musicAmp = audio.getMusicAmplitude ? audio.getMusicAmplitude() : 0;
-    const musicBands = audio.getFrequencyBands ? audio.getFrequencyBands() : { bass: 0, mid: 0, treble: 0 };
+    const rawMusicAmp = audio?.getMusicAmplitude ? audio.getMusicAmplitude() : 0;
+    const rawMusicBands = audio?.getFrequencyBands ? audio.getFrequencyBands() : { bass: 0, mid: 0, treble: 0 };
+    const musicAmp = isFinite(rawMusicAmp) ? Math.max(0, rawMusicAmp) : 0;
+    const musicBands = {
+      bass: isFinite(rawMusicBands?.bass) ? Math.max(0, rawMusicBands.bass) : 0,
+      mid: isFinite(rawMusicBands?.mid) ? Math.max(0, rawMusicBands.mid) : 0,
+      treble: isFinite(rawMusicBands?.treble) ? Math.max(0, rawMusicBands.treble) : 0,
+    };
 
     if (isInterstellarRef.current && sceneAge > 240.0 && !supernovaRef.current && !(typeof window !== "undefined" && (window as any).__screensaverManaged)) {
       triggerCalmCosmicShift();

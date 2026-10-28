@@ -304,7 +304,10 @@ export function updateActiveProbes(
       probe.trail.pop();
     }
     for (let t = 0; t < probe.trail.length; t++) {
-      probe.trail[t].alpha *= 0.92;
+      if (probe.trail[t]) {
+        const currentAlpha = isFinite(probe.trail[t].alpha) ? probe.trail[t].alpha : 1.0;
+        probe.trail[t].alpha = Math.max(0, currentAlpha * 0.92);
+      }
     }
 
     // Spawn glittering tail ions

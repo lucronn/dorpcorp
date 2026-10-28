@@ -8,7 +8,7 @@ export const drawStageLayoutTemplate = (
   mode: "full" | "tracer",
   opacity: number = 1.0,
 ) => {
-  if (!ctx || width <= 0 || height <= 0) return;
+  if (!ctx || !isFinite(width) || !isFinite(height) || width <= 0 || height <= 0) return;
 
   const isTracer = mode === "tracer";
   if (isTracer) return; // Hide all faint background vectors/text so only particles are seen
@@ -155,7 +155,7 @@ export const particleText = (
   letterSpacing: string = '0px',
   lineWidthMultiplier: number = 0.05
 ): { x: number; y: number; color: string, isProjectText: boolean }[] => {
-  if (typeof document === "undefined" || width <= 0 || height <= 0) return [];
+  if (typeof document === "undefined" || !isFinite(width) || !isFinite(height) || width <= 0 || height <= 0) return [];
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -250,7 +250,7 @@ export const generateTargetsForStage = (
   width: number,
   height: number,
 ): { x: number; y: number; color: string, isProjectText: boolean }[] => {
-  if (typeof document === "undefined" || width <= 0 || height <= 0) return [];
+  if (typeof document === "undefined" || !isFinite(width) || !isFinite(height) || width <= 0 || height <= 0) return [];
 
   let coords: { x: number; y: number; color: string, isProjectText: boolean }[] = [];
 

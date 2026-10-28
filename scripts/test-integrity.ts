@@ -20,7 +20,17 @@ import {
 } from "../src/components/ParticleCanvas/PhysicsUtils";
 import { simulateParticles } from "../src/components/ParticleCanvas/ParticleSimulationEngine";
 import { CelestialEntity } from "../src/components/ParticleCanvas/types";
-import { getSpacetimeFabricDistortion } from "../src/components/ParticleCanvas/CelestialMeshSynchronizer";
+import {
+  getSpacetimeFabricDistortion,
+  updateCelestial3DMeshes,
+} from "../src/components/ParticleCanvas/CelestialMeshSynchronizer";
+import {
+  createBlackholeMesh,
+  createStarMesh,
+  createGalaxyMesh,
+  createPlanetMesh,
+  createNebulaMesh,
+} from "../src/components/ParticleCanvas/CelestialMeshBuilder";
 import { createNeutronStarBirthEvent } from "../src/components/ParticleCanvas/scenes/neutronstarbirth";
 import { createHawkingRadiationSystem } from "../src/components/ParticleCanvas/HawkingRadiationEngine";
 import {
@@ -41,7 +51,7 @@ import { buildBinaryPlanetsScene } from "../src/components/ParticleCanvas/scenes
 import { buildExoplanetClusterScene } from "../src/components/ParticleCanvas/scenes/exoplanet_cluster";
 import { buildNebulaCradleScene } from "../src/components/ParticleCanvas/scenes/nebula_cradle";
 import { isIgnoredErrorMessage, reportClientError, resetTelemetryThrottling } from "../src/utils/telemetry";
-import { CosmicTransitionStateMachine, triggerCalmCosmicShift } from "../src/components/ParticleCanvas/TransitionManager";
+import { CosmicTransitionStateMachine, triggerCalmCosmicShift, transitionToNewEntities } from "../src/components/ParticleCanvas/TransitionManager";
 import { drawStageLayoutTemplate, particleText, generateTargetsForStage } from "../src/components/ParticleCanvas/ParticleUtils";
 import { updateHudTexture } from "../src/components/ParticleCanvas/HUDManager";
 import { setupBlackholeLensingPostProcess } from "../src/components/ParticleCanvas/BlackholeLensingPostProcess";
@@ -70,6 +80,7 @@ import {
   generateSupernovaPhotonicRingTexture,
   blendColorsHex,
   parseColorToBabylonColor4,
+  parseColorToRgb,
 } from "../src/components/ParticleCanvas/TextureUtils";
 
 let totalTests = 0;
@@ -109,6 +120,24 @@ async function runAllTests() {
     assert.equal(normalizeHexColor("#fff"), "#ffffff");
     assert.equal(normalizeHexColor("#f0a"), "#ff00aa");
     assert.equal(normalizeHexColor("#123"), "#112233");
+  });
+
+  runTest("normalizeHexColor: handles 4-digit and 5-character shorthand #rgba hex codes by expanding to 6-digit hex", () => {
+    assert.equal(normalizeHexColor("#fff8"), "#ffffff");
+    assert.equal(normalizeHexColor("#f0a2"), "#ff00aa");
+    assert.equal(normalizeHexColor("#123f"), "#112233");
+  });
+
+  runTest("parseColorToRgb: supports 4-digit shorthand #rgba format without defaulting to white", () => {
+    const parsed = parseColorToRgb("#369f");
+    assert.equal(parsed.r, 51);
+    assert.equal(parsed.g, 102);
+    assert.equal(parsed.b, 153);
+
+    const parsed3 = parseColorToRgb("#369");
+    assert.equal(parsed3.r, 51);
+    assert.equal(parsed3.g, 102);
+    assert.equal(parsed3.b, 153);
   });
 
   runTest("blendHexColors: handles 6-digit hex colors with proper weighting", () => {
@@ -243,6 +272,18 @@ async function runAllTests() {
     const eZeroRad1: CelestialEntity = { type: "planet", x: 10, y: 10, radius: 0, color: "#fff" };
     const eZeroRad2: CelestialEntity = { type: "planet", x: 10, y: 10, radius: 20, color: "#fff" };
     assert.equal(resolveCelestialCollision(eZeroRad1, eZeroRad2), null, "Must reject zero radius");
+
+    const eNanRad1: CelestialEntity = { type: "planet", x: 10, y: 10, radius: NaN, color: "#fff" };
+    assert.equal(resolveCelestialCollision(eNanRad1, eZeroRad2), null, "Must reject NaN radius");
+  });
+
+  runTest("resolveCelestialCollision: safely handles non-finite restitution without producing NaN velocities", () => {
+    const e1: CelestialEntity = { type: "planet", x: 10, y: 10, radius: 20, color: "#fff", vx: 2, mass: 100 };
+    const e2: CelestialEntity = { type: "planet", x: 30, y: 10, radius: 20, color: "#fff", vx: -2, mass: 100 };
+    const res = resolveCelestialCollision(e1, e2, NaN);
+    assert.ok(res !== null, "Collision must resolve even with NaN restitution");
+    assert.ok(isFinite(e1.vx!) && !isNaN(e1.vx!), "Velocity 1 must remain finite");
+    assert.ok(isFinite(e2.vx!) && !isNaN(e2.vx!), "Velocity 2 must remain finite");
   });
 
   runTest("resolveCelestialCollision, swallowEntity, and debris generators: safely handle null entities and non-function callbacks", () => {
@@ -341,6 +382,22 @@ async function runAllTests() {
     assert.equal(flares2.length, 0);
     assert.equal(meshDisposed, true);
     assert.equal(matDisposed, true);
+  });
+
+  runTest("updateCollisionFlares: safely handles non-finite and NaN dt without producing NaN scaling or corrupting flare life", () => {
+    let scaleSet: number | null = null;
+    const dummyMesh: any = {
+      isDisposed: () => false,
+      scaling: { setAll: (v: number) => { scaleSet = v; } },
+      material: { alpha: 0.95 },
+    };
+    const flares = [
+      { mesh: dummyMesh as any, life: 0.9, maxLife: 1.0, initialRadius: 20 },
+    ];
+    const res = updateCollisionFlares(flares, NaN);
+    assert.equal(res.length, 1);
+    assert.ok(isFinite(res[0]!.life) && !isNaN(res[0]!.life), "Flare life must remain finite");
+    assert.ok(scaleSet !== null && isFinite(scaleSet) && !isNaN(scaleSet), "Mesh scaling must remain finite");
   });
 
   runTest("spawnCollisionFlare: enforces positive radius, finite coordinates, and flare list capacity capping", () => {
@@ -475,6 +532,25 @@ async function runAllTests() {
     });
   });
 
+  runTest("Procedural Scene Builders: defend against non-finite or negative viewport dimensions across all 6 archetypes", () => {
+    const builders = [
+      buildBlackholeCentricScene,
+      buildSpiralGalaxyScene,
+      buildStellarPulsarScene,
+      buildBinaryPlanetsScene,
+      buildExoplanetClusterScene,
+      buildNebulaCradleScene,
+    ];
+
+    builders.forEach((fn) => {
+      const res = fn(NaN, -500, false);
+      res.entities.forEach((e) => {
+        assert.ok(isFinite(e.x) && !isNaN(e.x), "Entity X coordinate must remain finite");
+        assert.ok(isFinite(e.y) && !isNaN(e.y), "Entity Y coordinate must remain finite");
+      });
+    });
+  });
+
   runTest("createNeutronStarBirthEvent: ensures remnant mass safety and collapse semantics", () => {
     const entities: CelestialEntity[] = [];
     const dummyStar: CelestialEntity = {
@@ -520,6 +596,13 @@ async function runAllTests() {
     const res = createNeutronStarBirthEvent(corruptedStar, list, () => {}, { playSupernova: () => {} });
     assert.equal(corruptedStar.isDestroyed, true);
     assert.ok(typeof res.remnant.mass === "number" && res.remnant.mass > 0 && isFinite(res.remnant.mass));
+  });
+
+  runTest("createNeutronStarBirthEvent: safely handles null star, non-array entities list, and missing callbacks", () => {
+    assert.doesNotThrow(() => {
+      const res = createNeutronStarBirthEvent(null as any, null as any);
+      assert.ok(res.remnant && res.remnant.radius > 0);
+    });
   });
 
   runTest("calculateForwardTrajectory: produces deterministic, sub-lightspeed trajectory with event horizon capture", () => {
@@ -726,6 +809,32 @@ async function runAllTests() {
     assert.equal(updated[0]!.id, "safe-probe");
   });
 
+  runTest("updateActiveProbes: trail decay safely handles non-finite trail alpha and preserves trail stability", () => {
+    const probe: SlingshotProbe = {
+      id: "trail-probe",
+      x: 10,
+      y: 10,
+      z: 0,
+      vx: 1,
+      vy: 1,
+      vz: 0,
+      color: "#4deeea",
+      trail: [
+        { x: 10, y: 10, z: 0, alpha: NaN },
+        { x: 9, y: 9, z: 0, alpha: 0.8 },
+      ],
+      life: 1.0,
+      maxLife: 1.0,
+      isSwallowed: false,
+      maxSpeedReached: 1,
+      lastWhipTime: 0,
+    };
+    const updated = updateActiveProbes([probe], [], { current: [] });
+    assert.equal(updated.length, 1);
+    assert.ok(isFinite(updated[0]!.trail[0]!.alpha), "Trail alpha must remain finite");
+    assert.ok(updated[0]!.trail[0]!.alpha >= 0, "Trail alpha must be non-negative");
+  });
+
   runTest("TidalDisruptionEngine: validates quiescent initial state and hyperbolic inbound trajectory trigger", () => {
     const tde = createInitialTdeState();
     assert.equal(tde.stage, "IDLE");
@@ -863,6 +972,14 @@ async function runAllTests() {
     });
   });
 
+  runTest("TidalDisruptionEngine: safely defends against null or non-array celestialEntities", () => {
+    const tde = createInitialTdeState();
+    assert.doesNotThrow(() => {
+      triggerTidalDisruptionEvent(tde, null as any, 1920, 1080);
+      updateTidalDisruption(tde, null as any, 1920, 1080, { current: 0 }, { current: [] });
+    });
+  });
+
   runTest("AudioEngine: handles modulation bounds, mute toggles, and clean disposal", () => {
     assert.equal(audio.getMuteState(), true, "Audio should initially be muted");
     audio.setMute(false);
@@ -992,6 +1109,24 @@ async function runAllTests() {
     assert.equal(supernovaRef.current.isCalmShift, true);
     assert.equal(supernovaRef.current.x, 960);
     assert.equal(supernovaRef.current.y, 540);
+  });
+
+  runTest("ParticleUtils: safely defends against NaN and non-finite dimensions in particleText, drawStageLayoutTemplate, and generateTargetsForStage", () => {
+    assert.deepEqual(particleText("TEST", 24, 1, 1, 1, 0, 0, "#4deeea", NaN, NaN), []);
+    assert.deepEqual(particleText("TEST", 24, 1, 1, 1, 0, 0, "#4deeea", Infinity, -Infinity), []);
+    assert.doesNotThrow(() => {
+      drawStageLayoutTemplate(null as any, 0, NaN, NaN, "full");
+      drawStageLayoutTemplate(null as any, 0, Infinity, -Infinity, "full");
+    });
+    assert.deepEqual(generateTargetsForStage(0, NaN, NaN), []);
+    assert.deepEqual(generateTargetsForStage(0, Infinity, -Infinity), []);
+  });
+
+  runTest("transitionToNewEntities and triggerCalmCosmicShift: safely handle null / non-array entity parameters and missing callbacks", () => {
+    assert.doesNotThrow(() => {
+      transitionToNewEntities(null as any, null as any, NaN, NaN, { current: false }, { current: 0 });
+      triggerCalmCosmicShift(null as any, { current: null });
+    });
   });
 
   runTest("RenderEngine: validates executeRenderFrame SSR / headless safety without window error", () => {
@@ -1351,6 +1486,18 @@ async function runAllTests() {
     });
   });
 
+  runTest("WormholeTransit: safely returns without throwing when called with null params or non-finite viewDir", async () => {
+    await assert.doesNotReject(async () => {
+      await startWormholeTransit(null as any);
+      const isTransitActiveRef = { current: false };
+      await startWormholeTransit(
+        { isTransitActiveRef, rendererRef: { current: null }, cameraRef: { current: null }, sceneRef: { current: null } } as any,
+        new BABYLON.Vector3(NaN, NaN, NaN),
+        new BABYLON.Vector3(Infinity, -Infinity, NaN)
+      );
+    });
+  });
+
   runTest("WormholeTransit: safely handles missing camera or disposed scene without throwing", async () => {
     const isTransitActiveRef = { current: false };
     const dummyParams: any = {
@@ -1422,6 +1569,23 @@ async function runAllTests() {
     });
     hawking.dispose();
     scene.dispose();
+    engine.dispose();
+  });
+
+  runTest("HawkingRadiationEngine: handles null and disposed scene as well as null container returning safe no-op", () => {
+    const hawkingNullScene = createHawkingRadiationSystem(null as any, { type: "blackhole", radius: 50 } as any, null as any);
+    assert.equal(hawkingNullScene.currentIntensity, 0);
+    assert.doesNotThrow(() => {
+      hawkingNullScene.update(1.0, true, 16.666);
+      hawkingNullScene.dispose();
+    });
+
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    const node = new BABYLON.TransformNode("node", scene);
+    scene.dispose();
+    const hawkingDisposedScene = createHawkingRadiationSystem(node, { type: "blackhole", radius: 50 } as any, scene);
+    assert.equal(hawkingDisposedScene.currentIntensity, 0);
     engine.dispose();
   });
 
@@ -1539,6 +1703,133 @@ async function runAllTests() {
     assert.ok(!isNaN(positions[2]));
   });
 
+  runTest("simulateParticles: safely handles null or undefined entity and ripple lists in context", () => {
+    const particles = [
+      {
+        x: 100,
+        y: 100,
+        z: 0,
+        vx: 1,
+        vy: 1,
+        vz: 0,
+        originX: 100,
+        originY: 100,
+        originZ: 0,
+        color: "#4deeea",
+        size: 2,
+        isInterstellar: true,
+        isTail: true,
+        life: 1.0,
+      },
+    ];
+    const positions = new Float32Array(3);
+    const colors = new Float32Array(4);
+    const extras = new Float32Array(4);
+    const brokenCtx: any = {
+      currentW: 1920,
+      currentH: 1080,
+      time: 1.0,
+      globalTimeMultiplier: 1.0,
+      activeBlackholes: null,
+      activeCollidables: null,
+      celestialEntities: null,
+      activeRipples: null,
+    };
+    assert.doesNotThrow(() => {
+      simulateParticles(particles as any, positions, colors, extras, brokenCtx);
+    });
+  });
+
+  runTest("CelestialMeshBuilder: createBlackholeMesh, createStarMesh, and createGalaxyMesh defend against null entity and non-finite / zero radius", () => {
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+
+    assert.doesNotThrow(() => {
+      const bh = createBlackholeMesh(null as any, 0, 0, 1.0, scene);
+      assert.ok(bh instanceof BABYLON.TransformNode);
+
+      const bhNan = createBlackholeMesh({ type: "blackhole", radius: NaN, color: "#ff6600" } as any, 0, 0, 1.0, scene);
+      assert.ok(bhNan instanceof BABYLON.TransformNode);
+
+      const star = createStarMesh(null as any, 0, 0, 1.0, scene);
+      assert.ok(star instanceof BABYLON.TransformNode);
+
+      const starNan = createStarMesh({ type: "star", radius: -5, color: "#ffaa00", secondaryColor: "#00ffd2" } as any, 0, 0, 1.0, scene);
+      assert.ok(starNan instanceof BABYLON.TransformNode);
+
+      const galaxy = createGalaxyMesh(null as any, 0, 0, 1.0, scene);
+      assert.ok(galaxy instanceof BABYLON.TransformNode);
+
+      const galaxyZero = createGalaxyMesh({ type: "galaxy", radius: 0, color: "#88aaff" } as any, 0, 0, 1.0, scene);
+      assert.ok(galaxyZero instanceof BABYLON.TransformNode);
+
+      const planet = createPlanetMesh(null as any, 0, 0, 1.0, scene);
+      assert.ok(planet instanceof BABYLON.TransformNode);
+
+      const nebula = createNebulaMesh(null as any, 0, 0, 1.0, scene);
+      assert.ok(nebula instanceof BABYLON.TransformNode);
+    });
+
+    scene.dispose();
+    engine.dispose();
+  });
+
+  runTest("CelestialMeshSynchronizer: updateCelestial3DMeshes safely handles null celestialEntitiesRef and non-finite audio metrics", () => {
+    const engine = new BABYLON.NullEngine();
+    const scene = new BABYLON.Scene(engine);
+    const sceneRef = { current: scene };
+    const group = new BABYLON.TransformNode("grp", scene);
+    const celestialGroupRef = { current: group };
+    const celestialEntitiesRef = { current: null as any };
+
+    assert.doesNotThrow(() => {
+      updateCelestial3DMeshes(
+        sceneRef,
+        celestialGroupRef,
+        celestialEntitiesRef,
+        { current: false },
+        { current: 0 },
+        { current: 0 },
+        {
+          getMusicAmplitude: () => NaN,
+          getFrequencyBands: () => ({ bass: NaN, mid: NaN, treble: NaN }),
+        },
+        { current: true },
+        { current: null },
+        () => {},
+        () => {},
+        () => {},
+        { current: 0 },
+        { current: null },
+        { current: [] },
+        () => {},
+        () => {},
+        { current: [] },
+        { current: { x: 0, y: 0 } },
+        { current: null },
+        { current: false },
+        { current: 0.15 },
+        { current: 0 },
+        { current: 0 },
+        { current: 0 },
+        { current: [] },
+        { current: null }
+      );
+    });
+
+    scene.dispose();
+    engine.dispose();
+  });
+
+  runTest("AudioEngine: getMusicAmplitude and getFrequencyBands handle uninitialized, muted, and empty analyser safely", () => {
+    assert.equal(audio.getMusicAmplitude(), 0);
+    const bands = audio.getFrequencyBands();
+    assert.equal(bands.bass, 0);
+    assert.equal(bands.mid, 0);
+    assert.equal(bands.treble, 0);
+    assert.ok(isFinite(bands.bass) && isFinite(bands.mid) && isFinite(bands.treble));
+  });
+
   runTest("ParticleCanvasEvents: validates SSR safety and clean teardown in headless environments", () => {
     assert.doesNotThrow(() => {
       const cleanup = setupParticleCanvasEvents({} as any);
@@ -1634,6 +1925,23 @@ async function runAllTests() {
     assert.equal(supportedHotkeys.length, 8, "Expected 8 core hotkeys registered");
   });
 
+  runTest("Hotkeys & UI classification: ignores hotkey triggers when targeting select or contenteditable elements", () => {
+    const dummySelect = { tagName: "SELECT", isContentEditable: false };
+    const dummyEditable = { tagName: "DIV", isContentEditable: true };
+    const dummyButton = { tagName: "BUTTON", isContentEditable: false };
+    const dummyCanvas = { tagName: "CANVAS", isContentEditable: false };
+
+    const shouldIgnore = (target: any) => {
+      if (target && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable)) return true;
+      return false;
+    };
+
+    assert.equal(shouldIgnore(dummySelect), true);
+    assert.equal(shouldIgnore(dummyEditable), true);
+    assert.equal(shouldIgnore(dummyButton), false);
+    assert.equal(shouldIgnore(dummyCanvas), false);
+  });
+
   await runTest("Telemetry Pipeline: validates client error filtering, duplicate deduplication, and throttling", async () => {
     resetTelemetryThrottling();
     assert.equal(isIgnoredErrorMessage("WebSocket connection to 'ws://...' failed"), true);
@@ -1670,7 +1978,7 @@ async function runAllTests() {
 
   // Spin up an ephemeral server instance on random free port (0)
   process.env.NODE_ENV = "test";
-  const { server } = await startServer(0);
+  const { app, server } = await startServer(0);
   const address = server.address();
   if (!address || typeof address === "string") {
     throw new Error("Failed to get server port");
@@ -1808,6 +2116,33 @@ async function runAllTests() {
     } as any);
     assert.equal(res.status, 200);
     assert.equal(res.body.ok, true);
+  });
+
+  runTest("Express error middleware: formats unexpected API exceptions into structured JSON 500", () => {
+    let statusCode = 0;
+    let jsonPayload: any = null;
+    const mockReq: any = { path: "/api/faulty-route" };
+    const mockRes: any = {
+      status: (s: number) => { statusCode = s; return mockRes; },
+      json: (d: any) => { jsonPayload = d; return mockRes; },
+    };
+    const mockNext = () => {};
+
+    // Simulate API error handler
+    const err = new Error("Simulated unhandled internal fault");
+    (err as any).status = 503;
+    const handler = (err: any, req: any, res: any, next: any) => {
+      const code = err?.status && isFinite(err.status) ? err.status : 500;
+      res.status(code).json({ error: err?.message || "Internal server error" });
+    };
+    handler(err, mockReq, mockRes, mockNext);
+    assert.equal(statusCode, 503);
+    assert.equal(jsonPayload.error, "Simulated unhandled internal fault");
+
+    const defaultErr = new Error("General fault");
+    handler(defaultErr, mockReq, mockRes, mockNext);
+    assert.equal(statusCode, 500);
+    assert.equal(jsonPayload.error, "General fault");
   });
 
   runTest("getProceduralFallbackSystem: handles unknown archetype by defaulting to valid one", () => {

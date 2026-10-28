@@ -105,6 +105,7 @@ export function triggerTidalDisruptionEvent(
   screenWidth: number,
   screenHeight: number
 ): boolean {
+  if (!tdeState) return false;
   if (tdeState.isActive && tdeState.stage !== "COOLDOWN") {
     return false;
   }
@@ -113,7 +114,8 @@ export function triggerTidalDisruptionEvent(
   const safeHeight = isFinite(screenHeight) && screenHeight > 0 ? screenHeight : 1080;
 
   // Locate the black hole or center
-  const bh = celestialEntities.find((e) => !e.isDestroyed && e.type === "blackhole");
+  const entities = Array.isArray(celestialEntities) ? celestialEntities : [];
+  const bh = entities.find((e) => e && !e.isDestroyed && e.type === "blackhole");
   const cx = bh ? bh.x : safeWidth / 2;
   const cy = bh ? bh.y : safeHeight / 2;
   const bhRadius = bh ? bh.radius : 65;
@@ -177,12 +179,13 @@ export function updateTidalDisruption(
   cameraShakeRef: { current: number },
   ripplesRef: { current: { x: number; y: number; life: number }[] }
 ): void {
-  if (!tde.isActive) return;
+  if (!tde || !tde.isActive) return;
 
   const safeWidth = isFinite(screenWidth) && screenWidth > 0 ? screenWidth : 1920;
   const safeHeight = isFinite(screenHeight) && screenHeight > 0 ? screenHeight : 1080;
 
-  const bh = celestialEntities.find((e) => !e.isDestroyed && e.type === "blackhole");
+  const entities = Array.isArray(celestialEntities) ? celestialEntities : [];
+  const bh = entities.find((e) => e && !e.isDestroyed && e.type === "blackhole");
   const cx = bh ? bh.x : safeWidth / 2;
   const cy = bh ? bh.y : safeHeight / 2;
   const bhRadius = bh ? bh.radius : 65;

@@ -6,7 +6,7 @@ export const parseColorToRgb = (color: string) => {
   const cleaned = color.trim().toLowerCase();
   if (cleaned.startsWith("#")) {
     const hex = cleaned.replace("#", "");
-    if (hex.length === 3) {
+    if (hex.length === 3 || hex.length === 4) {
       const pr = parseInt(hex[0] + hex[0], 16);
       const pg = parseInt(hex[1] + hex[1], 16);
       const pb = parseInt(hex[2] + hex[2], 16);
@@ -42,7 +42,7 @@ export const parseColorToBabylonColor3 = (color: string) => {
 
 export const parseColorToBabylonColor4 = (color: string, alpha: number = 1.0) => {
   const { r, g, b } = parseColorToRgb(color);
-  const safeAlpha = isNaN(alpha) ? 1.0 : Math.max(0, Math.min(1, alpha));
+  const safeAlpha = isNaN(alpha) || !isFinite(alpha) ? 1.0 : Math.max(0, Math.min(1, alpha));
   return new BABYLON.Color4(r / 255, g / 255, b / 255, safeAlpha);
 };
 

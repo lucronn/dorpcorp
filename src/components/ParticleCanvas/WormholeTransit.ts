@@ -31,6 +31,7 @@ export async function startWormholeTransit(
   targetPos?: BABYLON.Vector3,
   viewDir?: BABYLON.Vector3
 ): Promise<void> {
+  if (!params || !params.isTransitActiveRef) return;
   const {
     cameraRef,
     sceneRef,
@@ -153,7 +154,13 @@ export async function startWormholeTransit(
 
     // Determine true camera forward direction so we never snap 180 degrees
     let forwardDir: BABYLON.Vector3;
-    if (viewDir && viewDir.lengthSquared() > 0.0001) {
+    if (
+      viewDir &&
+      isFinite(viewDir.x) &&
+      isFinite(viewDir.y) &&
+      isFinite(viewDir.z) &&
+      viewDir.lengthSquared() > 0.0001
+    ) {
       forwardDir = viewDir.clone().normalize();
     } else {
       const toOrigin = BABYLON.Vector3.Zero().subtract(origCameraPos);

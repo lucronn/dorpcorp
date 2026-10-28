@@ -20,6 +20,10 @@ export function transitionToNewEntities(
   entityTransitionActiveRef: React.MutableRefObject<boolean>,
   entityTransitionStartTimeRef: React.MutableRefObject<number>
 ): void {
+  if (!Array.isArray(currentEntities) || !Array.isArray(newEntities)) return;
+  const safeSpawnX = isFinite(spawnX) ? spawnX : 0;
+  const safeSpawnY = isFinite(spawnY) ? spawnY : 0;
+
   currentEntities.forEach((cur) => {
     cur.startX = cur.x;
     cur.startY = cur.y;
@@ -294,20 +298,36 @@ export class CosmicTransitionStateMachine {
 export function triggerCalmCosmicShift(
   celestialEntitiesRef: React.MutableRefObject<CelestialEntity[]>,
   supernovaRef: React.MutableRefObject<any>,
-  fetchNextGeminiScene: () => void
+  fetchNextGeminiScene?: () => void
 ): void {
-  if (supernovaRef.current) return;
-  celestialEntitiesRef.current.forEach((entity) => {
-    entity.isDestroyed = true;
+  if (!supernovaRef || supernovaRef.current) return;
+  const entities = Array.isArray(celestialEntitiesRef?.current)
+    ? celestialEntitiesRef.current
+    : [];
+  entities.forEach((entity) => {
+    if (entity) {
+      entity.isDestroyed = true;
+    }
   });
+
+  const screenW =
+    typeof window !== "undefined" && isFinite(window.innerWidth) && window.innerWidth > 0
+      ? window.innerWidth
+      : 1920;
+  const screenH =
+    typeof window !== "undefined" && isFinite(window.innerHeight) && window.innerHeight > 0
+      ? window.innerHeight
+      : 1080;
 
   supernovaRef.current = {
     time: Date.now(),
     exploded: false,
     isCalmShift: true,
-    x: typeof window !== "undefined" ? window.innerWidth / 2 : 960,
-    y: typeof window !== "undefined" ? window.innerHeight / 2 : 540,
+    x: screenW / 2,
+    y: screenH / 2,
   };
 
-  fetchNextGeminiScene();
+  if (typeof fetchNextGeminiScene === "function") {
+    fetchNextGeminiScene();
+  }
 }

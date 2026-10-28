@@ -2,7 +2,7 @@ import { CelestialEntity } from "./types";
 
 export const normalizeHexColor = (hex: string): string => {
   if (typeof hex !== "string" || !hex.startsWith("#")) return hex;
-  if (hex.length === 4) {
+  if (hex.length === 4 || hex.length === 5) {
     return `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`;
   }
   return hex;
