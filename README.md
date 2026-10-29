@@ -10,9 +10,10 @@ Interactive 3D developer portfolio and cosmic web visualizer built with React 19
   - **Tidal Disruption Events (TDE)**: Trigger Roche-limit stellar disruption simulations complete with asymmetric tidal shear, accretion disk flare, and relativistic gamma-ray burst jets.
   - **Hawking Radiation Engine**: Quantum particle emission simulation at the event horizon boundary with scale-aware emitter geometry.
   - **Stellar Cataclysms & Supernovae**: Dynamic neutron star and micro-singularity synthesis upon core collapse.
+- **Cinematic Transitions & Gravity-Reactive Camera**: Scene and stage rebuilds never morph in view. A camera director (`src/components/ParticleCanvas/cinematic/`) pans away, racks focus, or dollies off the subject, rebuilds the next composition instantly while it is out of shot, then settles back onto it. The camera drifts, leans, and sways toward nearby mass, picks up tidal shake near a black hole, and takes a damped kick plus an achromatic flash on collisions. Scrolling in past the horizon-zoom limit for a moment (or pressing `[B]`) lets the black hole capture the camera: an accelerating inspiral with stronger lensing, spaghettification stretch, gravitational redshift, and a fade to black, followed by an emergence into the next scene. Honors `prefers-reduced-motion` (focus and fade only, no camera travel).
 - **Generative Cosmic Systems**: Dynamic cosmic system synthesis powered by Google Gemini (`gemini-2.5-flash` or configurable `$GEMINI_MODEL`) via `@google/genai` with seamless procedural fallback across 6 core archetypes (`BLACKHOLE_CENTRIC`, `BINARY_PLANETS`, `NEBULA_CRADLE`, `EXOPLANET_CLUSTER`, `SPIRAL_GALAXY`, `STELLAR_PULSAR`). Supports prompt and archetype overrides via API requests.
 - **Web Audio Score Synthesizer**: Custom procedural Web Audio engine inspired by Hans Zimmer's *Interstellar* score, featuring church organ and celestial piano synthesis, cathedral reverb, cosmic clock ticks, and gravitational redshift pitch shifts. Universal runtime guards ensure safe execution in SSR and Node.js testing environments.
-- **Autonomous Ambient Screensaver**: Smooth transitions, camera orbits, global hotkey navigation (`[A]` Autopilot, `[C]` Cinematic 2.39:1 mode, `[W]` Wormhole, `[N]` Supernova, `[T]` TDE, `[P]` Slingshot Probe, `[M]` Audio Mute Toggle, `[Escape]` Exit Cinema / Autopilot / Overlays / Target Lock), and HUD overlays tailored for interactive portfolio exploration. Keyboard interactions actively reset idle activity timers.
+- **Autonomous Ambient Screensaver**: Smooth transitions, camera orbits, global hotkey navigation (`[A]` Autopilot, `[C]` Cinematic 2.39:1 mode, `[W]` Wormhole, `[N]` Supernova, `[T]` TDE, `[P]` Slingshot Probe, `[M]` Audio Mute Toggle, `[B]` Plunge into the black hole, `[K]` Collide the two closest bodies, `[F]` Feed the black hole, `[↑]`/`[↓]`/`[PageUp]`/`[PageDown]`/`[1]`–`[6]` Stage navigation, `[Escape]` Exit Cinema / Autopilot / Overlays / Target Lock), and HUD overlays tailored for interactive portfolio exploration. Keyboard interactions actively reset idle activity timers.
 
 ## Tech Stack
 
@@ -28,7 +29,7 @@ Interactive 3D developer portfolio and cosmic web visualizer built with React 19
 | `npm run dev` | `tsx server.ts` | Start development server with Vite middleware |
 | `npm run build` | `vite build && esbuild server.ts ...` | Build client assets to `dist/` and server to `dist/server.cjs` |
 | `npm run lint` | `tsc --noEmit` | Run TypeScript type checking without emitting files |
-| `npm test` | `tsc --noEmit && tsx scripts/test-integrity.ts` | Execute TypeScript check and the automated 116-test integrity test suite |
+| `npm test` | `tsc --noEmit && tsx scripts/test-integrity.ts && tsx scripts/test-cinematic.ts` | Execute TypeScript check, the 116-test integrity suite, and the cinematic camera-layer suite |
 | `npm start` | `node dist/server.cjs` | Run the compiled production server on port 8080 (or `$PORT`) |
 | `npm run preview` | `node dist/server.cjs` | Preview the compiled production build locally |
 | `npm run clean` | `rm -rf dist server.js client_errors.log` | Clean build outputs and local log files |

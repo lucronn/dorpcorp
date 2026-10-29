@@ -116,6 +116,29 @@ flowchart TD
 - **[`DepthOfFieldPostProcess.ts`](file:///home/corp/curtis-click-portfolio/src/components/ParticleCanvas/DepthOfFieldPostProcess.ts)**: Bokeh depth-of-field post-processing focusing on active target entities.
 - **[`FrameShatterPostProcess.ts`](file:///home/corp/curtis-click-portfolio/src/components/ParticleCanvas/FrameShatterPostProcess.ts)**: 13x13 Voronoi crystalline shatter shader triggered by stellar core collapse events.
 
+### 2.4 Cinematic Camera Layer ([`src/components/ParticleCanvas/cinematic/`](src/components/ParticleCanvas/cinematic/))
+
+All of this is pure TypeScript with no Babylon dependency, so it is unit-tested in `scripts/test-cinematic.ts`.
+
+- **`CinematicTransitionDirector.ts`**: A state machine (`IDLE → DEPART → HIDDEN → REVEAL → IDLE`) that turns every rebuild into a camera move. Callers `request({ key, preset, apply })`. `apply` runs only while the subject is out of shot (veil = 1), and it must be *instant*: particles are settled with `settleParticlesToTargets` and bodies with `settleEntitiesInstantly` (fresh ids, so stale meshes are never reused). Requests coalesce by key during DEPART, a heavier preset upgrades the shot, a request during REVEAL reverses smoothly from the current veil, and `cutToHidden` serves cases where the screen is already black (horizon crossing). Presets: `stage` (typography), `scene` (interstellar), `supernova` (recoil from the blast), `emerge` (out of darkness), and `reduced` (prefers-reduced-motion: focus and fade only). Each frame, `update(now)` returns a `ShotSnapshot` (yaw, pitch, roll, dolly, rackFocus, fov, foregroundAlpha).
+- **`CameraRig.ts`**: Gravity-reactive secondary motion. `computeGravityField` sums a softened 1/r² pull from all bodies and saturates it to 0..1. `CameraRig.update` applies critically damped springs for drift (≤ 3.5 % of the rest distance), lean (≤ 0.045 rad), and bank (≤ 1.2°), plus low-frequency sway, tidal shake that grows quadratically with horizon proximity, and an underdamped kick spring for collision impulses. Typography stages run it at 0.3 responsiveness so text stays readable. Every output is clamped and NaN-safe.
+- **`BlackHoleCapture.ts`**: Choreography for being "sucked in". The radius shrinks as `1 − u^2.2` while the orbit speeds up as `u³`, so the fall visibly accelerates. The look point blends from the original subject to the singularity. FOV widens, the camera rolls, then redshift (from 55 %) and blackout (from 74 %) take over. The pose at `u = 0` equals the start pose, so the hand-over never snaps. When `done`, `ParticleCanvas` parks the camera at rest and calls `director.cutToHidden(..., "emerge")` to rebuild and emerge.
+- **`CinematicFxBus.ts`**: A tiny singleton shared by the render loop, the synchronizer, and the post-process shaders: `foregroundAlpha`, `rackFocus`, `capture`, `redshift`, `blackout`, `flash`, `lensPulse`, plus a bounded collision-event queue (`emitCollision` / `drainCollisions`, max 16).
+- **`CinematicRuntime.ts`**: Bundles the director, the rig, and the active capture for `RenderEngine`, and converts entities to gravity bodies (`entitiesToGravityBodies`; nebulas excluded).
+
+**Frame order in `RenderEngine.executeRenderFrame`:**
+1. Advance the capture pose (completion fires `onCaptureComplete` before the director updates, so the parked camera is not overwritten).
+2. `director.update` and fx-bus decay.
+3. Simulate the particles, with `foregroundAlpha` multiplying particle colors; ambient background stars are never veiled.
+4. Remove last frame's rig offset, compute the base pose, and apply the smoothed look direction (`applyLook`, exponential at k = 6/s, so look-target changes never snap).
+5. Apply the capture override.
+6. In `applyCinematicCamera`: drain collisions into rig impulses and flash, then apply the rig offset, the director dolly, yaw/pitch/roll, and FOV.
+7. Post-process: the lensing pass reads `capture` / `lensPulse` (frame-dragging swirl, radial stretch, stronger warp) and applies a luminance-based warm redshift and iris blackout (achromatic, no hue shifting); DoF reads `rackFocus`; exposure gets the collision flash.
+
+**Wiring (`ParticleCanvas.tsx`):** the stage-prop effect, the interstellar toggle, `activateSequence`, `__cosmicCanvas.generateInterstellarScene`, supernova detonation, and the wormhole all go through `directorRequest`. Autopilot reaches them through the same props and APIs. Black-hole-centric autopilot scenes sometimes exit through `plungeIntoBlackHole`. Pushing past the horizon-zoom limit (sustained scroll-in for 1.4 s; resting at full zoom never triggers it), or pressing `[B]`, triggers a capture. `[K]` / `[F]` are collision and feed showcases; when the scene lacks free bodies they bring rogue bodies in from off-screen (never popping into view). Audio reuses existing `audio.ts` voices only: `playInteractiveMallet` and `playRippleShockwave` for collisions, `playTidalDisruption("approach"|"spaghettify")`, `playProbeSwallowed`, and `playSupernova`, with `setGravitationalProximity` during capture.
+
+**2D HUD veil:** `GravitationalInteractionsOverlay` sets its canvas opacity to `foregroundAlpha × (1 − blackout) × (1 − capture)` every frame. Its reticles, Hawking streaks and proximity readout fade with the hidden rebuilds and the capture blackout, so they never jump to a rebuilt scene while visible. A capture starts from the exact free-flight pose and adds no instant lens pulse; lensing builds only through the ramping `capture` value.
+
 ---
 
 ## 3. Server Architecture ([`server.ts`](file:///home/corp/curtis-click-portfolio/server.ts))
@@ -147,6 +170,8 @@ flowchart TD
 ---
 
 ## 4. Verification & Testing ([`scripts/test-integrity.ts`](file:///home/corp/curtis-click-portfolio/scripts/test-integrity.ts))
+
+The cinematic camera layer has its own suite, `scripts/test-cinematic.ts` (run by `npm test` after the integrity suite). It covers director phase order, rebuild-only-while-hidden, veil continuity, coalescing, reversal, `cutToHidden`/`reset`, error counting, and reduced motion. It also tests the gravity field and rig (direction, limits, impulse decay, NaN safety, typography damping), capture-pose continuity and monotonic infall, the fx-bus queue and severity, `entitiesToGravityBodies`, `settleParticlesToTargets`, and `settleEntitiesInstantly`.
 
 The project includes an automated 116-test integrity test suite verifying:
 1. **Hex Color Utilities**: 6-digit hex preservation, 3-digit shorthand expansion (`#fff` -> `#ffffff`), 4-digit shorthand `#rgba` expansion (`#369f` -> `#336699ff`), 8-digit `#rrggbbaa` alpha extraction, decimal channel parsing in `parseColorToRgb` without token fragmentation, and NaN-free blending with NaN weight fallback.
