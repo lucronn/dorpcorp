@@ -7,7 +7,7 @@
     "clean": "rm -rf dist server.js client_errors.log",
     "dev": "tsx server.ts",
     "lint": "tsc --noEmit",
-    "test": "tsc --noEmit && tsx scripts/test-integrity.ts",
+    "test": "tsc --noEmit && tsx scripts/test-integrity.ts && tsx scripts/test-cinematic.ts",
     "start": "node dist/server.cjs",
     "preview": "node dist/server.cjs"
   },
