@@ -2,6 +2,7 @@ import React from "react";
 import * as BABYLON from "@babylonjs/core";
 import { CelestialEntity } from "./types";
 import { parseColorToRgb } from "./TextureUtils";
+import { cinematicFx } from "./cinematic/CinematicFxBus";
 
 export function setupBlackholeLensingPostProcess(
   camera: BABYLON.Camera,
@@ -24,11 +25,50 @@ export function setupBlackholeLensingPostProcess(
     uniform float uCinematicMode;
     uniform float uAnamorphicFlare;
     uniform float uHawkingIntensity;
+    // Cinematic capture layer (all achromatic except the physically-motivated redshift)
+    uniform float uCapture;
+    uniform vec2 uCaptureCenter;
+    uniform float uRedshift;
+    uniform float uBlackout;
+    uniform float uLensPulse;
+
+    vec2 captureWarp(vec2 uv) {
+        if (uCapture < 0.001) return uv;
+        float aspect = uScreenResolution.x / uScreenResolution.y;
+        vec2 d = (uv - uCaptureCenter) * vec2(aspect, 1.0);
+        float r = length(d);
+        // Frame-dragging swirl, strongest near the hole, grows with capture.
+        float swirl = uCapture * uCapture * 2.4 * exp(-r / 0.32);
+        float cs = cos(swirl);
+        float sn = sin(swirl);
+        d = vec2(d.x * cs - d.y * sn, d.x * sn + d.y * cs);
+        // Radial spaghettification of the view: the centre is stretched outward.
+        float stretch = 1.0 - uCapture * 0.42 * exp(-r / 0.55);
+        d *= stretch;
+        return uCaptureCenter + d / vec2(aspect, 1.0);
+    }
+
+    vec3 cinematicGrade(vec3 c, vec2 uv) {
+        if (uRedshift > 0.001) {
+            float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+            vec3 warm = vec3(l) * vec3(1.0, 0.6, 0.4);
+            c = mix(c, warm, uRedshift * 0.8) * (1.0 - uRedshift * 0.4);
+        }
+        if (uBlackout > 0.001) {
+            float aspect = uScreenResolution.x / uScreenResolution.y;
+            float r = length((uv - uCaptureCenter) * vec2(aspect, 1.0));
+            float aperture = mix(1.9, -0.05, uBlackout);
+            float iris = 1.0 - smoothstep(aperture - 0.45, aperture + 0.05, r);
+            c *= iris * (1.0 - uBlackout * 0.35);
+            c *= 1.0 - smoothstep(0.82, 1.0, uBlackout);
+        }
+        return c;
+    }
 
     void main(void) {
-        vec2 uv = vUV;
+        vec2 uv = captureWarp(vUV);
         if (uBlackHoleCount < 0.5) {
-            gl_FragColor = texture2D(textureSampler, uv);
+            gl_FragColor = vec4(cinematicGrade(texture2D(textureSampler, uv).rgb, vUV), 1.0);
             return;
         }
 
@@ -55,7 +95,7 @@ export function setupBlackholeLensingPostProcess(
                 
                 // Deflection bending curve: light rays passing close to the mass are deflected inward,
                 // causing the background to appear displaced radially outward / warped into Einstein rings.
-                float warp_scale = bh.z * 0.38;
+                float warp_scale = bh.z * 0.38 * (1.0 + uCapture * 1.4 + uLensPulse * 0.9);
                 float falloff = smoothstep(10.0, 1.05, r_norm);
                 float warp = (warp_scale / max(r_norm * 0.85 + 0.18, 0.2)) * falloff;
                 
@@ -85,6 +125,9 @@ export function setupBlackholeLensingPostProcess(
         vec2 warped_uv = clamp(uv - total_displacement, 0.001, 0.999);
         vec3 final_color;
 
+        // The capture amplifies the warp; keep it achromatic so the stronger
+        // lensing never turns into a rainbow fringe.
+        total_chromatic *= 1.0 - clamp(uCapture + uLensPulse * 0.5, 0.0, 1.0);
         if (total_chromatic > 0.0001) {
             vec2 offset_r = total_displacement * total_chromatic * 45.0;
             vec2 offset_b = -total_displacement * total_chromatic * 45.0;
@@ -116,7 +159,7 @@ export function setupBlackholeLensingPostProcess(
                 float h_shimmer = 0.75 + 0.25 * sin(uTime * 9.0 + angle * 14.0 + r_norm * 18.0);
                 float h_intensity = (0.2 + uHawkingIntensity * 0.75 + uCinematicMode * 0.45) * h_dist * h_shimmer;
                 vec3 h_color = mix(vec3(0.42, 0.92, 1.0), vec3(0.78, 0.48, 1.0), sin(uTime * 4.0 + angle * 4.0) * 0.5 + 0.5);
-                final_color += h_color * h_intensity;
+                final_color += h_color * h_intensity * (1.0 - uCapture);
             }
 
             // CinemaScope 2x Anamorphic Horizontal Lens Flare Streaks across the Photon Sphere
@@ -142,7 +185,7 @@ export function setupBlackholeLensingPostProcess(
             final_color = mix(final_color, vec3(0.0), clamp(max_core_void, 0.0, 0.98));
         }
 
-        gl_FragColor = vec4(final_color, 1.0);
+        gl_FragColor = vec4(cinematicGrade(final_color, vUV), 1.0);
     }
   `;
 
@@ -157,7 +200,12 @@ export function setupBlackholeLensingPostProcess(
       "uTime",
       "uCinematicMode",
       "uAnamorphicFlare",
-      "uHawkingIntensity"
+      "uHawkingIntensity",
+      "uCapture",
+      "uCaptureCenter",
+      "uRedshift",
+      "uBlackout",
+      "uLensPulse"
     ],
     null,
     1.0,
@@ -172,6 +220,18 @@ export function setupBlackholeLensingPostProcess(
     effect.setFloat("uCinematicMode", typeof window !== "undefined" && (window as any).__cinematicMode ? 1.0 : 0.0);
     effect.setFloat("uAnamorphicFlare", typeof window !== "undefined" && (window as any).__anamorphicFlare !== false ? 1.0 : 0.0);
     effect.setFloat("uHawkingIntensity", typeof window !== "undefined" && (window as any).__hawkingIntensity ? (window as any).__hawkingIntensity : 0.0);
+
+    const fx = cinematicFx;
+    const finite01 = (v: number) => (Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0);
+    effect.setFloat("uCapture", finite01(fx.capture));
+    effect.setFloat2(
+      "uCaptureCenter",
+      Number.isFinite(fx.captureUvX) ? fx.captureUvX : 0.5,
+      Number.isFinite(fx.captureUvY) ? fx.captureUvY : 0.5
+    );
+    effect.setFloat("uRedshift", finite01(fx.redshift));
+    effect.setFloat("uBlackout", finite01(fx.blackout));
+    effect.setFloat("uLensPulse", finite01(fx.lensPulse));
 
     const bhData: number[] = [];
     const bhColors: number[] = [];
@@ -232,7 +292,13 @@ export function setupBlackholeLensingPostProcess(
       const rawDist = Math.max(isNaN(rawDistX) ? 1.0 : rawDistX, isNaN(rawDistY) ? 1.0 : rawDistY);
       const screenPixelRadius = Math.max(1.0, rawDist);
       // Safe clamp: black hole lensing core cannot consume more than 22% of viewport height
-      const normRadius = Math.min(0.22, Math.max(0.012, screenPixelRadius / wh));
+      // (relaxed while the camera is being captured so the horizon can fill the frame)
+      const radiusCap = 0.22 + finite01(fx.capture) * 0.33;
+      const normRadius = Math.min(radiusCap, Math.max(0.012, screenPixelRadius / wh));
+      if (count === 0 && fx.capture > 0.001) {
+        fx.captureUvX = uvX;
+        fx.captureUvY = uvY;
+      }
 
       bhData.push(uvX, uvY, normRadius);
 

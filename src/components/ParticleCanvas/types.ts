@@ -39,6 +39,10 @@ export interface CelestialEntity {
   isPhysicsEnabled?: boolean;
   isDestroyed?: boolean;
   isSwallowing?: boolean;
+  /** True while the pointer is dragging this body (physics integrator skips it). */
+  isBeingDragged?: boolean;
+  /** Time the black hole started swallowing this body (inspiral FX). */
+  swallowStartTime?: number;
   destroyedBy?: string;
   originalRadius?: number;
   currentRadius?: number;

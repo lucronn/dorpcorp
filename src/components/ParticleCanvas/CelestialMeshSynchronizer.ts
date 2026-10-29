@@ -12,6 +12,7 @@ import { createCircularGlowTexture } from "./TextureUtils";
 import { createNeutronStarBirthEvent } from "./scenes/neutronstarbirth";
 import { createHawkingRadiationSystem } from "./HawkingRadiationEngine";
 import { spawnCollisionFlare, createShatterDebris, blendHexColors, CollisionResult } from "./PhysicsUtils";
+import { cinematicFx, collisionSeverity, emitCollision } from "./cinematic/CinematicFxBus";
 
 export function getSpacetimeFabricDistortion(
   wx: number,
@@ -197,28 +198,80 @@ export function updateCelestial3DMeshes(
       triggerCalmCosmicShift();
     }
 
-    // Continuous Gravity Drift
+    // Continuous Gravity Drift + body integration.
+    // Bodies are static by default (their layout is authored). They only move
+    // when something hands them to the integrator: a collision, a flick, or a
+    // black hole capturing them (accelerating inspiral).
+    const primaryBh = entities.find((e) => e && !e.isDestroyed && e.type === "blackhole");
     entities.forEach((entity) => {
-      if (entity.isDestroyed || entity.type === "blackhole") return;
+      if (!entity || entity.isDestroyed || entity.type === "blackhole" || entity.isBeingDragged) return;
+      const bh = primaryBh;
 
-      const bh = entities.find((e) => e && !e.isDestroyed && e.type === "blackhole");
-      if (!bh) return;
-
-      const dx = bh.x - entity.x;
-      const dy = bh.y - entity.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-
-      if (entity.isSwallowing) {
-        const spiralPull = 0.15;
-        entity.vx = (entity.vx || 0) + (dx / dist) * spiralPull;
-        entity.vy = (entity.vy || 0) + (dy / dist) * spiralPull;
-        if (dist < bh.radius * 1.5) {
+      if (entity.isSwallowing && bh) {
+        const dx = bh.x - entity.x;
+        const dy = bh.y - entity.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const rh = Math.max(1, bh.radius);
+        const nx = dx / dist;
+        const ny = dy / dist;
+        // Radial acceleration grows ~1/r² as the body falls in.
+        const aR = Math.min(3.2, 0.32 * Math.pow((rh * 3) / Math.max(dist, rh), 2));
+        let vx = entity.vx || 0;
+        let vy = entity.vy || 0;
+        let vr = vx * nx + vy * ny;
+        let vt = vx * -ny + vy * nx;
+        vr += aR;
+        // Tangential speed approaches a (decaying) orbital speed → spiral.
+        const spin = vt >= 0 ? 1 : -1;
+        const vtTarget = spin * Math.sqrt(aR * dist) * 0.85;
+        vt += (vtTarget - vt) * 0.06;
+        vx = nx * vr + -ny * vt;
+        vy = ny * vr + nx * vt;
+        const sp = Math.hypot(vx, vy);
+        if (sp > 22) {
+          vx = (vx / sp) * 22;
+          vy = (vy / sp) * 22;
+        }
+        entity.vx = vx;
+        entity.vy = vy;
+        if (dist < rh * 0.9) {
           entity.isDestroyed = true;
         }
-      } else {
-        const dragPull = 0.0008;
+      } else if (entity.isPhysicsEnabled && bh) {
+        const dx = bh.x - entity.x;
+        const dy = bh.y - entity.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const dragPull = 0.004;
         entity.vx = (entity.vx || 0) + (dx / dist) * dragPull;
         entity.vy = (entity.vy || 0) + (dy / dist) * dragPull;
+      }
+    });
+
+    entities.forEach((entity) => {
+      if (!entity || entity.isDestroyed || entity.isBeingDragged || entity.type === "blackhole") return;
+      if (!entity.isPhysicsEnabled && !entity.isSwallowing) return;
+      const vx = isFinite(entity.vx as number) ? (entity.vx as number) : 0;
+      const vy = isFinite(entity.vy as number) ? (entity.vy as number) : 0;
+      const vz = isFinite(entity.vz as number) ? (entity.vz as number) : 0;
+      entity.x += vx;
+      entity.y += vy;
+      if (vz !== 0) entity.z = (entity.z || 0) + vz;
+      if (!entity.isSwallowing) {
+        entity.vx = vx * 0.985;
+        entity.vy = vy * 0.985;
+        entity.vz = vz * 0.985;
+        // Soft screen bounds so flicked bodies never leave the composition.
+        const margin = Math.max(40, entity.radius);
+        if (entity.x < margin && vx < 0) entity.vx = -vx * 0.5;
+        if (entity.x > ww - margin && vx > 0) entity.vx = -vx * 0.5;
+        if (entity.y < margin && vy < 0) entity.vy = -vy * 0.5;
+        if (entity.y > wh - margin && vy > 0) entity.vy = -vy * 0.5;
+        if (Math.hypot(entity.vx || 0, entity.vy || 0) < 0.03) {
+          entity.vx = 0;
+          entity.vy = 0;
+          entity.vz = 0;
+          entity.isPhysicsEnabled = false;
+        }
       }
     });
 
@@ -288,11 +341,11 @@ export function updateCelestial3DMeshes(
     // Handle collisions & swallowing
     for (let i = 0; i < entities.length; i++) {
       const e1 = entities[i];
-      if (!e1 || e1.isDestroyed) continue;
+      if (!e1 || e1.isDestroyed || e1.type === "nebula") continue;
 
       for (let j = i + 1; j < entities.length; j++) {
         const e2 = entities[j];
-        if (!e2 || e2.isDestroyed) continue;
+        if (!e2 || e2.isDestroyed || e2.type === "nebula") continue;
 
         if ((e1.scale ?? 0) < 0.9 || (e2.scale ?? 0) < 0.9) continue;
 
@@ -303,16 +356,30 @@ export function updateCelestial3DMeshes(
         const colDist = e1.radius + e2.radius;
 
         if (dist < colDist) {
-          if (e1.type === "blackhole") {
-            swallowEntity(e1, e2);
-          } else if (e2.type === "blackhole") {
-            swallowEntity(e2, e1);
+          const bhBody = e1.type === "blackhole" ? e1 : e2.type === "blackhole" ? e2 : null;
+          const victim = bhBody === e1 ? e2 : bhBody === e2 ? e1 : null;
+          if (bhBody && victim) {
+            if (victim.type === "blackhole") continue;
+            if (!victim.isSwallowing) {
+              swallowEntity(bhBody, victim);
+              victim.swallowStartTime = Date.now();
+              // Give the victim a little tangential velocity so it spirals instead of plunging.
+              if (Math.hypot(victim.vx || 0, victim.vy || 0) < 0.5) {
+                const d = Math.hypot(victim.x - bhBody.x, victim.y - bhBody.y) || 1;
+                victim.vx = (-(victim.y - bhBody.y) / d) * 2.2;
+                victim.vy = ((victim.x - bhBody.x) / d) * 2.2;
+              }
+              cinematicFx.lensPulse = Math.max(cinematicFx.lensPulse, 0.45);
+              if (audio?.playTidalDisruption) audio.playTidalDisruption("approach");
+            }
           } else if (!e1.isMerging && !e2.isMerging) {
             const colResult = e1.radius >= e2.radius
               ? resolveCollision(e1, e2)
               : resolveCollision(e2, e1);
 
             if (colResult && colResult.kineticEnergyDissipated > 0 && sceneRef.current) {
+              const energy = colResult.kineticEnergyDissipated;
+              const severity = collisionSeverity(energy);
               const contactX = colResult.contactPointX - ww / 2;
               const contactY = -(colResult.contactPointY - wh / 2);
               const contactZ = colResult.contactPointZ || 0;
@@ -323,7 +390,7 @@ export function updateCelestial3DMeshes(
                 contactX,
                 contactY,
                 contactZ,
-                Math.min(35, Math.max(8, (e1.radius + e2.radius) * 0.3)),
+                Math.min(48, Math.max(8, (e1.radius + e2.radius) * (0.3 + severity * 0.25))),
                 flareColor,
                 collisionFlaresRef.current
               );
@@ -333,13 +400,19 @@ export function updateCelestial3DMeshes(
                   colResult.contactPointX,
                   colResult.contactPointY,
                   flareColor,
-                  14,
+                  Math.round(14 + severity * 30),
                   spawnTailParticleRef.current
                 );
               }
 
-              if (colResult.kineticEnergyDissipated > 40 && audio?.playInteractiveMallet) {
+              // Camera impulse + achromatic flash are applied by RenderEngine.
+              emitCollision({ x: contactX, y: contactY, z: contactZ, energy, time: Date.now() });
+
+              if (energy > 40 && audio?.playInteractiveMallet) {
                 audio.playInteractiveMallet(0.85, colResult.contactPointX / ww);
+              }
+              if (severity > 0.35 && audio?.playRippleShockwave) {
+                audio.playRippleShockwave();
               }
             }
           }
@@ -542,6 +615,16 @@ export function updateCelestial3DMeshes(
             }
 
             if (audio?.playInteractiveMallet) audio.playInteractiveMallet(0.95, bh.x / ww);
+            if (audio?.playProbeSwallowed) audio.playProbeSwallowed();
+            // Horizon crossing: lensing pulse, soft flash, and a camera jolt toward the hole.
+            cinematicFx.lensPulse = 1.0;
+            emitCollision({
+              x: bh.x - ww / 2,
+              y: -(bh.y - wh / 2),
+              z: bh.z || 0,
+              energy: 260 + Math.min(1200, (entity.mass || 400) * 0.25),
+              time: Date.now(),
+            });
 
             if (spawnTailParticleRef.current) {
               for (let k = 0; k < 25; k++) {
@@ -567,6 +650,16 @@ export function updateCelestial3DMeshes(
       }
 
       inst.mesh.scaling.set(finalScaleX, finalScaleY, finalScaleZ);
+
+      // Gravitational redshift: a captured body dims as it nears the horizon.
+      if (entity.isSwallowing && nearestBh) {
+        const rh = Math.max(1, (nearestBh as CelestialEntity).radius);
+        const dim = Math.max(0, Math.min(1, (blackholeDist - rh * 1.12) / (rh * 3)));
+        const vis = 0.2 + 0.8 * dim;
+        inst.mesh.getChildMeshes(false).forEach((m) => {
+          m.visibility = vis;
+        });
+      }
 
       if (entity.type === "blackhole") {
         const mouseNormX = (mouseRef.current.x - ww / 2) / (ww / 2 || 1);
@@ -733,19 +826,21 @@ export function updateCelestial3DMeshes(
     });
 
     let targetGroupOpacity = isInterstellarRef.current ? 1.0 : 0.95;
-    if (stageRef.current === 0 && !isInterstellarRef.current) {
-      targetGroupOpacity = 0.95;
-    } else {
+    if (!(stageRef.current === 0 && !isInterstellarRef.current) && !isInterstellarRef.current) {
+      // Typography stages: bodies settle in just behind the text once the
+      // cinematic reveal is under way (the rebuild itself happens off-camera).
       const stageChangeElapsed = Date.now() - lastStageChangeRef.current;
-      if (!isInterstellarRef.current) {
-        if (stageChangeElapsed < 4000) {
-          if (stageChangeElapsed < 3000) {
-            targetGroupOpacity = 0.0;
-          } else {
-            const fadeProgress = (stageChangeElapsed - 3000) / 1000;
-            targetGroupOpacity = 0.95 * fadeProgress;
-          }
-        }
+      if (stageChangeElapsed < 1600) {
+        targetGroupOpacity = 0.95 * Math.max(0, Math.min(1, (stageChangeElapsed - 300) / 1300));
+      }
+    }
+    // Cinematic foreground veil (director pans away / wormhole / capture blackout).
+    const fgAlpha = Math.max(0, Math.min(1, cinematicFx.foregroundAlpha));
+    targetGroupOpacity *= fgAlpha;
+    if (celestialGroupRef.current) {
+      const shouldEnable = fgAlpha > 0.01;
+      if (celestialGroupRef.current.isEnabled(false) !== shouldEnable) {
+        celestialGroupRef.current.setEnabled(shouldEnable);
       }
     }
 
@@ -760,7 +855,7 @@ export function updateCelestial3DMeshes(
             return;
           }
           if (child.name.indexOf("bh_jet") !== -1 || child.name.indexOf("bh_photon") !== -1) {
-            mat.alpha = Math.min(1.0, 0.92 + musicAmp * 0.25);
+            mat.alpha = Math.min(1.0, 0.92 + musicAmp * 0.25) * fgAlpha;
             return;
           }
 

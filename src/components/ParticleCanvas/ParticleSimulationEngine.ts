@@ -35,7 +35,19 @@ export interface SimulationContext {
   transitCy: number;
   activeRipples: Array<{ x: number; y: number; life: number; maxDist: number; bandWidth: number; minDistSq: number; maxDistBoundSq: number }>;
   audio: any;
+  /**
+   * 0..1 opacity of the foreground subject (typography, bodies' particles,
+   * tails). Driven by the cinematic director so rebuilds happen out of sight.
+   * The ambient starfield is never veiled. Defaults to 1.
+   */
+  foregroundAlpha?: number;
 }
+
+/** Deterministic per-index hash in [0, 1) (stable across frames, no Math.random flicker). */
+const hash01 = (i: number, salt: number) => {
+  const v = Math.sin(i * 12.9898 + salt * 78.233) * 43758.5453;
+  return v - Math.floor(v);
+};
 
 export function simulateParticles(
   particles: Particle[],
@@ -77,6 +89,16 @@ export function simulateParticles(
     activeRipples: rawActiveRipples,
     audio,
   } = ctx;
+
+  const fgRaw = ctx.foregroundAlpha;
+  const foregroundAlpha =
+    typeof fgRaw === "number" && Number.isFinite(fgRaw) ? Math.max(0, Math.min(1, fgRaw)) : 1;
+  // Wormhole pull follows a bell envelope (0 → 1 → 0) so particles are
+  // released smoothly as the transit ends instead of snapping back.
+  const transitEnvelope =
+    isTransitActive && Number.isFinite(transitProgress) && transitProgress > 0
+      ? Math.sin(Math.PI * Math.min(1, transitProgress))
+      : 0;
 
   const currentW = isFinite(rawW) && rawW > 0 ? rawW : 1920;
   const currentH = isFinite(rawH) && rawH > 0 ? rawH : 1080;
@@ -171,10 +193,10 @@ export function simulateParticles(
 
         const tailPulse = 1.0 + musicAmpVal * 0.8;
         const tailOpacity = particleFilters.tails ? p.life * 0.45 : 0;
-        colors[i * 4] = Math.min(1.0, Math.max(0.0, (r / 255) * globalAlpha * tailOpacity * tailPulse));
-        colors[i * 4 + 1] = Math.min(1.0, Math.max(0.0, (g / 255) * globalAlpha * tailOpacity * tailPulse));
-        colors[i * 4 + 2] = Math.min(1.0, Math.max(0.0, (b / 255) * globalAlpha * tailOpacity * tailPulse));
-        colors[i * 4 + 3] = globalAlpha * tailOpacity;
+        colors[i * 4] = Math.min(1.0, Math.max(0.0, (r / 255) * globalAlpha * tailOpacity * tailPulse * foregroundAlpha));
+        colors[i * 4 + 1] = Math.min(1.0, Math.max(0.0, (g / 255) * globalAlpha * tailOpacity * tailPulse * foregroundAlpha));
+        colors[i * 4 + 2] = Math.min(1.0, Math.max(0.0, (b / 255) * globalAlpha * tailOpacity * tailPulse * foregroundAlpha));
+        colors[i * 4 + 3] = globalAlpha * tailOpacity * foregroundAlpha;
       } else {
         positions[i * 3] = -99999;
         positions[i * 3 + 1] = -99999;
@@ -347,12 +369,12 @@ export function simulateParticles(
         const dy = finalY - cy;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
         
-        const tunnelRadius = 150 + Math.random() * 200;
-        const pullFactor = Math.pow(transitProgress, 1.5);
+        const tunnelRadius = 150 + hash01(i, 1) * 200;
+        const pullFactor = Math.pow(transitEnvelope, 1.5);
         
         finalX += (dx / dist * tunnelRadius - dx) * pullFactor;
         finalY += (dy / dist * tunnelRadius - dy) * pullFactor;
-        finalZ -= 2000 * pullFactor * (Math.random() * 0.5 + 0.5);
+        finalZ -= 2000 * pullFactor * (hash01(i, 2) * 0.5 + 0.5);
       }
 
       positions[i * 3] = finalX;
@@ -375,7 +397,7 @@ export function simulateParticles(
           }
         }
         if (isTransitActive && transitProgress > 0) {
-          const shift = Math.pow(transitProgress, 1.2);
+          const shift = Math.pow(transitEnvelope, 1.2);
           r = r * (1.0 - shift * 0.8) + shift * 0.4;
           g = g * (1.0 - shift * 0.5) + shift * 1.5;
           b = b * (1.0 + shift * 1.0) + shift * 3.0;
@@ -941,12 +963,12 @@ export function simulateParticles(
       const dx = finalX - cx;
       const dy = finalY - cy;
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const tunnelRadius = 50 + Math.random() * 150;
-      const pullFactor = Math.pow(transitProgress, 1.2);
+      const tunnelRadius = 50 + hash01(i, 3) * 150;
+      const pullFactor = Math.pow(transitEnvelope, 1.2);
       
       finalX += (dx / dist * tunnelRadius - dx) * pullFactor;
       finalY += (dy / dist * tunnelRadius - dy) * pullFactor;
-      finalZ -= 3000 * pullFactor * (Math.random() * 0.8 + 0.2);
+      finalZ -= 3000 * pullFactor * (hash01(i, 4) * 0.8 + 0.2);
     }
 
     positions[i * 3] = finalX;
@@ -1043,7 +1065,7 @@ export function simulateParticles(
     }
 
     if (isTransitActive && transitProgress > 0) {
-      const shift = Math.pow(transitProgress, 1.2);
+      const shift = Math.pow(transitEnvelope, 1.2);
       dopplerR = dopplerR * (1.0 - shift * 0.5) + shift * 0.2;
       dopplerG = dopplerG * (1.0 - shift * 0.2) + shift * 0.8;
       dopplerB = dopplerB * (1.0 + shift * 1.5) + shift * 2.5;
@@ -1129,10 +1151,12 @@ export function simulateParticles(
       colors[i * 4 + 2] = 0;
       colors[i * 4 + 3] = 0;
     } else {
-      colors[i * 4] = Math.min(1.0, Math.max(0.0, (r / 255) * globalAlpha * rFactor * audioColorR * particleBrightness * textAlphaDimmer * dopplerR * dopplerIntensity * bhAbsorbFactor * redshiftR));
-      colors[i * 4 + 1] = Math.min(1.0, Math.max(0.0, (g / 255) * globalAlpha * gFactor * audioColorG * particleBrightness * textAlphaDimmer * dopplerG * dopplerIntensity * bhAbsorbFactor * redshiftG));
-      colors[i * 4 + 2] = Math.min(1.0, Math.max(0.0, (b / 255) * globalAlpha * bFactor * audioColorB * particleBrightness * textAlphaDimmer * dopplerB * dopplerIntensity * bhAbsorbFactor * redshiftB));
-      colors[i * 4 + 3] = globalAlpha * textAlphaDimmer * bhAbsorbFactor;
+      // Background galaxies belong to the backdrop and are never veiled.
+      const veil = p.interstellarType === "background_galaxy" ? 1 : foregroundAlpha;
+      colors[i * 4] = Math.min(1.0, Math.max(0.0, (r / 255) * globalAlpha * rFactor * audioColorR * particleBrightness * textAlphaDimmer * dopplerR * dopplerIntensity * bhAbsorbFactor * redshiftR * veil));
+      colors[i * 4 + 1] = Math.min(1.0, Math.max(0.0, (g / 255) * globalAlpha * gFactor * audioColorG * particleBrightness * textAlphaDimmer * dopplerG * dopplerIntensity * bhAbsorbFactor * redshiftG * veil));
+      colors[i * 4 + 2] = Math.min(1.0, Math.max(0.0, (b / 255) * globalAlpha * bFactor * audioColorB * particleBrightness * textAlphaDimmer * dopplerB * dopplerIntensity * bhAbsorbFactor * redshiftB * veil));
+      colors[i * 4 + 3] = globalAlpha * textAlphaDimmer * bhAbsorbFactor * veil;
     }
     extras[i] = p.isTail ? 2.0 : (p.interstellarType === "background_galaxy" ? 3.0 : (!p.isCosmicAmbient ? 1.0 : 0.0));
   }

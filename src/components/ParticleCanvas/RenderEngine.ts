@@ -11,6 +11,16 @@ import { SlingshotAimState, SlingshotProbe, updateActiveProbes } from "./Slingsh
 import { TdeState, updateTidalDisruption } from "./TidalDisruptionEngine";
 import { spawnTidalDisruptionFX, TidalDisruptionFXInstance } from "./TidalDisruptionFX";
 import { updateCollisionFlares } from "./CollisionEngine";
+import { NEUTRAL_SHOT, ShotSnapshot, smoothstep } from "./cinematic/CinematicTransitionDirector";
+import { CinematicRuntime, entitiesToGravityBodies } from "./cinematic/CinematicRuntime";
+import { CapturePose, computeCapturePose } from "./cinematic/BlackHoleCapture";
+import { smoothNoise } from "./cinematic/CameraRig";
+import { cinematicFx, collisionSeverity, drainCollisions } from "./cinematic/CinematicFxBus";
+
+/** How long the user must keep pushing in at the horizon-zoom limit before the hole takes the camera. */
+const HORIZON_HOLD_MS = 1400;
+/** Gap between wheel events that still counts as one continuous push. */
+const HORIZON_PUSH_GRACE_MS = 450;
 
 export interface RenderEngineContext {
   particlesRef: React.MutableRefObject<Particle[]>;
@@ -89,6 +99,8 @@ export interface RenderEngineContext {
   tdeStateRef?: React.MutableRefObject<TdeState>;
   activeTdeFxRef?: React.MutableRefObject<TidalDisruptionFXInstance | null>;
   onTdeStateChange?: (info: { isActive: boolean; stage: string; status: string }) => void;
+  /** Cinematic director / gravity rig / capture bundle (optional for tests). */
+  cinematicRef?: React.MutableRefObject<CinematicRuntime | null>;
 }
 
 export function executeRenderFrame(ctx: RenderEngineContext) {
@@ -109,6 +121,37 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
   const rawDt = ctx.rendererRef.current ? ctx.rendererRef.current.getDeltaTime() : 16.666;
   const dt = isFinite(rawDt) && rawDt > 0 ? rawDt : 16.666;
   const globalTimeMultiplier = Math.min((dt / 16.666) * speedMult, 3.0);
+  const dtSec = Math.min(0.05, dt / 1000);
+
+  // ── Cinematic layer: transition shot, black-hole capture, FX decay ──────────
+  const cine = ctx.cinematicRef?.current ?? null;
+  let capturePose: CapturePose | null = null;
+  if (cine?.capture) {
+    capturePose = computeCapturePose(cine.capture, now);
+    if (capturePose.done) {
+      // Horizon crossed (frame is black): hand over to the director's emerge shot.
+      capturePose = null;
+      cine.capture = null;
+      const done = cine.onCaptureComplete;
+      if (done) {
+        try {
+          done();
+        } catch (err) {
+          console.warn("[cinematic] capture completion failed", err);
+        }
+      }
+    }
+  }
+  const shot: ShotSnapshot = cine ? cine.director.update(now) : NEUTRAL_SHOT;
+  const emergeVeil = shot.style === "emerge" ? shot.veil : 0;
+  cinematicFx.capture = capturePose ? capturePose.capture : cinematicFx.capture * Math.exp(-dtSec * 4);
+  cinematicFx.redshift = Math.max(capturePose ? capturePose.redshift : 0, smoothstep(0.2, 1, emergeVeil) * 0.8);
+  cinematicFx.blackout = Math.max(capturePose ? capturePose.blackout : 0, smoothstep(0.35, 1, emergeVeil));
+  cinematicFx.rackFocus = shot.rackFocus;
+  cinematicFx.flash *= Math.exp(-dtSec * 5.5);
+  cinematicFx.lensPulse *= Math.exp(-dtSec * 1.8);
+  if (cinematicFx.flash < 0.002) cinematicFx.flash = 0;
+  if (cinematicFx.lensPulse < 0.002) cinematicFx.lensPulse = 0;
 
   // Dynamic Web Audio API metrics with temporal smoothing & defensive guards
   const rawMusicAmp = (ctx.audio as any)?.getMusicAmplitude
@@ -167,6 +210,14 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
     transitCy = ctx.mouseRef.current.y > 0 ? ctx.mouseRef.current.y : currentH / 2;
   }
 
+  // The wormhole rebuilds the scene at ~65 % progress: keep the subject veiled
+  // around that moment so the new system is already formed when it reappears.
+  const transitVeil = isTransitActive && transitProgress > 0
+    ? smoothstep(0.3, 0.58, transitProgress) * (1 - smoothstep(0.74, 1.0, transitProgress))
+    : 0;
+  const foregroundAlpha = Math.max(0, Math.min(shot.foregroundAlpha, 1 - transitVeil));
+  cinematicFx.foregroundAlpha = foregroundAlpha;
+
   const activeSupernova = ctx.supernovaRef.current;
   let snElapsed = 0;
   if (activeSupernova) {
@@ -200,6 +251,10 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
       const g00 = Math.sqrt(Math.max(0.04, 1.0 - rsRatio));
       timeDilation = 1.0 / g00; // General relativistic time dilation factor
     }
+  }
+
+  if (capturePose) {
+    gravitationalProximity = Math.max(gravitationalProximity, Math.min(0.98, capturePose.capture));
   }
 
   // Update audio pitch drop and muffled acoustic redshift
@@ -286,7 +341,7 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
     ctx.hudPlaneRef.current.material &&
     ctx.hudPlaneRef.current.material instanceof BABYLON.StandardMaterial
   ) {
-    ctx.hudPlaneRef.current.material.alpha = ctx.isInterstellarRef.current ? 0 : tracerOpacity * 0.8;
+    ctx.hudPlaneRef.current.material.alpha = ctx.isInterstellarRef.current ? 0 : tracerOpacity * 0.8 * foregroundAlpha;
   }
 
   ctx.scrollVelocityRef.current *= 0.92;
@@ -390,6 +445,7 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
     transitCy,
     activeRipples,
     audio: ctx.audio,
+    foregroundAlpha,
   });
 
   if (ctx.pointsMeshRef.current) {
@@ -416,8 +472,9 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
   if (ctx.cameraShakeRef.current < 0.01) ctx.cameraShakeRef.current = 0;
 
   const shakeVal = ctx.cameraShakeRef.current;
-  const shakeX = shakeVal > 0 ? (Math.sin(now * 0.08) * 0.6 + (Math.random() - 0.5) * 0.4) * shakeVal : 0;
-  const shakeY = shakeVal > 0 ? (Math.cos(now * 0.09) * 0.6 + (Math.random() - 0.5) * 0.4) * shakeVal : 0;
+  // Smooth band-limited noise instead of per-frame Math.random() jitter.
+  const shakeX = shakeVal > 0 ? (Math.sin(now * 0.08) * 0.6 + smoothNoise(now * 0.011, 11) * 0.4) * shakeVal : 0;
+  const shakeY = shakeVal > 0 ? (Math.cos(now * 0.09) * 0.6 + smoothNoise(now * 0.012, 12) * 0.4) * shakeVal : 0;
   const shakeZ = shakeVal > 0 ? (Math.sin(now * 0.07) * 0.5) * shakeVal : 0;
 
   const defaultInputs = {
@@ -617,6 +674,21 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
   }
 
   const bh = ctx.celestialEntitiesRef.current.find((e) => !e.isDestroyed && e.type === "blackhole");
+  if (cine) {
+    // Pushing past the horizon-zoom limit (sustained scroll-in) lets the hole
+    // take the camera. Merely resting at full zoom never triggers it.
+    const pushAt = typeof window !== "undefined" ? Number((window as any).__horizonPushAt) || 0 : 0;
+    const pushing = Date.now() - pushAt < HORIZON_PUSH_GRACE_MS;
+    if (bh && currentZoom >= 0.9 && pushing && !cine.capture && !cine.director.isBusy) {
+      if (cine.horizonHoldSince === 0) cine.horizonHoldSince = now;
+      else if (now - cine.horizonHoldSince > HORIZON_HOLD_MS && cine.onHorizonHold) {
+        cine.horizonHoldSince = 0;
+        cine.onHorizonHold();
+      }
+    } else {
+      cine.horizonHoldSince = 0;
+    }
+  }
   if (bh && currentZoom > 0.001) {
     const bx = bh.x - currentW / 2;
     const by = -(bh.y - currentH / 2);
@@ -712,6 +784,23 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
       }
     }
 
+    if (cine && !ctx.isTransitActiveRef.current) {
+      // Work on the un-offset base pose; rig/director offsets are re-applied below.
+      camera.position.x -= cine.appliedOffset.x;
+      camera.position.y -= cine.appliedOffset.y;
+      camera.position.z -= cine.appliedOffset.z;
+    }
+    if (cine) cine.appliedOffset = { x: 0, y: 0, z: 0 };
+    if (cine && ctx.isTransitActiveRef.current) {
+      // The wormhole drives the camera directly; track its view so the hand-off is seamless.
+      const tgt = camera.getTarget();
+      const d = tgt.subtract(camera.position);
+      const l = d.length();
+      if (Number.isFinite(l) && l > 1e-4) {
+        cine.smoothedForward = { x: d.x / l, y: d.y / l, z: d.z / l };
+      }
+    }
+
     if (!ctx.isTransitActiveRef.current) {
       if (
         isNaN(camera.position.x) ||
@@ -737,8 +826,7 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
         const lockY = isNaN(rawLockY) ? 0 : rawLockY;
         const lockZ = isNaN(rawLockZ) ? 0 : rawLockZ;
 
-        camera.setTarget(new BABYLON.Vector3(lockX, lockY, lockZ));
-        camera.rotation.z = 0;
+        applyLook(camera, new BABYLON.Vector3(lockX, lockY, lockZ), cine, dtSec, capturePose);
       } else {
         const sTargetX = isNaN(finalTargetX) ? 0 : finalTargetX;
         const sTargetY = isNaN(finalTargetY) ? 0 : finalTargetY;
@@ -762,23 +850,47 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
         const pitchOffset = isNaN(inputs.currentCameraPitch) ? 0 : inputs.currentCameraPitch;
         const yawOffset = isNaN(inputs.currentCameraYaw) ? 0 : inputs.currentCameraYaw;
 
-        camera.setTarget(
-          new BABYLON.Vector3(
-            lockX - yawOffset * 100,
-            lockY + pitchOffset * 100,
-            lockZ
-          )
-        );
-        camera.rotation.z = 0;
+        if (capturePose) {
+          camera.position.set(capturePose.pos.x, capturePose.pos.y, capturePose.pos.z);
+          applyLook(
+            camera,
+            new BABYLON.Vector3(capturePose.look.x, capturePose.look.y, capturePose.look.z),
+            cine,
+            dtSec,
+            capturePose
+          );
+        } else {
+          applyLook(
+            camera,
+            new BABYLON.Vector3(lockX - yawOffset * 100, lockY + pitchOffset * 100, lockZ),
+            cine,
+            dtSec,
+            null
+          );
+        }
+      }
+
+      if (cine) {
+        applyCinematicCamera(camera, cine, ctx, {
+          shot,
+          capturePose,
+          cameraZ,
+          currentW,
+          currentH,
+          dtSec,
+          now,
+          isCinematic: Boolean(isCinematic),
+        });
       }
 
       // Subtle cinematic optical focal breathing
       const baseFov = (ctx.fovRef.current * Math.PI) / 180;
+      const cineFov = shot.fov + (capturePose ? capturePose.fov : 0);
       if (isCinematic) {
         const fovPulse = Math.sin(time * 0.001) * 0.025;
-        camera.fov = baseFov + fovPulse;
+        camera.fov = baseFov + fovPulse + cineFov;
       } else {
-        camera.fov = baseFov;
+        camera.fov = baseFov + cineFov;
       }
     }
   }
@@ -818,11 +930,16 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
     }
 
     if (pipeline.imageProcessing && pipeline.imageProcessing.vignetteEnabled) {
-      pipeline.imageProcessing.vignetteWeight = (isCinematic ? 1.35 : 1.25) + musicAmpVal * 0.75;
+      pipeline.imageProcessing.vignetteWeight =
+        (isCinematic ? 1.35 : 1.25) + musicAmpVal * 0.75 + (cinematicFx.capture + cinematicFx.blackout) * 0.8;
       if (isCinematic) {
         pipeline.imageProcessing.contrast = 1.22;
-        pipeline.imageProcessing.exposure = 1.08;
       }
+    }
+    if (pipeline.imageProcessing) {
+      // Achromatic impact flash (collisions / horizon crossings) as a brief exposure bump.
+      const baseExposure = isCinematic ? 1.08 : cineBaseExposure(pipeline);
+      pipeline.imageProcessing.exposure = baseExposure * (1 + Math.min(0.6, cinematicFx.flash) * 0.9);
     }
   }
 
@@ -859,4 +976,176 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
       );
     }
   }
+}
+
+
+const BASE_EXPOSURE_KEY = "__cineBaseExposure";
+/** Remembers the pipeline's configured exposure so the flash can bump it non-destructively. */
+function cineBaseExposure(pipeline: BABYLON.DefaultRenderingPipeline): number {
+  const holder = pipeline as unknown as Record<string, number | undefined>;
+  if (holder[BASE_EXPOSURE_KEY] === undefined) {
+    const cur = pipeline.imageProcessing?.exposure;
+    holder[BASE_EXPOSURE_KEY] = Number.isFinite(cur) ? (cur as number) : 1;
+  }
+  return holder[BASE_EXPOSURE_KEY] as number;
+}
+
+/**
+ * Points the camera at `target`. With a cinematic runtime the view direction is
+ * low-pass filtered (exp. smoothing) so look-target discontinuities (wormhole
+ * hand-off, lock changes, scene rebuilds) turn into pans instead of cuts.
+ */
+function applyLook(
+  camera: BABYLON.TargetCamera,
+  target: BABYLON.Vector3,
+  cine: CinematicRuntime | null,
+  dtSec: number,
+  capturePose: CapturePose | null
+) {
+  if (!cine) {
+    camera.setTarget(target);
+    camera.rotation.z = 0;
+    return;
+  }
+  const dx = target.x - camera.position.x;
+  const dy = target.y - camera.position.y;
+  const dz = target.z - camera.position.z;
+  const len = Math.hypot(dx, dy, dz);
+  if (!Number.isFinite(len) || len < 1e-4) {
+    camera.setTarget(target);
+    camera.rotation.z = 0;
+    return;
+  }
+  const fx = dx / len;
+  const fy = dy / len;
+  const fz = dz / len;
+  const sf = cine.smoothedForward;
+  if (!sf || !Number.isFinite(sf.x + sf.y + sf.z)) {
+    cine.smoothedForward = { x: fx, y: fy, z: fz };
+  } else {
+    const k = 1 - Math.exp(-dtSec * (capturePose ? 9 : 6));
+    let nx = sf.x + (fx - sf.x) * k;
+    let ny = sf.y + (fy - sf.y) * k;
+    let nz = sf.z + (fz - sf.z) * k;
+    const nl = Math.hypot(nx, ny, nz) || 1;
+    nx /= nl;
+    ny /= nl;
+    nz /= nl;
+    cine.smoothedForward = { x: nx, y: ny, z: nz };
+  }
+  const f = cine.smoothedForward!;
+  camera.setTarget(
+    new BABYLON.Vector3(camera.position.x + f.x * len, camera.position.y + f.y * len, camera.position.z + f.z * len)
+  );
+  camera.rotation.z = 0;
+}
+
+/**
+ * Adds the director's shot (pan-away yaw / pitch / roll / dolly) and the
+ * gravity rig (drift, lean, sway, tidal shake, collision kicks) on top of the
+ * base camera pose. The positional part is remembered and removed next frame
+ * so the base lerp never integrates it.
+ */
+function applyCinematicCamera(
+  camera: BABYLON.TargetCamera,
+  cine: CinematicRuntime,
+  ctx: RenderEngineContext,
+  o: {
+    shot: ShotSnapshot;
+    capturePose: CapturePose | null;
+    cameraZ: number;
+    currentW: number;
+    currentH: number;
+    dtSec: number;
+    now: number;
+    isCinematic: boolean;
+  }
+) {
+  const f = cine.smoothedForward ?? { x: 0, y: 0, z: 1 };
+  // Left-handed basis: right = up × forward, up' = forward × right.
+  let rx = f.z;
+  let ry = 0;
+  let rz = -f.x;
+  const rl = Math.hypot(rx, ry, rz);
+  if (rl < 1e-4) {
+    rx = 1;
+    rz = 0;
+  } else {
+    rx /= rl;
+    rz /= rl;
+  }
+  const right = { x: rx, y: ry, z: rz };
+  const up = {
+    x: f.y * rz - f.z * ry,
+    y: f.z * rx - f.x * rz,
+    z: f.x * ry - f.y * rx,
+  };
+  const basis = { right, up, forward: f };
+
+  // Collisions → camera impulse (shoved away from the contact) + flash.
+  const hits = drainCollisions();
+  for (const hit of hits) {
+    const sev = collisionSeverity(hit.energy);
+    if (sev <= 0.01) continue;
+    const away = {
+      x: camera.position.x - hit.x,
+      y: camera.position.y - hit.y,
+      z: camera.position.z - hit.z,
+    };
+    const dist = Math.hypot(away.x, away.y, away.z) || 1;
+    // Distant impacts are felt less.
+    const falloff = Math.min(1, (o.cameraZ * 1.2) / dist);
+    cine.rig.addImpulse(away, sev * falloff, basis);
+    cinematicFx.flash = Math.max(cinematicFx.flash, (0.1 + sev * 0.45) * falloff);
+  }
+
+  const isTypographyStage = !ctx.isInterstellarRef.current && !o.isCinematic && ctx.stageRef.current >= 1;
+  const bodies = entitiesToGravityBodies(ctx.celestialEntitiesRef.current, o.currentW, o.currentH);
+  // Rig offsets are fractions of the rest distance. When the camera is close
+  // to a black hole (horizon zoom, capture) scale them to that distance so the
+  // drift and tidal shake stay proportional on screen instead of violent.
+  let rigScale = o.cameraZ;
+  for (const b of bodies) {
+    if (!b.isBlackHole) continue;
+    const dBh = Math.hypot(camera.position.x - b.x, camera.position.y - b.y, camera.position.z - b.z);
+    if (Number.isFinite(dBh)) rigScale = Math.min(rigScale, Math.max(40, dBh * 1.2));
+  }
+  if (o.capturePose && cine.capture) {
+    const c = cine.capture;
+    const dBh = Math.hypot(camera.position.x - c.bh.x, camera.position.y - c.bh.y, camera.position.z - c.bh.z);
+    if (Number.isFinite(dBh)) rigScale = Math.min(rigScale, Math.max(40, dBh * 1.2));
+  }
+  const rigOut = cine.rig.update({
+    cameraPos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+    right,
+    up,
+    forward: f,
+    bodies,
+    cameraZ: rigScale,
+    responsiveness: o.capturePose ? 1 : isTypographyStage ? 0.3 : 1,
+    tidalBoost: o.capturePose ? o.capturePose.tidal : 0,
+    time: o.now / 1000,
+    dt: o.dtSec,
+  });
+
+  // Director dolly: + pulls back along the view axis, − pushes in.
+  const dolly = o.capturePose ? 0 : -o.shot.dolly * o.cameraZ;
+  const offset = {
+    x: rigOut.offset.x + f.x * dolly,
+    y: rigOut.offset.y + f.y * dolly,
+    z: rigOut.offset.z + f.z * dolly,
+  };
+  if (Number.isFinite(offset.x + offset.y + offset.z)) {
+    camera.position.x += offset.x;
+    camera.position.y += offset.y;
+    camera.position.z += offset.z;
+    cine.appliedOffset = offset;
+  }
+
+  const yaw = o.shot.yaw + rigOut.yaw;
+  const pitch = o.shot.pitch + rigOut.pitch;
+  const roll = o.shot.roll + rigOut.roll + (o.capturePose ? o.capturePose.roll : 0);
+  if (Number.isFinite(yaw)) camera.rotation.y += yaw;
+  if (Number.isFinite(pitch)) camera.rotation.x += pitch;
+  camera.rotation.z = Number.isFinite(roll) ? roll : 0;
 }

@@ -124,7 +124,8 @@ export function generateInterstellarScene(
   interstellarSceneGeneratedTimeRef: React.MutableRefObject<number>,
   supernovaX?: number,
   supernovaY?: number,
-  onSequenceGenerated?: (seq: { id: string; name: string; description: string; tags: string[] }) => void
+  onSequenceGenerated?: (seq: { id: string; name: string; description: string; tags: string[] }) => void,
+  options?: { instant?: boolean }
 ): void {
   let entities: CelestialEntity[] = [];
   const isMobile = width < 768;
@@ -245,7 +246,8 @@ export function generateInterstellarScene(
       spawnX,
       spawnY,
       entityTransitionActiveRef,
-      entityTransitionStartTimeRef
+      entityTransitionStartTimeRef,
+    options
     );
     interstellarSceneGeneratedTimeRef.current = Date.now();
     registerAndSaveSequence(
@@ -311,7 +313,8 @@ export function generateInterstellarScene(
     spawnX,
     spawnY,
     entityTransitionActiveRef,
-    entityTransitionStartTimeRef
+    entityTransitionStartTimeRef,
+    options
   );
   interstellarSceneGeneratedTimeRef.current = Date.now();
   registerAndSaveSequence(

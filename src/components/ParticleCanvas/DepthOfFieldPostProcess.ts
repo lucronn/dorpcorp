@@ -1,6 +1,7 @@
 import React from "react";
 import * as BABYLON from "@babylonjs/core";
 import { CelestialEntity } from "./types";
+import { cinematicFx } from "./cinematic/CinematicFxBus";
 
 export function setupDepthOfFieldPostProcess(
   camera: BABYLON.Camera,
@@ -27,6 +28,8 @@ export function setupDepthOfFieldPostProcess(
     uniform float uMaxBlurRadius;
     uniform float uAnamorphicAspect;
     uniform float uChromaticFringe;
+    // Cinematic rack focus: 0 = normal, 1 = whole frame (subject included) out of focus
+    uniform float uRackFocus;
 
     // 16-sample Poisson disc kernel for creamy, artifact-free optical bokeh
     vec2 getPoissonSample(int i) {
@@ -75,6 +78,7 @@ export function setupDepthOfFieldPostProcess(
       // Soft vignette depth falloff for outer boundary
       float cornerDist = length(uv - vec2(0.5));
       coc = clamp(coc + cornerDist * 0.25, 0.0, 1.0);
+      coc = max(coc, uRackFocus);
 
       float blurRadius = coc * uMaxBlurRadius * uDofActive;
 
@@ -136,7 +140,8 @@ export function setupDepthOfFieldPostProcess(
       "uFocusRadius",
       "uMaxBlurRadius",
       "uAnamorphicAspect",
-      "uChromaticFringe"
+      "uChromaticFringe",
+      "uRackFocus"
     ],
     null,
     1.0,
@@ -165,7 +170,11 @@ export function setupDepthOfFieldPostProcess(
     effect.setFloat2("uScreenResolution", ww, wh);
     effect.setFloat("uTime", now * 0.001);
     effect.setFloat("uCinematicMode", isCinematic ? 1.0 : 0.0);
-    effect.setFloat("uDofActive", currentDofAmount);
+    const rackFocus = Number.isFinite(cinematicFx.rackFocus)
+      ? Math.max(0, Math.min(1, cinematicFx.rackFocus))
+      : 0;
+    effect.setFloat("uDofActive", Math.max(currentDofAmount, rackFocus));
+    effect.setFloat("uRackFocus", rackFocus);
 
     // Track active focal subject in screen coordinates (black hole or active target)
     let focusUvX = 0.5;
@@ -223,7 +232,7 @@ export function setupDepthOfFieldPostProcess(
 
     effect.setFloat2("uFocusPoint", focusUvX, focusUvY);
     effect.setFloat("uFocusRadius", focusRadiusNorm);
-    effect.setFloat("uMaxBlurRadius", 14.0); // 14px maximum bokeh disc radius
+    effect.setFloat("uMaxBlurRadius", 14.0 + rackFocus * 10.0); // 14px bokeh disc, wider during a rack focus
     effect.setFloat("uAnamorphicAspect", 1.33); // 1.33x anamorphic horizontal oval squeeze
     effect.setFloat("uChromaticFringe", 0.0035); // Subtle chromatic dispersion on bokeh fringe
   };

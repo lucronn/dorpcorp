@@ -653,3 +653,41 @@ export function mapParticlesToStage(
     tailStartIndexRef.current = particlesRef.current.findIndex((p) => p.isTail);
   }
 }
+
+/**
+ * Place every foreground particle exactly on its (new) target with zero
+ * velocity, and retire in-flight tail particles. Only ever called while the
+ * cinematic director has the subject out of shot, so the next composition is
+ * already formed when the camera returns; nothing travels across the screen.
+ * Ambient starfield particles are left untouched (they stay visible as the
+ * continuous backdrop the camera pans across).
+ */
+export function settleParticlesToTargets(particlesList: Particle[]): number {
+  if (!Array.isArray(particlesList)) return 0;
+  let settled = 0;
+  for (let i = 0; i < particlesList.length; i++) {
+    const p = particlesList[i];
+    if (!p || p.isCosmicAmbient) continue;
+    if (p.isTail) {
+      p.life = 0;
+      p.vx = 0;
+      p.vy = 0;
+      p.vz = 0;
+      p.prevDrawX = undefined;
+      p.prevDrawY = undefined;
+      continue;
+    }
+    if (Number.isFinite(p.targetX)) p.x = p.targetX;
+    if (Number.isFinite(p.targetY)) p.y = p.targetY;
+    p.z = Number.isFinite(p.targetZ as number) ? (p.targetZ as number) : 0;
+    p.vx = 0;
+    p.vy = 0;
+    p.vz = 0;
+    p.tunnelLife = undefined;
+    // Reset the motion history so the trail spawner does not read the jump as velocity.
+    p.prevDrawX = undefined;
+    p.prevDrawY = undefined;
+    settled++;
+  }
+  return settled;
+}

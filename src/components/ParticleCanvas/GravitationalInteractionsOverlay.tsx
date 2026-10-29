@@ -3,6 +3,7 @@ import * as BABYLON from "@babylonjs/core";
 import { SlingshotAimState, SlingshotProbe } from "./SlingshotEngine";
 import { TdeState } from "./TidalDisruptionEngine";
 import { CelestialEntity } from "./types";
+import { cinematicFx } from "./cinematic/CinematicFxBus";
 
 interface GravitationalInteractionsOverlayProps {
   slingshotAim?: SlingshotAimState;
@@ -56,6 +57,14 @@ export const GravitationalInteractionsOverlay: React.FC<GravitationalInteraction
         canvas.width = width * dpr;
         canvas.height = height * dpr;
       }
+
+      // The 2D HUD rides the same veil as the 3D frame: it fades out with the
+      // director's hidden rebuilds and the black-hole capture blackout, so its
+      // reticles never jump to a rebuilt scene while visible.
+      const veil =
+        cinematicFx.foregroundAlpha * (1 - cinematicFx.blackout) * (1 - cinematicFx.capture);
+      const opacity = String(Math.round(Math.max(0, Math.min(1, veil)) * 100) / 100);
+      if (canvas.style.opacity !== opacity) canvas.style.opacity = opacity;
 
       ctx.save();
       ctx.scale(dpr, dpr);

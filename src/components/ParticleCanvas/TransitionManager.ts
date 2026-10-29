@@ -10,7 +10,63 @@ import {
 export { _startWormholeTransit as startWormholeTransit };
 
 /**
+ * Replace the current bodies with fully-formed target bodies in one step.
+ * Used by the CinematicTransitionDirector while the camera is looking away,
+ * so no body ever lerps or snaps on screen. Old meshes are disposed by the
+ * mesh synchronizer because their ids are no longer present; every new body
+ * gets a fresh id so a stale mesh can never be re-bound to it.
+ */
+export function settleEntitiesInstantly(
+  currentEntities: CelestialEntity[],
+  newEntities: CelestialEntity[]
+): void {
+  if (!Array.isArray(currentEntities) || !Array.isArray(newEntities)) return;
+  const settled: CelestialEntity[] = [];
+  newEntities.forEach((target, i) => {
+    if (!target) return;
+    const radius = isFinite(target.radius) && target.radius > 0 ? target.radius : 20;
+    const x = isFinite(target.x) ? target.x : 0;
+    const y = isFinite(target.y) ? target.y : 0;
+    const z = isFinite(target.z as number) ? (target.z as number) : 0;
+    const baseId = target.id || `${target.type}-${i}`;
+    const body: CelestialEntity = {
+      ...target,
+      id: `${baseId}~${Math.random().toString(36).substring(2, 8)}`,
+      x,
+      y,
+      z,
+      radius,
+      startX: x,
+      startY: y,
+      startZ: z,
+      startRadius: radius,
+      targetX: x,
+      targetY: y,
+      targetZ: z,
+      targetRadius: radius,
+      scale: 1.0,
+      startScale: 1.0,
+      targetScale: 1.0,
+      isDestroyed: false,
+      isSwallowing: false,
+      isBeingDragged: false,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+    };
+    if (body.centerX !== undefined && body.centerY !== undefined) {
+      body.orbitAngle = Math.atan2(y - body.centerY, x - body.centerX);
+      body.orbitRadius = Math.hypot(x - body.centerX, y - body.centerY);
+    }
+    settled.push(body);
+  });
+  currentEntities.length = 0;
+  settled.forEach((b) => currentEntities.push(b));
+}
+
+/**
  * Smoothly morphs current active celestial entities into target entities.
+ * (Legacy path; the cinematic director passes `{ instant: true }`.)
  */
 export function transitionToNewEntities(
   currentEntities: CelestialEntity[],
@@ -18,11 +74,18 @@ export function transitionToNewEntities(
   spawnX: number,
   spawnY: number,
   entityTransitionActiveRef: React.MutableRefObject<boolean>,
-  entityTransitionStartTimeRef: React.MutableRefObject<number>
+  entityTransitionStartTimeRef: React.MutableRefObject<number>,
+  options?: { instant?: boolean }
 ): void {
   if (!Array.isArray(currentEntities) || !Array.isArray(newEntities)) return;
   const safeSpawnX = isFinite(spawnX) ? spawnX : 0;
   const safeSpawnY = isFinite(spawnY) ? spawnY : 0;
+
+  if (options?.instant) {
+    settleEntitiesInstantly(currentEntities, newEntities);
+    if (entityTransitionActiveRef) entityTransitionActiveRef.current = false;
+    return;
+  }
 
   currentEntities.forEach((cur) => {
     cur.startX = cur.x;
