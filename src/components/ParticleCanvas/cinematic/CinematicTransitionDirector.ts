@@ -54,7 +54,7 @@ export interface ShotPreset {
 export const SHOT_PRESETS = {
   /** Portfolio stage → stage (typography). Short, gentle, readable. */
   stage: {
-    style: "pan", departMs: 760, holdMs: 160, revealMs: 1200,
+    style: "pan", departMs: 560, holdMs: 120, revealMs: 1200,
     yaw: 1.15, pitch: 0.1, dolly: 0.08, roll: 0.035, rackFocus: 1.0, fov: 0.0,
   },
   /** Interstellar scene → scene (catalog / sandbox / autopilot). */

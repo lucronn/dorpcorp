@@ -95,7 +95,7 @@ runTest("director: requests during DEPART coalesce by key and the heavier preset
   d.request({ key: "stage", preset: "stage", apply: () => log.push("b") }, 100);
   d.request({ key: "scene", preset: "supernova", apply: () => log.push("c") }, 120);
   assert.equal(d.pendingCount, 2);
-  // stage depart (760 ms) would be over by 900 ms; the supernova preset keeps departing.
+  // stage depart (560 ms) would be over by 900 ms; the supernova preset keeps departing.
   d.update(900);
   assert.equal(d.currentPhase, "DEPART");
   drive(d, 900, 7000);
