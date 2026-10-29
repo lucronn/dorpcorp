@@ -238,11 +238,31 @@ export default function App() {
     audio.setCinematicMode(isCinematicMode);
   }, [isCinematicMode]);
 
+  // Refs so the (mount-once) hotkey handler sees current values.
+  const stageForKeysRef = useRef(stage);
+  stageForKeysRef.current = stage;
+  const cinematicForKeysRef = useRef(isCinematicMode);
+  cinematicForKeysRef.current = isCinematicMode;
+
   // Global hotkeys [A], [C], [W], [N], [T], [P], [M], [Escape] for Autopilot, Cinema & Interstellar Sandbox state sync
+  // plus stage navigation: [↑]/[↓], [PageUp]/[PageDown], [1]–[6] (outside cinema mode, where digits pick camera modes).
   useEffect(() => {
+    const NUM_STAGES = 6;
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)) return;
+      if (!cinematicForKeysRef.current && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const cur = stageForKeysRef.current;
+        let next: number | null = null;
+        if (e.key === 'ArrowDown' || e.key === 'PageDown') next = Math.min(NUM_STAGES - 1, cur + 1);
+        else if (e.key === 'ArrowUp' || e.key === 'PageUp') next = Math.max(0, cur - 1);
+        else if (/^[1-6]$/.test(e.key)) next = parseInt(e.key, 10) - 1;
+        if (next !== null) {
+          e.preventDefault();
+          if (next !== cur) scrollToStage(next);
+          return;
+        }
+      }
       if (e.key === 'a' || e.key === 'A') {
         setIsAutopilot((prev) => {
           const next = !prev;
@@ -279,7 +299,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [scrollToStage]);
 
   useEffect(() => {
     let ticking = false;

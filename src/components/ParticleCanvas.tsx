@@ -43,6 +43,10 @@ import { GravitationalInteractionsOverlay } from "./ParticleCanvas/Gravitational
 import { SlingshotAimState, SlingshotProbe } from "./ParticleCanvas/SlingshotEngine";
 import { TdeState, createInitialTdeState, triggerTidalDisruptionEvent } from "./ParticleCanvas/TidalDisruptionEngine";
 import { TidalDisruptionFXInstance } from "./ParticleCanvas/TidalDisruptionFX";
+import { settleParticlesToTargets } from "./ParticleCanvas/ParticleMapper";
+import { CinematicRuntime, createCinematicRuntime } from "./ParticleCanvas/cinematic/CinematicRuntime";
+import { createCaptureState, CAPTURE_DEFAULT_DURATION_MS } from "./ParticleCanvas/cinematic/BlackHoleCapture";
+import { cinematicFx, resetCinematicFx } from "./ParticleCanvas/cinematic/CinematicFxBus";
 
 export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   stage,
@@ -237,6 +241,20 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   const entityTransitionActiveRef = useRef<boolean>(false);
   const entityTransitionStartTimeRef = useRef<number>(0);
 
+  // Cinematic director (hides every rebuild behind camera work), gravity rig and
+  // black-hole capture. Created lazily so SSR / tests never touch matchMedia.
+  const cinematicRef = useRef<CinematicRuntime | null>(null);
+  if (cinematicRef.current === null) {
+    const reduced =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    cinematicRef.current = createCinematicRuntime(reduced);
+  }
+  const hasInitializedRef = useRef<boolean>(false);
+  const prevStagePropRef = useRef<number>(stage);
+  const prevInterstellarPropRef = useRef<boolean>(isInterstellar);
+
   // Simulation State Refs
   const nextGeminiSceneRef = useRef<any>(null);
   const isFetchingGeminiRef = useRef<boolean>(false);
@@ -358,6 +376,77 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       onSequenceGenerated
     );
 
+  /** Same as generateInterstellarScene but settles bodies at their targets (no morph). */
+  const generateInterstellarSceneInstant = (
+    width: number,
+    height: number,
+    forceInterstellar = false,
+    supernovaX?: number,
+    supernovaY?: number
+  ) =>
+    _generateInterstellarScene(
+      width,
+      height,
+      isInterstellarRef.current,
+      forceInterstellar,
+      celestialEntitiesRef,
+      nextGeminiSceneRef,
+      isFetchingGeminiRef,
+      archetypeRef,
+      entityTransitionActiveRef,
+      entityTransitionStartTimeRef,
+      interstellarSceneGeneratedTimeRef,
+      supernovaX,
+      supernovaY,
+      onSequenceGenerated,
+      { instant: true }
+    );
+
+  /**
+   * Rebuilds the interstellar system fully formed: bodies at rest positions,
+   * particles at their targets. Only ever called while the director (or the
+   * wormhole / capture) has the subject hidden.
+   */
+  const rebuildInterstellarInstant = (
+    width: number,
+    height: number,
+    forceInterstellar = true,
+    supernovaX?: number,
+    supernovaY?: number
+  ) => {
+    generateInterstellarSceneInstant(width, height, forceInterstellar, supernovaX, supernovaY);
+    mapParticlesToInterstellar(width, height);
+    settleParticlesToTargets(particlesRef.current);
+  };
+
+  /** Lays the typography for `targetStage` out fully formed (hidden rebuild). */
+  const rebuildStageInstant = (targetStage: number) => {
+    stageRef.current = targetStage;
+    lastStageChangeRef.current = Date.now();
+    mapParticlesToStage(targetStage, false);
+    settleParticlesToTargets(particlesRef.current);
+    updateHudTexture(targetStage, hudPlaneRef.current, hudTextureRef.current);
+  };
+
+  /** Mapping helper for the wormhole: maps then settles (wormhole veils the subject). */
+  const mapParticlesToInterstellarSettled = (width: number, height: number) => {
+    mapParticlesToInterstellar(width, height);
+    settleParticlesToTargets(particlesRef.current);
+  };
+
+  const directorRequest = (
+    key: string,
+    preset: "stage" | "scene" | "supernova" | "emerge",
+    apply: () => void
+  ) => {
+    const cine = cinematicRef.current;
+    if (!cine || !hasInitializedRef.current) {
+      apply();
+      return;
+    }
+    cine.director.request({ key, preset, apply }, Date.now());
+  };
+
   const transitionToNewEntities = (
     newEntities: CelestialEntity[],
     spawnX?: number,
@@ -421,6 +510,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       },
       onDetonate: () => {
         isInterstellarRef.current = true;
+        // Recoil away from the blast; the new system assembles while the frame
+        // is filled by the remnant and is revealed already formed.
+        directorRequest("scene", "supernova", () =>
+          rebuildInterstellarInstant(window.innerWidth, window.innerHeight, true, posX, posY)
+        );
         celestialEntitiesRef.current.forEach((entity) => {
           entity.isDestroyed = true;
         });
@@ -449,13 +543,9 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         fetchNextGeminiScene();
       },
       onRebirth: () => {
-        if (cameraRef.current) {
-          transitionStartTimeRef.current = Date.now();
-          transitionActiveRef.current = true;
-          transitionStartPosRef.current = cameraRef.current.position.clone();
-        }
-        generateInterstellarScene(window.innerWidth, window.innerHeight, true, posX, posY);
-        mapParticlesToInterstellar(window.innerWidth, window.innerHeight);
+        // The rebuild already happened behind the director's recoil shot
+        // (onDetonate). Only a soft settling tremor remains here.
+        cameraShakeRef.current = Math.max(cameraShakeRef.current, 3.0);
       },
       onComplete: () => {
         if (animationComplete) animationComplete();
@@ -487,8 +577,9 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         cameraZRef,
         isInterstellarRef,
         nextGeminiSceneRef,
-        generateInterstellarScene,
-        mapParticlesToInterstellar,
+        generateInterstellarScene: (ww: number, wh: number, forceNew?: boolean) =>
+          generateInterstellarSceneInstant(ww, wh, forceNew ?? true),
+        mapParticlesToInterstellar: mapParticlesToInterstellarSettled,
         animationComplete,
         transitionStartTimeRef,
         transitionActiveRef,
@@ -498,6 +589,230 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       targetPos,
       viewDir
     );
+  };
+
+  const worldOf = (e: CelestialEntity) => ({
+    x: e.worldX !== undefined ? e.worldX : e.x - window.innerWidth / 2,
+    y: e.worldY !== undefined ? e.worldY : -(e.y - window.innerHeight / 2),
+    z: e.worldZ !== undefined ? e.worldZ : e.z || 0,
+  });
+
+  /**
+   * Spawns a small body just outside the frame, already moving, so it enters
+   * the shot naturally (used when a showcase needs a body the scene lacks).
+   */
+  const spawnRogueBody = (
+    type: "planet" | "star",
+    x: number,
+    y: number,
+    z: number,
+    vx: number,
+    vy: number,
+    radius: number,
+    color: string
+  ): CelestialEntity => {
+    const body = {
+      id: `rogue-${type}-${Math.random().toString(36).substring(2, 8)}`,
+      type,
+      x,
+      y,
+      z,
+      radius,
+      color,
+      mass: radius * radius,
+      initialMass: radius * radius,
+      scale: 1,
+      startScale: 1,
+      targetScale: 1,
+      startX: x,
+      startY: y,
+      targetX: x,
+      targetY: y,
+      startRadius: radius,
+      targetRadius: radius,
+      vx,
+      vy,
+      vz: 0,
+      isPhysicsEnabled: true,
+      isDestroyed: false,
+      isSwallowing: false,
+    } as CelestialEntity;
+    celestialEntitiesRef.current.push(body);
+    return body;
+  };
+
+  /** Sends the two closest free bodies into each other (collision showcase). */
+  const collideBodies = (): boolean => {
+    const bodies = celestialEntitiesRef.current.filter(
+      (e) =>
+        e &&
+        !e.isDestroyed &&
+        !e.isSwallowing &&
+        e.type !== "blackhole" &&
+        e.type !== "nebula" &&
+        e.type !== "galaxy"
+    );
+    if (bodies.length < 2) {
+      // Not enough free bodies: two planetesimals enter from opposite edges on a collision course.
+      const W = window.innerWidth;
+      const H = window.innerHeight;
+      const y = H * 0.42;
+      const z = bodies[0]?.z || 0;
+      spawnRogueBody("planet", -70, y - 40, z, 16, 1.1, 26, "#b8a58c");
+      spawnRogueBody("planet", W + 70, y + 40, z, -16, -1.1, 20, "#8c9bb0");
+      return true;
+    }
+    let best: [CelestialEntity, CelestialEntity] | null = null;
+    let bestD = Infinity;
+    for (let i = 0; i < bodies.length; i++) {
+      for (let j = i + 1; j < bodies.length; j++) {
+        const d = Math.hypot(
+          bodies[i]!.x - bodies[j]!.x,
+          bodies[i]!.y - bodies[j]!.y,
+          (bodies[i]!.z || 0) - (bodies[j]!.z || 0)
+        );
+        if (d > 1 && d < bestD) {
+          bestD = d;
+          best = [bodies[i]!, bodies[j]!];
+        }
+      }
+    }
+    if (!best) return false;
+    const [a, b] = best;
+    // Aim along the full 3D separation: the collision test is 3D, and bodies
+    // often sit at different depths.
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const dz = (b.z || 0) - (a.z || 0);
+    const d = Math.hypot(dx, dy, dz) || 1;
+    const speed = Math.min(16, Math.max(7, d / 45));
+    [a, b].forEach((e, idx) => {
+      const sgn = idx === 0 ? 1 : -1;
+      e.centerX = undefined;
+      e.centerY = undefined;
+      e.isPhysicsEnabled = true;
+      e.vx = (dx / d) * speed * sgn;
+      e.vy = (dy / d) * speed * sgn;
+      e.vz = (dz / d) * speed * sgn;
+    });
+    return true;
+  };
+
+  /** Drops the nearest free body into the black hole (tidal capture showcase). */
+  const feedBlackHole = (): boolean => {
+    const bh = celestialEntitiesRef.current.find((e) => e && !e.isDestroyed && e.type === "blackhole");
+    if (!bh) return false;
+    const victims = celestialEntitiesRef.current
+      .filter(
+        (e) =>
+          e &&
+          !e.isDestroyed &&
+          !e.isSwallowing &&
+          e !== bh &&
+          e.type !== "blackhole" &&
+          e.type !== "nebula" &&
+          e.type !== "galaxy"
+      )
+      .sort((p, q) => Math.hypot(p.x - bh.x, p.y - bh.y) - Math.hypot(q.x - bh.x, q.y - bh.y));
+    let v = victims[0];
+    if (!v) {
+      // Lone black hole: a wandering star drifts in from off-screen on a decaying orbit.
+      const fromLeft = bh.x > window.innerWidth / 2;
+      v = spawnRogueBody(
+        "star",
+        fromLeft ? -60 : window.innerWidth + 60,
+        Math.max(60, bh.y - window.innerHeight * 0.28),
+        bh.z || 0,
+        0,
+        0,
+        14,
+        "#ffd9a8"
+      );
+    }
+    const dx = bh.x - v.x;
+    const dy = bh.y - v.y;
+    const d = Math.hypot(dx, dy) || 1;
+    v.centerX = undefined;
+    v.centerY = undefined;
+    v.isPhysicsEnabled = true;
+    const speed = Math.min(14, Math.max(6, d / 50));
+    v.vx = (dx / d) * speed + (-dy / d) * speed * 0.35;
+    v.vy = (dy / d) * speed + (dx / d) * speed * 0.35;
+    return true;
+  };
+
+  /**
+   * Black-hole capture: the camera is taken over from its current pose (no
+   * snap), spirals in with tidal shake, lensing stretch and redshift, fades
+   * to black at the horizon, and the next scene is revealed via the
+   * director's "emerge" shot.
+   */
+  const plungeIntoBlackHole = (): boolean => {
+    const cine = cinematicRef.current;
+    const cam = cameraRef.current;
+    if (!cine || !cam || cine.capture || isTransitActiveRef.current) return false;
+    const bh = celestialEntitiesRef.current.find((e) => e && !e.isDestroyed && e.type === "blackhole");
+    if (!bh) return false;
+    const now = Date.now();
+    const base = {
+      x: cam.position.x - cine.appliedOffset.x,
+      y: cam.position.y - cine.appliedOffset.y,
+      z: cam.position.z - cine.appliedOffset.z,
+    };
+    const fwd = cine.smoothedForward ?? { x: -base.x, y: -base.y, z: -base.z };
+    const fl = Math.hypot(fwd.x, fwd.y, fwd.z) || 1;
+    const lookDist = Math.max(200, Math.hypot(base.x, base.y, base.z));
+    const look = {
+      x: base.x + (fwd.x / fl) * lookDist,
+      y: base.y + (fwd.y / fl) * lookDist,
+      z: base.z + (fwd.z / fl) * lookDist,
+    };
+    const bhRadius = bh.radius * (bh.scale && bh.scale > 0 ? bh.scale : 1);
+    transitionActiveRef.current = false;
+    transitionStartPosRef.current = null;
+    // Lensing intensifies through cinematicFx.capture, which ramps from 0, so
+    // the first capture frame matches the last free-flight frame exactly.
+    cine.capture = createCaptureState(now, base, look, worldOf(bh), bhRadius, CAPTURE_DEFAULT_DURATION_MS);
+
+    audio.playTidalDisruption?.("approach");
+    const timers = mappingTimersRef.current;
+    timers.push(setTimeout(() => audio.playTidalDisruption?.("spaghettify"), CAPTURE_DEFAULT_DURATION_MS * 0.42));
+    // Sub-bass horizon crossing.
+    timers.push(setTimeout(() => audio.playSupernova?.(), CAPTURE_DEFAULT_DURATION_MS * 0.8));
+
+    cine.onCaptureComplete = () => {
+      cine.onCaptureComplete = undefined;
+      // Screen is black: release the horizon zoom and park the camera where
+      // the base camera wants to be so the emerge shot pulls out cleanly.
+      targetZoomToHorizonRef.current = 0;
+      zoomToHorizonRef.current = 0;
+      (window as any).__targetHorizonZoom = 0;
+      cine.rig.reset();
+      const camNow = cameraRef.current;
+      if (camNow) {
+        camNow.position.set(0, 0, -cameraZRef.current);
+        cine.appliedOffset = { x: 0, y: 0, z: 0 };
+        cine.smoothedForward = { x: 0, y: 0, z: 1 };
+      }
+      cine.director.cutToHidden(
+        {
+          key: "scene",
+          preset: "emerge",
+          apply: () => {
+            if (isInterstellarRef.current) {
+              rebuildInterstellarInstant(window.innerWidth, window.innerHeight, true);
+            } else {
+              // Portfolio mode: recover to the same page with a fresh singularity backdrop.
+              generateInterstellarSceneInstant(window.innerWidth, window.innerHeight, false);
+              rebuildStageInstant(stageRef.current);
+            }
+            if (animationComplete) animationComplete();
+          },
+        },
+        Date.now()
+      );
+    };
+    return true;
   };
 
   const updateCelestial3DMeshes = () => {
@@ -539,40 +854,51 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   // Synchronize ref synchronously on render to prevent stale reads
   isInterstellarRef.current = isInterstellar;
 
+  // Every rebuild below is routed through the cinematic director: the camera
+  // pans / pulls focus away, the new layout is placed (fully formed) while the
+  // subject is veiled, then the camera returns to reveal it. Nothing morphs
+  // or teleports on screen.
   useEffect(() => {
-    const ww = window.innerWidth;
-    const wh = window.innerHeight;
+    if (!hasInitializedRef.current) return;
+    if (prevInterstellarPropRef.current === isInterstellar) return;
+    prevInterstellarPropRef.current = isInterstellar;
+    // A running wormhole / capture rebuilds the scene itself.
+    if (isTransitActiveRef.current || cinematicRef.current?.capture) return;
     if (isInterstellar) {
-      generateInterstellarScene(ww, wh, true);
-      mapParticlesToInterstellar(ww, wh);
+      directorRequest("scene", "scene", () =>
+        rebuildInterstellarInstant(window.innerWidth, window.innerHeight, true)
+      );
     } else {
-      mapParticlesToStage(stageRef.current, true);
+      directorRequest("scene", "scene", () => rebuildStageInstant(stageRef.current));
     }
   }, [isInterstellar]);
 
   useEffect(() => {
-    const prevStage = stageRef.current;
-    stageRef.current = stage;
-    lastStageChangeRef.current = Date.now();
-
-    if (prevStage !== stage && cameraRef.current) {
-      transitionStartTimeRef.current = Date.now();
-      transitionActiveRef.current = true;
-      transitionStartPosRef.current = cameraRef.current.position.clone();
+    if (!hasInitializedRef.current) {
+      stageRef.current = stage;
+      prevStagePropRef.current = stage;
+      return;
     }
+    if (prevStagePropRef.current === stage) return;
+    prevStagePropRef.current = stage;
 
     mappingTimersRef.current.forEach(clearTimeout);
     mappingTimersRef.current = [];
 
-    const isProjectToProject =
-      stage >= 2 && stage <= 5 && prevStage >= 2 && prevStage <= 5;
-
-    if (!isInterstellar) {
-      mapParticlesToStage(stage, !isProjectToProject);
+    const targetStage = stage;
+    if (!isInterstellarRef.current) {
+      directorRequest("stage", "stage", () => {
+        if (isInterstellarRef.current) {
+          stageRef.current = targetStage;
+          return;
+        }
+        rebuildStageInstant(targetStage);
+      });
     } else {
-      mapParticlesToInterstellar(window.innerWidth, window.innerHeight);
+      // Interstellar layout is unaffected by the stage; just track it.
+      stageRef.current = targetStage;
+      updateHudTexture(targetStage, hudPlaneRef.current, hudTextureRef.current);
     }
-    updateHudTexture(stage, hudPlaneRef.current, hudTextureRef.current);
   }, [stage, isInterstellar]);
 
   useEffect(() => {
@@ -801,28 +1127,25 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           animationComplete();
         }
 
-        const currentW = window.innerWidth;
-        const currentH = window.innerHeight;
-        generateInterstellarScene(currentW, currentH, true);
-        mapParticlesToInterstellar(currentW, currentH);
-
-        if (cameraRef.current && !isTransitActiveRef.current) {
-          transitionStartTimeRef.current = Date.now();
-          transitionActiveRef.current = true;
-          transitionStartPosRef.current = cameraRef.current.position.clone();
-        }
+        // Catalog jump: hidden rebuild behind a pan-away / rack-focus shot.
+        directorRequest("scene", "scene", () =>
+          rebuildInterstellarInstant(window.innerWidth, window.innerHeight, true)
+        );
       } catch (err) {
         console.error("[COSMIC DEBUG] Failed to activate sequence:", err);
       }
     };
 
-    generateInterstellarScene(ww, wh, isInterstellarRef.current);
+    generateInterstellarSceneInstant(ww, wh, isInterstellarRef.current);
     if (isInterstellarRef.current) {
       mapParticlesToInterstellar(ww, wh);
     } else {
       fetchNextGeminiScene();
       mapParticlesToStage(stageRef.current, false);
     }
+    prevInterstellarPropRef.current = isInterstellarRef.current;
+    prevStagePropRef.current = stageRef.current;
+    hasInitializedRef.current = true;
 
     const spawnTailParticle = (
       x: number,
@@ -965,6 +1288,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         tdeStateRef,
         activeTdeFxRef,
         onTdeStateChange: (info) => onTdeStateChangeRef.current?.(info),
+        cinematicRef,
       });
     };
 
@@ -1020,11 +1344,19 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       triggerSupernovaTransition: () => triggerSupernovaTransition(window.innerWidth / 2, window.innerHeight / 2),
       startWormholeTransit: () => startWormholeTransit(),
       generateInterstellarScene: (force?: boolean) => {
-        const ww = window.innerWidth;
-        const wh = window.innerHeight;
-        generateInterstellarScene(ww, wh, force ?? true);
-        mapParticlesToInterstellar(ww, wh);
+        directorRequest("scene", "scene", () =>
+          rebuildInterstellarInstant(window.innerWidth, window.innerHeight, force ?? true)
+        );
       },
+      collideBodies: () => collideBodies(),
+      feedBlackHole: () => feedBlackHole(),
+      plungeIntoBlackHole: () => plungeIntoBlackHole(),
+      getCinematicState: () => ({
+        phase: cinematicRef.current?.director.currentPhase ?? "IDLE",
+        capturing: Boolean(cinematicRef.current?.capture),
+        transitActive: Boolean(isTransitActiveRef.current),
+        fx: { ...cinematicFx },
+      }),
       nextScene: () => {
         if (Math.random() > 0.5) {
           triggerSupernovaTransition(window.innerWidth / 2, window.innerHeight / 2);
@@ -1115,7 +1447,33 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       }
     };
 
+    // Holding the horizon zoom at its limit hands the camera to the hole.
+    if (cinematicRef.current) {
+      cinematicRef.current.onHorizonHold = () => {
+        plungeIntoBlackHole();
+      };
+    }
+
+    const onCinematicKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable)) return;
+      if (e.key === "b" || e.key === "B") plungeIntoBlackHole();
+      else if (e.key === "k" || e.key === "K") collideBodies();
+      else if (e.key === "f" || e.key === "F") feedBlackHole();
+    };
+    window.addEventListener("keydown", onCinematicKey);
+
     return () => {
+      window.removeEventListener("keydown", onCinematicKey);
+      if (cinematicRef.current) {
+        cinematicRef.current.director.reset(false);
+        cinematicRef.current.rig.reset();
+        cinematicRef.current.capture = null;
+        cinematicRef.current.onCaptureComplete = undefined;
+        cinematicRef.current.onHorizonHold = undefined;
+      }
+      resetCinematicFx();
+      hasInitializedRef.current = false;
       mappingTimersRef.current.forEach(clearTimeout);
       mappingTimersRef.current = [];
 
@@ -1170,6 +1528,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       delete (window as any).__anamorphicFlare;
       delete (window as any).__dofEnabled;
       delete (window as any).__targetHorizonZoom;
+      delete (window as any).__horizonPushAt;
       delete (window as any).__horizonZoom;
       delete (window as any).__shatterIntensity;
       delete (window as any).__hasShatteredSound;

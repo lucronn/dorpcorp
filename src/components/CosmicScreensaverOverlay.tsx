@@ -124,9 +124,13 @@ export const CosmicScreensaverOverlay: React.FC<CosmicScreensaverOverlayProps> =
 
     const canvasApi = (window as any).__cosmicCanvas;
     if (canvasApi) {
-      // Alternate between wormhole and supernova crossfade
+      // Black-hole systems may end with the camera being captured by the hole;
+      // otherwise alternate between wormhole and supernova crossfade.
+      const usePlunge = currentArchetype === "BLACKHOLE_CENTRIC" && Math.random() > 0.4;
       const useWormhole = Math.random() > 0.45;
-      if (useWormhole && canvasApi.startWormholeTransit) {
+      if (usePlunge && canvasApi.plungeIntoBlackHole?.()) {
+        setEventNotification("Event Horizon Crossing: Camera Captured");
+      } else if (useWormhole && canvasApi.startWormholeTransit) {
         setEventNotification("Einstein-Rosen Wormhole Transit Engaged");
         canvasApi.startWormholeTransit();
       } else if (canvasApi.triggerSupernovaTransition) {
@@ -147,7 +151,7 @@ export const CosmicScreensaverOverlay: React.FC<CosmicScreensaverOverlayProps> =
       transitionTriggeredRef.current = false;
       setEventNotification(null);
     }, 3200);
-  }, [getNextArchetype]);
+  }, [getNextArchetype, currentArchetype]);
 
   // Main autonomous clock timer
   useEffect(() => {

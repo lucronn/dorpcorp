@@ -209,6 +209,7 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
     if (nearest) {
       isDragging = true;
       draggedEntity = nearest;
+      (nearest as CelestialEntity).isBeingDragged = true;
       dragOffsetX = (nearest as CelestialEntity).x - clickX;
       dragOffsetY = (nearest as CelestialEntity).y - clickY;
       dragDistance = 0;
@@ -370,6 +371,13 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
         draggedEntity.vx = (draggedEntity.vx || 0) * 1.5;
         draggedEntity.vy = (draggedEntity.vy || 0) * 1.5;
       }
+      if (draggedEntity) {
+        draggedEntity.isBeingDragged = false;
+        // A flick keeps its momentum: hand the body to the physics integrator.
+        if (Math.hypot(draggedEntity.vx || 0, draggedEntity.vy || 0) > 0.6) {
+          draggedEntity.isPhysicsEnabled = true;
+        }
+      }
       isDragging = false;
       draggedEntity = null;
     }
@@ -527,6 +535,7 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
       if (nearest) {
         isDragging = true;
         draggedEntity = nearest;
+        (nearest as CelestialEntity).isBeingDragged = true;
         dragOffsetX = (nearest as CelestialEntity).x - clickX;
         dragOffsetY = (nearest as CelestialEntity).y - clickY;
         dragDistance = 0;
@@ -559,6 +568,13 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
         ctx.audio.playRippleShockwave();
         draggedEntity.vx = (draggedEntity.vx || 0) * 1.5;
         draggedEntity.vy = (draggedEntity.vy || 0) * 1.5;
+      }
+      if (draggedEntity) {
+        draggedEntity.isBeingDragged = false;
+        // A flick keeps its momentum: hand the body to the physics integrator.
+        if (Math.hypot(draggedEntity.vx || 0, draggedEntity.vy || 0) > 0.6) {
+          draggedEntity.isPhysicsEnabled = true;
+        }
       }
       isDragging = false;
       draggedEntity = null;
@@ -694,6 +710,12 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
       if (!isSandboxOrCinematic && e.deltaY > 0 && currentTarget <= 0.01) {
         // User is scrolling down from Stage 0 to Stage 1 — allow native page scroll
         return;
+      }
+
+      // Still pushing in at the zoom limit: the render loop treats sustained
+      // pushing as intent to cross the horizon (black-hole capture).
+      if (e.deltaY < 0 && currentTarget >= 1.0) {
+        (window as any).__horizonPushAt = Date.now();
       }
 
       const zoomStep = -e.deltaY * 0.0016;
