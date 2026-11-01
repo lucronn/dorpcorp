@@ -205,9 +205,11 @@ export function updateCelestial3DMeshes(
             : Math.max(0.75, 1.0 - choreography.tension * 0.08);
           entity.orbitRadius = entity.baseOrbitRadius * compactionFactor;
 
-          const tiltY = isCompactBinary ? 0.72 : 0.82;
+          const inclination = entity.orbitInclination ?? Math.acos(isCompactBinary ? 0.72 : 0.82);
+          const tiltY = Math.cos(inclination);
           entity.x = entity.centerX + Math.cos(entity.orbitAngle) * entity.orbitRadius;
           entity.y = entity.centerY + Math.sin(entity.orbitAngle) * entity.orbitRadius * tiltY;
+          entity.z = Math.sin(entity.orbitAngle) * entity.orbitRadius * Math.sin(inclination);
         } else if (entity.isPhysicsEnabled && !entity.isSwallowing) {
           entity.x += entity.vx || 0;
           entity.y += entity.vy || 0;

@@ -25,6 +25,7 @@ export interface WormholeTransitParams {
   transitionActiveRef?: React.MutableRefObject<number | boolean>;
   transitionStartPosRef?: React.MutableRefObject<BABYLON.Vector3 | null>;
   audio?: any;
+  cancelTransitRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 export async function startWormholeTransit(
@@ -54,6 +55,7 @@ export async function startWormholeTransit(
     transitionActiveRef,
     transitionStartPosRef,
     audio,
+    cancelTransitRef,
   } = params;
 
   if (isTransitActiveRef.current) return;
@@ -290,7 +292,7 @@ export async function startWormholeTransit(
 
     let transitObserver: BABYLON.Observer<BABYLON.Scene> | null =
       scene.onBeforeRenderObservable.add(() => {
-        if (!isTransitActiveRef.current || !camera || scene.isDisposed) return;
+        if (!isTransitActiveRef.current || transitStartTimeRef.current !== transitStartTime || !camera || scene.isDisposed) return;
 
         const elapsed = Date.now() - transitStartTime;
         const progress = Math.min(1.0, Math.max(0.0, elapsed / transitDurationMs));
@@ -333,8 +335,8 @@ export async function startWormholeTransit(
           }
         });
 
-        // At 65% of the transit (while inside the wormhole throat at peak swirl), seed the new cosmic system
-        if (progress >= 0.65 && !hasSpawnedNewSystem) {
+        // Cut inside the throat; keep the remap covered through the camera handoff.
+        if (progress >= 0.82 && !hasSpawnedNewSystem) {
           hasSpawnedNewSystem = true;
           const ww = window.innerWidth;
           const wh = window.innerHeight;
@@ -344,13 +346,56 @@ export async function startWormholeTransit(
         }
       });
 
-    setTimeout(() => {
+    const disposeTunnel = () => {
+      const materialsToDispose = new Set<BABYLON.Material>();
+      if (tunnelMesh) {
+        if (tunnelMesh.material) materialsToDispose.add(tunnelMesh.material);
+        tunnelMesh.dispose();
+        tunnelMesh = null;
+      }
+      flyingObjects.forEach((m) => {
+        if (m && !m.isDisposed()) {
+          if (m.material) materialsToDispose.add(m.material);
+          m.dispose();
+        }
+      });
+      flyingObjects = [];
+      materialsToDispose.forEach((mat) => {
+        try {
+          const textures = (mat as any).getActiveTextures ? (mat as any).getActiveTextures() : [];
+          textures.forEach((tex: any) => tex?.dispose?.());
+          mat.dispose();
+        } catch {}
+      });
+    };
+
+    let completionTimer: ReturnType<typeof setTimeout>;
+    if (cancelTransitRef) {
+      cancelTransitRef.current = () => {
+        clearTimeout(completionTimer);
+        if (transitObserver) scene.onBeforeRenderObservable.remove(transitObserver);
+        transitObserver = null;
+        disposeTunnel();
+        isTransitActiveRef.current = false;
+        transitStartTimeRef.current = 0;
+        wormholeIntensityRef.current = 0;
+        camera.fov = baseFov;
+        cancelTransitRef.current = null;
+      };
+    }
+
+    completionTimer = setTimeout(() => {
       try {
         if (!scene || scene.isDisposed) return;
 
         if (transitObserver) {
           scene.onBeforeRenderObservable.remove(transitObserver);
           transitObserver = null;
+        }
+
+        if (transitStartTimeRef.current !== transitStartTime) {
+          disposeTunnel();
+          return;
         }
 
         scene.stopAnimation(camera);
@@ -368,40 +413,11 @@ export async function startWormholeTransit(
           mapParticlesToInterstellar(ww, wh);
         }
 
-        // Smoothly hand off camera position to RenderEngine's orbital interpolator without a jump cut
-        if (transitionStartPosRef && transitionActiveRef && transitionStartTimeRef) {
-          transitionStartPosRef.current = camera.position.clone();
-          transitionStartTimeRef.current = Date.now();
-          transitionActiveRef.current = true;
-        } else {
-          const cameraZ = cameraZRef.current;
-          camera.position.set(0, 0, -cameraZ);
-          if (typeof camera.setTarget === "function") {
-            camera.setTarget(BABYLON.Vector3.Zero());
-          }
-        }
+        if (transitionActiveRef) transitionActiveRef.current = false;
+        if (transitionStartPosRef) transitionStartPosRef.current = null;
 
-        const materialsToDispose = new Set<BABYLON.Material>();
-        if (tunnelMesh) {
-          if (tunnelMesh.material) materialsToDispose.add(tunnelMesh.material);
-          tunnelMesh.dispose();
-          tunnelMesh = null;
-        }
-        flyingObjects.forEach((m) => {
-          if (m && !m.isDisposed) {
-            if (m.material) materialsToDispose.add(m.material);
-            m.dispose();
-          }
-        });
-        flyingObjects = [];
-        materialsToDispose.forEach((mat) => {
-          try {
-            const textures = (mat as any).getActiveTextures ? (mat as any).getActiveTextures() : [];
-            textures.forEach((tex: any) => tex?.dispose?.());
-            mat.dispose();
-          } catch {}
-        });
-
+        disposeTunnel();
+        if (cancelTransitRef) cancelTransitRef.current = null;
         isTransitActiveRef.current = false;
 
         if (animationComplete) {

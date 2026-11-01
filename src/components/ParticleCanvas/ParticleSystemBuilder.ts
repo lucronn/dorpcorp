@@ -1,4 +1,5 @@
 import * as BABYLON from "@babylonjs/core";
+import { initializeParticleVolume } from "./ParticleVolume";
 import { Particle } from "../../types";
 import { generateTargetsForStage } from "./ParticleUtils";
 import { syncParticleColors } from "./ParticleMapper";
@@ -118,6 +119,8 @@ export function buildParticleSystem(
       driftSpeed: 0.03,
     });
   }
+
+  tempParticles.forEach((p, i) => initializeParticleVolume(p, i));
 
   // Deep-space ambient field stardust
   const starColors = ["#ffffff", "#e0f7fa", "#b3e5fc", "#fffde7", "#ffe082", "#ffab91", "#f48fb1"];

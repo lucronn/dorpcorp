@@ -11,125 +11,29 @@ import {
 
 export { _startWormholeTransit as startWormholeTransit, updateTypographyStage, disperseTypographyParticles };
 
-/**
- * Smoothly transitions current active celestial entities into target entities
- * using natural 3D deep-space float-away and discovery kinematics.
- */
+/** Replace entities at their final coordinates under ParticleCanvas's remesh cover. */
 export function transitionToNewEntities(
   currentEntities: CelestialEntity[],
   newEntities: CelestialEntity[],
-  spawnX: number,
-  spawnY: number,
+  _spawnX: number,
+  _spawnY: number,
   entityTransitionActiveRef: React.MutableRefObject<boolean>,
   entityTransitionStartTimeRef: React.MutableRefObject<number>,
-  driftVector?: { x: number; y: number; z: number }
+  _driftVector?: { x: number; y: number; z: number }
 ): void {
-  const isInitialMount = currentEntities.length === 0;
-
-  if (isInitialMount) {
-    newEntities.forEach((target, i) => {
-      const targetZ = target.z ?? 0;
-      currentEntities.push({
-        ...target,
-        x: target.x,
-        y: target.y,
-        z: targetZ,
-        startX: target.x,
-        startY: target.y,
-        startZ: targetZ,
-        scale: target.scale ?? 1.0,
-        startScale: target.scale ?? 1.0,
-        targetScale: 1.0,
-        isOutgoing: false,
-        isDestroyed: false,
-        baseOrbitRadius: target.orbitRadius,
-        id: target.id || `${target.type}-${i}-${Math.random().toString(36).substring(2, 9)}`,
-        startRadius: target.radius,
-        targetX: target.x,
-        targetY: target.y,
-        targetZ,
-        targetRadius: target.radius,
-      });
-    });
-    entityTransitionActiveRef.current = false;
-    return;
-  }
-
-  const drift =
-    driftVector ||
-    (typeof window !== "undefined" ? (window as any).__voyageDriftDir : null) ||
-    (() => {
-      const angle = Math.random() * Math.PI * 2;
-      const pitch = 0.2 + Math.random() * 0.35;
-      return {
-        x: Math.cos(angle) * Math.cos(pitch),
-        y: Math.sin(pitch),
-        z: Math.sin(angle) * Math.cos(pitch),
-      };
-    })();
-
-  // Prune finished entities and retire already-outgoing entities from prior overlapping transitions
-  for (let i = currentEntities.length - 1; i >= 0; i--) {
-    const ent = currentEntities[i]!;
-    if ((ent.isDestroyed || ent.isOutgoing) && (ent.scale ?? 1) <= 0.03) {
-      ent.isDestroyed = true;
-      currentEntities.splice(i, 1);
-    } else if (ent.isOutgoing) {
-      // Already outgoing from an earlier transition: mark destroyed so it shrinks out rapidly
-      ent.isDestroyed = true;
-    }
-  }
-
-  currentEntities.forEach((cur) => {
-    if (cur.isDestroyed) return;
-
-    cur.startX = cur.x;
-    cur.startY = cur.y;
-    cur.startZ = cur.z ?? 0;
-    cur.startRadius = cur.radius;
-    cur.startScale = cur.scale ?? 1.0;
-
-    // Outgoing entities recede smoothly backwards into deep space without instant destruction
-    cur.targetX = cur.x - drift.x * 2200;
-    cur.targetY = cur.y - drift.y * 1100;
-    cur.targetZ = (cur.z ?? 0) + 3200;
-    cur.targetRadius = Math.max(4, cur.radius * 0.25);
-    cur.targetScale = 0.0;
-    cur.isOutgoing = true;
-  });
-
-  newEntities.forEach((target, i) => {
-    // Incoming entities emerge from deep space along the forward flight trajectory
-    const startX = target.x + drift.x * 2400;
-    const startY = target.y + drift.y * 1200;
-    const startZ = -3400;
-
-    const curNew: CelestialEntity = {
-      ...target,
-      x: startX,
-      y: startY,
-      z: startZ,
-      startX: startX,
-      startY: startY,
-      startZ: startZ,
-      scale: 0.02,
-      startScale: 0.02,
-      targetScale: 1.0,
-      isOutgoing: false,
-      isDestroyed: false,
-      baseOrbitRadius: target.orbitRadius,
-      id: target.id || `${target.type}-${i}-${Math.random().toString(36).substring(2, 9)}`,
-      startRadius: Math.max(2, target.radius * 0.15),
-      targetX: target.x,
-      targetY: target.y,
-      targetZ: target.z ?? 0,
-      targetRadius: target.radius,
-    };
-    currentEntities.push(curNew);
-  });
-
-  entityTransitionActiveRef.current = true;
-  entityTransitionStartTimeRef.current = Date.now();
+  const formed = newEntities.map((target, i) => ({
+    ...target,
+    z: target.z ?? 0,
+    scale: 1,
+    targetScale: 1,
+    isOutgoing: false,
+    isDestroyed: false,
+    baseOrbitRadius: target.orbitRadius,
+    id: target.id || `${target.type}-${i}-${Math.random().toString(36).substring(2, 9)}`,
+  }));
+  currentEntities.splice(0, currentEntities.length, ...formed);
+  entityTransitionActiveRef.current = false;
+  entityTransitionStartTimeRef.current = 0;
 }
 
 /**

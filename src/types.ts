@@ -23,6 +23,10 @@ export interface Particle {
   orbitAngle?: number;
   orbitSpeed?: number;
   galaxyZOffset?: number;
+  volumeHeight?: number;
+  volumeLatitude?: number;
+  isDustDisk?: boolean;
+  needsRemesh?: boolean;
   isPlanetRing?: boolean;
   bridgeStartEntityIndex?: number;
   bridgeStartEntity?: any;

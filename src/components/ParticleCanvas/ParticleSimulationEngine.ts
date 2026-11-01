@@ -1,3 +1,5 @@
+import { settleRemappedParticle } from "./RemeshCover";
+import { updateParticleVolumeTarget, updateBackgroundVolumeTarget } from "./ParticleVolume";
 import * as BABYLON from "@babylonjs/core";
 import { Particle } from "../../types";
 import { CelestialEntity, ParticleFilters } from "./types";
@@ -206,27 +208,10 @@ export function simulateParticles(
         const ambSpeedMult = (ambientParticleSpeed ?? 0.15) / 0.15;
         p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.012) * ambSpeedMult;
 
-        const rx = p.orbitRadius || 20;
-        const ry = p.galaxyType === "spiral" ? rx * 0.35 : rx * 0.8;
-        const ox = Math.cos(p.orbitAngle) * rx;
-        const oy = Math.sin(p.orbitAngle) * ry;
-
-        const cosP = Math.cos(p.galaxyPitch || 0);
-        const sinP = Math.sin(p.galaxyPitch || 0);
-        const cosY = Math.cos(p.galaxyYaw || 0);
-        const sinY = Math.sin(p.galaxyYaw || 0);
-
-        const lx = ox * cosY - oy * sinY * cosP;
-        const ly = ox * sinY + oy * cosY * cosP;
-        const lz = oy * sinP;
-
-        const gx = (p.galaxyX || 0) + lx;
-        const gy = (p.galaxyY || 0) + ly;
-        const gz = (p.galaxyZ || 1600) + lz;
-
-        positions[i * 3] = gx;
-        positions[i * 3 + 1] = -gy;
-        positions[i * 3 + 2] = gz;
+        updateBackgroundVolumeTarget(p);
+        positions[i * 3] = p.targetX;
+        positions[i * 3 + 1] = -p.targetY;
+        positions[i * 3 + 2] = p.targetZ!;
 
         if (!particleFilters.ambient) {
           colors[i * 4] = 0;
@@ -419,86 +404,19 @@ export function simulateParticles(
           if (activeEntityIdx !== -1) {
             p.interstellarEntityIndex = activeEntityIdx;
             p.interstellarEntity = celestialEntities[activeEntityIdx];
+            p.interstellarType = "blackhole";
             p.orbitRadius = (p.orbitRadius || 50) * 0.96;
             entity = p.interstellarEntity;
           }
         }
 
         if (entity) {
-          const ez = entity.z || 0;
-          if (entity.type === "blackhole") {
-            const rx = (p.orbitRadius || 50) * densityCompaction;
-            const ry = rx * 0.25;
-            const theta = 0.05;
-            const cosT = Math.cos(theta);
-            const sinT = Math.sin(theta);
-            const ox = Math.cos(p.orbitAngle) * rx;
-            const oy = Math.sin(p.orbitAngle) * ry;
-            p.targetX = entity.x + (ox * cosT - oy * sinT);
-            p.targetY = entity.y + (ox * sinT + oy * cosT);
-            p.targetZ = ez + Math.sin(p.orbitAngle) * rx * 0.55;
-          } else {
-            if (p.isPlanetRing) {
-              const rx = (p.orbitRadius || 50) * densityCompaction;
-              const ry = rx * 0.22;
-              const theta = 0.3;
-              const cosT = Math.cos(theta);
-              const sinT = Math.sin(theta);
-              const ox = Math.cos(p.orbitAngle) * rx;
-              const oy = Math.sin(p.orbitAngle) * ry;
-              p.targetX = entity.x + (ox * cosT - oy * sinT);
-              p.targetY = entity.y + (ox * sinT + oy * cosT);
-              p.targetZ = ez + Math.sin(p.orbitAngle) * rx * 0.4;
-            } else {
-              const rx = (p.orbitRadius || 50) * densityCompaction;
-              const ry = rx * 0.7;
-              const theta = -0.15;
-              const cosT = Math.cos(theta);
-              const sinT = Math.sin(theta);
-              const ox = Math.cos(p.orbitAngle) * rx;
-              const oy = Math.sin(p.orbitAngle) * ry;
-              p.targetX = entity.x + (ox * cosT - oy * sinT);
-              p.targetY = entity.y + (ox * sinT + oy * cosT);
-              p.targetZ = ez + Math.sin(p.orbitAngle) * rx * 0.4;
-            }
-          }
+          updateParticleVolumeTarget(p, entity, densityCompaction);
         }
-      } else if (p.interstellarType === "galaxy") {
-        const galSpeed = (p.orbitSpeed || 0.006) * 0.45 * localTimeDilation * musicSpeedFactor * objSpeedMult;
-        p.orbitAngle = (p.orbitAngle || 0) + galSpeed;
-        const entity = p.interstellarEntity || celestialEntities[p.interstellarEntityIndex || 0];
-        const cx = entity ? entity.x : currentW / 2;
-        const cy = entity ? entity.y : currentH / 2;
-        const cz = entity ? (entity.z || 0) : 0;
-        const r = (p.orbitRadius || 100) * densityCompaction;
-
-        const inc = Math.PI / 4.2;
-        const cosInc = Math.cos(inc);
-        const sinInc = Math.sin(inc);
-
-        const ox = Math.cos(p.orbitAngle) * r;
-        const oy = Math.sin(p.orbitAngle) * r * cosInc;
-        const oz = Math.sin(p.orbitAngle) * r * sinInc + (p.galaxyZOffset || 0);
-
-        p.targetX = cx + ox;
-        p.targetY = cy + oy;
-        p.targetZ = cz + oz;
-      } else if (p.interstellarType === "pulsar_ring") {
-        p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.02) * 0.45 * localTimeDilation * musicSpeedFactor * objSpeedMult;
-        const entity = p.interstellarEntity || celestialEntities[p.interstellarEntityIndex || 0];
-        const cx = entity ? entity.x : currentW / 2;
-        const cy = entity ? entity.y : currentH / 2;
-        const cz = entity ? (entity.z || 0) : 0;
-        const r = (p.orbitRadius || 50) * densityCompaction;
-
-        const wavePulse = 1.0 + Math.sin(time * 0.006 + (p.orbitRadius || 0) * 0.05) * (0.08 + choreography.climaxPulse * 0.08);
-        const ox = Math.cos(p.orbitAngle) * r * wavePulse;
-        const oy = Math.sin(p.orbitAngle) * r * 0.35 * wavePulse;
-        const oz = Math.sin(p.orbitAngle) * r * 0.65;
-
-        p.targetX = cx + ox;
-        p.targetY = cy + oy;
-        p.targetZ = cz + oz;
+      } else if (p.interstellarType === "galaxy" || p.interstellarType === "pulsar_ring") {
+        p.orbitAngle = (p.orbitAngle ?? 0) + (p.orbitSpeed ?? 0.006) * 0.45 * localTimeDilation * musicSpeedFactor * objSpeedMult;
+        const entity = p.interstellarEntity || celestialEntities[p.interstellarEntityIndex ?? 0];
+        updateParticleVolumeTarget(p, entity, densityCompaction);
       } else if (p.interstellarType === "pulsar_jet") {
         const jetSpeed = (p.orbitSpeed || 0.035) * localTimeDilation * musicSpeedFactor * objSpeedMult;
         p.orbitAngle = (p.orbitAngle || 0) + jetSpeed;
@@ -520,13 +438,7 @@ export function simulateParticles(
         p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.002) * 0.45 * localTimeDilation * musicSpeedFactor * objSpeedMult;
         const entity = p.interstellarEntity || celestialEntities[p.interstellarEntityIndex || 0];
         if (entity) {
-          const angle = p.orbitAngle + i;
-          const rad =
-            ((p.orbitRadius || entity.radius * 0.5) * densityCompaction) +
-            Math.sin(time * 0.01 + i) * 10;
-          p.targetX = entity.x + Math.cos(angle) * rad;
-          p.targetY = entity.y + Math.sin(angle) * rad;
-          p.targetZ = (entity.z || 0) + Math.sin(time * 0.008 + i * 0.1) * 25;
+          updateParticleVolumeTarget(p, entity, densityCompaction);
         }
       } else if (p.interstellarType === "bridge") {
         p.bridgeProgress =
@@ -558,34 +470,12 @@ export function simulateParticles(
       } else if (p.interstellarType === "background_galaxy") {
         p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.012) * localTimeDilation * musicSpeedFactor * ambSpeedMult;
         
-        const rx = p.orbitRadius || 20;
-        const ry = p.galaxyType === "spiral" ? rx * 0.35 : rx * 0.8;
-        const ox = Math.cos(p.orbitAngle) * rx;
-        const oy = Math.sin(p.orbitAngle) * ry;
-        
-        const cosP = Math.cos(p.galaxyPitch || 0);
-        const sinP = Math.sin(p.galaxyPitch || 0);
-        const cosY = Math.cos(p.galaxyYaw || 0);
-        const sinY = Math.sin(p.galaxyYaw || 0);
-        
-        const lx = ox * cosY - oy * sinY * cosP;
-        const ly = ox * sinY + oy * cosY * cosP;
-        const lz = oy * sinP;
-        
-        p.targetX = (p.galaxyX || 0) + lx;
-        p.targetY = (p.galaxyY || 0) + ly;
-        p.targetZ = (p.galaxyZ || 1600) + lz;
+        updateBackgroundVolumeTarget(p);
       } else if (p.interstellarType === "star") {
         const entity = p.interstellarEntity || celestialEntities[p.interstellarEntityIndex || 0];
         if (entity && p.orbitRadius) {
           p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.015) * 0.45 * localTimeDilation * musicSpeedFactor * objSpeedMult;
-          const r = p.orbitRadius * densityCompaction;
-          const ox = Math.cos(p.orbitAngle) * r;
-          const oy = Math.sin(p.orbitAngle) * (r * 0.65);
-          const oz = Math.sin(p.orbitAngle * 2) * (r * 0.35);
-          p.targetX = entity.x + ox;
-          p.targetY = entity.y + oy;
-          p.targetZ = (entity.z || 0) + oz;
+          updateParticleVolumeTarget(p, entity, densityCompaction);
         } else {
           p.targetX += Math.sin(time * 0.01 + i) * 0.05 * objSpeedMult;
           p.targetY += Math.cos(time * 0.01 + i) * 0.05 * objSpeedMult;
@@ -718,22 +608,26 @@ export function simulateParticles(
         if (entity.isOutgoing) return;
         const bdx = entity.x - p.x;
         const bdy = entity.y - p.y;
-        const bdist = Math.sqrt(bdx * bdx + bdy * bdy) || 1;
+        const bdz = (entity.z ?? 0) - p.z;
+        const distance3D = Math.hypot(bdx, bdy, bdz) || 1;
         const colDist = entity.radius + colOffset;
-        if (bdist < colDist && !p.isTail) {
-          const nx = bdx / bdist;
-          const ny = bdy / bdist;
+        if (distance3D < colDist && !p.isTail) {
+          const nx = bdx / distance3D;
+          const ny = bdy / distance3D;
+          const nz = bdz / distance3D;
           
-          const dot = p.vx * nx + p.vy * ny;
+          const dot = p.vx * nx + p.vy * ny + p.vz * nz;
           if (dot > 0) {
             p.vx -= 2 * dot * nx;
             p.vy -= 2 * dot * ny;
+            p.vz -= 2 * dot * nz;
             p.vx += (Math.random() - 0.5) * 4;
             p.vy += (Math.random() - 0.5) * 4;
           }
           
           p.x = entity.x - nx * (colDist + 1);
           p.y = entity.y - ny * (colDist + 1);
+          p.z = (entity.z ?? 0) - nz * (colDist + 1);
         }
       });
     }
@@ -937,6 +831,12 @@ export function simulateParticles(
       finalZ -= 3000 * pullFactor * (Math.random() * 0.8 + 0.2);
     }
 
+    if (p.needsRemesh && !isTransitActive) {
+      settleRemappedParticle(p);
+      finalX = p.x - currentW / 2;
+      finalY = -(p.y - currentH / 2);
+      finalZ = p.z;
+    }
     positions[i * 3] = finalX;
     positions[i * 3 + 1] = finalY;
     positions[i * 3 + 2] = finalZ;

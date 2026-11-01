@@ -1,4 +1,5 @@
 import React from "react";
+import type { RemeshCover } from "./RemeshCover";
 import * as BABYLON from "@babylonjs/core";
 import { Particle } from "../../types";
 import { CelestialEntity, ParticleFilters } from "./types";
@@ -13,6 +14,7 @@ import { spawnTidalDisruptionFX, TidalDisruptionFXInstance } from "./TidalDisrup
 import { quinticEaseInOut, computeSceneChoreography } from "./PhysicsUtils";
 
 export interface RenderEngineContext {
+  remeshCover: RemeshCover;
   particlesRef: React.MutableRefObject<Particle[]>;
   pointsMeshRef: React.MutableRefObject<BABYLON.Mesh | null>;
   hudPlaneRef: React.MutableRefObject<BABYLON.Mesh | null>;
@@ -96,6 +98,16 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
   const currentH = window.innerHeight;
 
   const now = Date.now();
+  const reducedMotion = ctx.remeshCover.reducedMotion;
+  if (ctx.remeshCover.covered) {
+    // The new camera pose is installed under the cut, before any reveal.
+    ctx.transitionActiveRef.current = false;
+    ctx.transitionStartPosRef.current = null;
+    ctx.cameraShakeRef.current = 0;
+    // Open each orbit shot from the readable side of the particle typography.
+    ctx.inputControllerRef.current.currentOrbitAngle = Math.PI;
+  }
+  if (reducedMotion) ctx.cameraShakeRef.current = 0;
   const speedMult = ctx.cinematicSpeedMultiplierRef?.current ?? (window as any).__cinematicSpeedMultiplier ?? 1.0;
   const dt = ctx.rendererRef.current ? ctx.rendererRef.current.getDeltaTime() : 16.666;
   const globalTimeMultiplier = Math.min((dt / 16.666) * speedMult, 3.0);
@@ -480,7 +492,7 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
   const isCinematic = (ctx.isCinematicModeRef?.current) || (window as any).__cinematicMode;
   const camMode = ctx.cinematicCameraModeRef?.current || (window as any).__cinematicCameraMode || 'orbit';
 
-  if (isCinematic || ctx.isInterstellarRef.current) {
+  if (!reducedMotion && (isCinematic || ctx.isInterstellarRef.current)) {
     if (camMode === 'horizon') {
       // EVENT HORIZON CLOSE-UP: Low-angle dramatic pass skimming photon sphere of the black hole
       const bh = ctx.celestialEntitiesRef.current.find((e) => e && !e.isDestroyed && !e.isOutgoing && e.type === "blackhole");
@@ -714,9 +726,10 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
         const sTargetY = isNaN(finalTargetY) ? 0 : finalTargetY;
         const sTargetZ = isNaN(finalTargetZ) ? -cameraZ : finalTargetZ;
 
-        camera.position.x += (sTargetX - camera.position.x) * 0.032 + shakeX;
-        camera.position.y += (sTargetY - camera.position.y) * 0.032 + shakeY;
-        camera.position.z += (sTargetZ - camera.position.z) * 0.032 + shakeZ;
+        const cameraBlend = ctx.remeshCover.covered ? 1 : 0.032;
+        camera.position.x += (sTargetX - camera.position.x) * cameraBlend + shakeX;
+        camera.position.y += (sTargetY - camera.position.y) * cameraBlend + shakeY;
+        camera.position.z += (sTargetZ - camera.position.z) * cameraBlend + shakeZ;
 
         if (camera.minZ > 0.5) {
           camera.minZ = 0.5;
@@ -739,14 +752,14 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
             lockZ
           )
         );
-        camera.rotation.z += (0 - camera.rotation.z) * 0.06;
+        camera.rotation.z += (0 - camera.rotation.z) * (ctx.remeshCover.covered ? 1 : 0.06);
       }
 
       // Subtle optical focal breathing during deep-space transitions and climax
       const baseFov = (ctx.fovRef.current * Math.PI) / 180;
       const transitionFovSwell = isTransitioning ? transitionArcEnvelope * 0.11 : 0;
-      const climaxFovPulse = choreography.climaxPulse * 0.035;
-      if (isCinematic) {
+      const climaxFovPulse = reducedMotion ? 0 : choreography.climaxPulse * 0.035;
+      if (isCinematic && !reducedMotion) {
         const fovPulse = Math.sin(time * 0.001) * 0.025;
         camera.fov = baseFov + fovPulse + transitionFovSwell + climaxFovPulse;
       } else {

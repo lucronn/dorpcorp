@@ -1,4 +1,5 @@
 import React from "react";
+import { initializeParticleVolume, updateParticleVolumeTarget } from "./ParticleVolume";
 import { Particle, CelestialEntity } from "./types";
 import { generateTargetsForStage } from "./ParticleUtils";
 
@@ -177,6 +178,12 @@ export function mapParticlesToInterstellar(
     }
 
     p.isProjectText = false;
+    p.interstellarEntity = undefined;
+    p.interstellarEntityIndex = undefined;
+    p.isPlanetRing = false;
+    p.isDustDisk = false;
+    p.orbitRadius = undefined;
+    p.orbitAngle = undefined;
     const rand = Math.random();
 
     if (arch === "BLACKHOLE_CENTRIC" && bh) {
@@ -799,9 +806,11 @@ export function mapParticlesToInterstellar(
           p.color = p.baseColor;
           p.isPlanetRing = false;
         } else {
-          p.interstellarType = "planet";
+          p.interstellarType = entity.type === "galaxy" ? "galaxy" : "star";
           const rRadius = entity.radius * (1.2 + Math.random() * 2.5);
           const rAngle = Math.random() * Math.PI * 2;
+          p.orbitRadius = rRadius;
+          p.orbitAngle = rAngle;
           p.targetX = entity.x + Math.cos(rAngle) * rRadius;
           p.targetY = entity.y + Math.sin(rAngle) * rRadius;
           p.targetZ = (Math.random() - 0.5) * 40;
@@ -820,6 +829,9 @@ export function mapParticlesToInterstellar(
         p.color = p.baseColor;
         p.isPlanetRing = false;
       }
+    p.isDustDisk = arch === "EXOPLANET_CLUSTER" && p.interstellarType === "star";
+    initializeParticleVolume(p, idx);
+    updateParticleVolumeTarget(p, p.interstellarEntity);
   });
 
   particlesRef.current.sort((a, b) => {

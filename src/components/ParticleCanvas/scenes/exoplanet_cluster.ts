@@ -63,7 +63,9 @@ export function buildExoplanetClusterScene(
     entities.push({
       type: "planet",
       x: cx + Math.cos(angle) * r,
-      y: cy + Math.sin(angle) * r,
+      y: cy + Math.sin(angle) * r * Math.cos(0.3 + i * 0.22),
+      z: Math.sin(angle) * r * Math.sin(0.3 + i * 0.22),
+      orbitInclination: 0.3 + i * 0.22,
       radius: pRadius,
       color: planetColors[i]!,
       secondaryColor: planetSecondaries[i]!,

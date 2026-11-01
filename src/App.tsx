@@ -131,7 +131,6 @@ export default function App() {
   const lastInteractionTimeRef = useRef<number>(Date.now());
   const voyageTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const eventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stageChangeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const driftDoneTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stageRef = useRef<number>(stage);
   stageRef.current = stage;
@@ -142,7 +141,6 @@ export default function App() {
   const goToStage = useCallback((targetStage: number, explicitArchetype?: string) => {
     if (voyageTimeoutRef.current) clearTimeout(voyageTimeoutRef.current);
     if (eventTimeoutRef.current) clearTimeout(eventTimeoutRef.current);
-    if (stageChangeTimeoutRef.current) clearTimeout(stageChangeTimeoutRef.current);
     if (driftDoneTimeoutRef.current) clearTimeout(driftDoneTimeoutRef.current);
 
     setVoyagePhase('DRIFTING');
@@ -154,15 +152,23 @@ export default function App() {
       (window as any).__cosmicCanvas.switchToScene(targetArch, 'morph', targetStage);
     }
 
-    stageChangeTimeoutRef.current = setTimeout(() => {
-      setStage(targetStage);
-      setVoyageCycle((c) => c + 1);
-      audio.playStageSwell(targetStage);
-    }, 3200);
+    // The canvas now cuts immediately; keep the HUD on the same selected stage.
+    setStage(targetStage);
+    setVoyageCycle((c) => c + 1);
+    audio.playStageSwell(targetStage);
+    const observeArrival = () => {
+      const cover = (window as any).__cosmicCanvas?.getTransitionCover?.();
+      if (cover && cover.phase !== 'idle') {
+        driftDoneTimeoutRef.current = setTimeout(observeArrival, 50);
+      } else {
+        setVoyagePhase('OBSERVING');
+      }
+    };
+    observeArrival();
+  }, []);
 
-    driftDoneTimeoutRef.current = setTimeout(() => {
-      setVoyagePhase('OBSERVING');
-    }, 7800);
+  useEffect(() => () => {
+    if (driftDoneTimeoutRef.current) clearTimeout(driftDoneTimeoutRef.current);
   }, []);
 
   const nextStage = useCallback(() => {

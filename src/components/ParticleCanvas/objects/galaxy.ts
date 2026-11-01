@@ -25,14 +25,22 @@ export function createGalaxyMesh(
   galMat.backFaceCulling = false;
   galMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
 
-  const galMesh = BABYLON.MeshBuilder.CreateDisc(
-    "galaxy_ellipsoid",
-    { radius: entity.radius * 2.8, tessellation: 64 },
-    scene
-  );
-  galMesh.material = galMat;
-  galMesh.rotation.x = Math.PI / 3.8;
-  galMesh.parent = galaxyContainer;
+  // Three faint strata support the particle volume without one opaque-looking card.
+  // All share one texture/material; the solid bulge remains spherical.
+  galMat.alpha = 0.22;
+  for (let layer = -1; layer <= 1; layer++) {
+    const galMesh = BABYLON.MeshBuilder.CreateDisc(
+      `galaxy_ellipsoid_${layer}`,
+      { radius: entity.radius * (layer === 0 ? 2.8 : 2.45), tessellation: 48 },
+      scene
+    );
+    galMesh.material = galMat;
+    galMesh.rotation.x = Math.PI / 2 - 0.72;
+    const height = layer * entity.radius * 0.22;
+    galMesh.position.y = height * Math.cos(0.72);
+    galMesh.position.z = height * Math.sin(0.72);
+    galMesh.parent = galaxyContainer;
+  }
 
   const coreTex = createCircularGlowTexture(entity.color, scene);
   const coreMat = new BABYLON.StandardMaterial("galaxyCoreMat", scene);
