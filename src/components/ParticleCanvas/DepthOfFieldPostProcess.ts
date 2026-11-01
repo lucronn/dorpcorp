@@ -25,6 +25,8 @@ export function setupDepthOfFieldPostProcess(
     uniform float uDofActive;
     uniform vec2 uFocusPoint;
     uniform float uFocusRadius;
+    uniform float uFocusDistance;
+    uniform float uApertureDepth;
     uniform float uMaxBlurRadius;
     uniform float uAnamorphicAspect;
     uniform float uChromaticFringe;
@@ -62,23 +64,23 @@ export function setupDepthOfFieldPostProcess(
       }
 
       float aspect = uScreenResolution.x / uScreenResolution.y;
-      
+
       // Calculate distance from the focal center (subject tracking)
       vec2 delta = (uv - uFocusPoint);
       delta.x *= aspect;
       float distToFocus = length(delta);
 
-      // Circle of Confusion (CoC) optical curve:
-      // Inner zone (< uFocusRadius): pin-sharp focal plane for main subject
-      // Distant zone (> uFocusRadius): smooth cinematic anamorphic blur
-      float innerR = max(0.04, uFocusRadius * 0.85);
-      float outerR = max(innerR + 0.08, uFocusRadius * 2.6);
+      // Shrink effective aperture depth during transitions so mid-transit particles defocus into soft bokeh discs
+      float apertureScale = clamp(uApertureDepth / 480.0, 0.22, 1.2);
+      float innerR = max(0.02, uFocusRadius * 0.85 * apertureScale);
+      float outerR = max(innerR + 0.06, uFocusRadius * 2.6 * apertureScale);
       float coc = smoothstep(innerR, outerR, distToFocus);
 
       // Soft vignette depth falloff for outer boundary
       float cornerDist = length(uv - vec2(0.5));
       coc = clamp(coc + cornerDist * 0.25, 0.0, 1.0);
-      coc = max(coc, uRackFocus);
+      // Keep the focal silhouette sharp while peripheral highlights rack out.
+      coc = max(coc, uRackFocus * smoothstep(innerR * 0.5, outerR, distToFocus));
 
       float blurRadius = coc * uMaxBlurRadius * uDofActive;
 
@@ -120,10 +122,10 @@ export function setupDepthOfFieldPostProcess(
       }
 
       vec3 bokehColor = accumColor / max(totalWeight, 0.0001);
-      
+
       // Smoothly blend in-focus crispness with creamy out-of-focus background bokeh
       vec3 finalColor = mix(baseColor.rgb, bokehColor, smoothstep(0.05, 0.95, coc) * uDofActive);
-      
+
       gl_FragColor = vec4(finalColor, baseColor.a);
     }
   `;
@@ -138,6 +140,8 @@ export function setupDepthOfFieldPostProcess(
       "uDofActive",
       "uFocusPoint",
       "uFocusRadius",
+      "uFocusDistance",
+      "uApertureDepth",
       "uMaxBlurRadius",
       "uAnamorphicAspect",
       "uChromaticFringe",
@@ -161,7 +165,7 @@ export function setupDepthOfFieldPostProcess(
 
     const isCinematic = (isCinematicRef?.current) || (typeof window !== "undefined" && (window as any).__cinematicMode);
     const isDofExplicitlyEnabled = dofEnabledRef ? dofEnabledRef.current : (typeof window !== "undefined" ? (window as any).__dofEnabled !== false : true);
-    const targetDof = (isCinematic && isDofExplicitlyEnabled) ? 1.0 : 0.0;
+    const targetDof = isDofExplicitlyEnabled ? cinematicFx.dofAmount : 0.0;
 
     // Smooth optical focal transition
     const lerpSpeed = targetDof > currentDofAmount ? 3.5 : 4.5;
@@ -173,8 +177,14 @@ export function setupDepthOfFieldPostProcess(
     const rackFocus = Number.isFinite(cinematicFx.rackFocus)
       ? Math.max(0, Math.min(1, cinematicFx.rackFocus))
       : 0;
-    effect.setFloat("uDofActive", Math.max(currentDofAmount, rackFocus));
+    const baseCamZ = cameraZRef?.current ?? 2000;
+    const focusDistFactor = Number.isFinite(cinematicFx.focusDistanceFactor) ? cinematicFx.focusDistanceFactor : 1.0;
+    const apertureFactor = Number.isFinite(cinematicFx.apertureDepthFactor) ? cinematicFx.apertureDepthFactor : 1.0;
+
+    effect.setFloat("uDofActive", isDofExplicitlyEnabled ? currentDofAmount : 0.0);
     effect.setFloat("uRackFocus", rackFocus);
+    effect.setFloat("uFocusDistance", baseCamZ * focusDistFactor);
+    effect.setFloat("uApertureDepth", 480.0 * apertureFactor);
 
     // Track active focal subject in screen coordinates (black hole or active target)
     let focusUvX = 0.5;
@@ -232,9 +242,9 @@ export function setupDepthOfFieldPostProcess(
 
     effect.setFloat2("uFocusPoint", focusUvX, focusUvY);
     effect.setFloat("uFocusRadius", focusRadiusNorm);
-    effect.setFloat("uMaxBlurRadius", 14.0 + rackFocus * 10.0); // 14px bokeh disc, wider during a rack focus
-    effect.setFloat("uAnamorphicAspect", 1.33); // 1.33x anamorphic horizontal oval squeeze
-    effect.setFloat("uChromaticFringe", 0.0035); // Subtle chromatic dispersion on bokeh fringe
+    effect.setFloat("uMaxBlurRadius", cinematicFx.typography ? 3.0 : 9.0 + rackFocus * 7.0);
+    effect.setFloat("uAnamorphicAspect", 1.33);
+    effect.setFloat("uChromaticFringe", 0.0035);
   };
 
   dofPostProcessRef.current = dofPP;

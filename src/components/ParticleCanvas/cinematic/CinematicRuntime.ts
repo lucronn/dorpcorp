@@ -23,6 +23,10 @@ export interface CinematicRuntime {
   smoothedForward: Vec3 | null;
   /** Time the horizon zoom first reached its limit (0 = not holding). */
   horizonHoldSince: number;
+  idleBlend: number;
+  /** Seconds of idle camera travel; pauses while the user navigates. */
+  idleTime: number;
+  openingPending: boolean;
 }
 
 export function createCinematicRuntime(reducedMotion = false): CinematicRuntime {
@@ -35,6 +39,9 @@ export function createCinematicRuntime(reducedMotion = false): CinematicRuntime 
     appliedOffset: { x: 0, y: 0, z: 0 },
     smoothedForward: null,
     horizonHoldSince: 0,
+    idleBlend: 0,
+    idleTime: 0,
+    openingPending: false,
   };
 }
 

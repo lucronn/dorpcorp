@@ -1,7 +1,18 @@
 import * as BABYLON from "@babylonjs/core";
 import { Particle } from "../../types";
 import { CelestialEntity, ParticleFilters } from "./types";
-import { computeCurlNoise, normalizeHexColor } from "./PhysicsUtils";
+import { sampleIdleParticle } from "./cinematic/CameraRig";
+import { sampleWormholeTransit } from "./cinematic/TransitChoreography";
+import {
+  computeCurlNoise,
+  computeCurlNoise3D,
+  computeLocalWavefrontProgress,
+  quinticSmoothstep,
+  advanceCriticalSpring,
+  computeArrivalCorrection,
+  computeBlackbodyColorContinuity,
+  normalizeHexColor,
+} from "./PhysicsUtils";
 
 export interface SimulationContext {
   currentW: number;
@@ -37,10 +48,17 @@ export interface SimulationContext {
   audio: any;
   /**
    * 0..1 opacity of the foreground subject (typography, bodies' particles,
-   * tails). Driven by the cinematic director so rebuilds happen out of sight.
-   * The ambient starfield is never veiled. Defaults to 1.
+   * tails). Driven by the cinematic director when veiling, or 1 during organic morphs.
    */
   foregroundAlpha?: number;
+  /** Global transition progress u_progress in [0, 1] for staggered wavefront morphing. */
+  transitionProgress?: number;
+  /** Optional 3D velocity buffer (totalCount * 3) for velocity-stretched motion blur in shader. */
+  velocities?: Float32Array;
+  /** Optional radial shockwave shell radius (0..1) from TransitionDirector Kilonova/TDE flash. */
+  directorShockwaveRadius?: number;
+  idleBreath?: number;
+  idleTime?: number;
 }
 
 /** Deterministic per-index hash in [0, 1) (stable across frames, no Math.random flicker). */
@@ -54,7 +72,8 @@ export function simulateParticles(
   positions: Float32Array,
   colors: Float32Array,
   extras: Float32Array,
-  ctx: SimulationContext
+  ctx: SimulationContext,
+  velocitiesArg?: Float32Array
 ) {
   const {
     currentW: rawW,
@@ -90,14 +109,25 @@ export function simulateParticles(
     audio,
   } = ctx;
 
+  const velocities = velocitiesArg || ctx.velocities;
+  const uTransitionProgress =
+    typeof ctx.transitionProgress === "number" && Number.isFinite(ctx.transitionProgress)
+      ? Math.max(0.0, Math.min(1.0, ctx.transitionProgress))
+      : 1.0;
+  const isMorphTransitionActive = uTransitionProgress < 0.999;
+  const directorShockwave =
+    typeof ctx.directorShockwaveRadius === "number" && Number.isFinite(ctx.directorShockwaveRadius)
+      ? Math.max(0.0, Math.min(1.0, ctx.directorShockwaveRadius))
+      : 0.0;
+
   const fgRaw = ctx.foregroundAlpha;
   const foregroundAlpha =
     typeof fgRaw === "number" && Number.isFinite(fgRaw) ? Math.max(0, Math.min(1, fgRaw)) : 1;
-  // Wormhole pull follows a bell envelope (0 → 1 → 0) so particles are
+  // Wormhole pull follows a bell envelope (0 -> 1 -> 0) so particles are
   // released smoothly as the transit ends instead of snapping back.
   const transitEnvelope =
     isTransitActive && Number.isFinite(transitProgress) && transitProgress > 0
-      ? Math.sin(Math.PI * Math.min(1, transitProgress))
+      ? sampleWormholeTransit(transitProgress).intensity
       : 0;
 
   const currentW = isFinite(rawW) && rawW > 0 ? rawW : 1920;
@@ -127,18 +157,23 @@ export function simulateParticles(
   const floatScaleY = isTypographyMode ? 0 : (1 - attractionMultiplier) * 0.5;
   const floatSpeed = 0.012;
 
+  const primaryBh = activeBlackholes[0] || null;
+  const focalX = primaryBh ? primaryBh.x : currentW / 2;
+  const focalY = primaryBh ? primaryBh.y : currentH / 2;
+  const focalZ = primaryBh ? (primaryBh.z || 0) : 0;
+  const maxSceneSpan = Math.hypot(currentW, currentH) * 0.55;
+
   for (let i = 0; i < particles.length; i++) {
     const p = particles[i];
     if (!p) continue;
 
     if (p.isTail) {
       if (p.life && p.life > 0) {
-        // Gravitational pull of stardust/debris near black holes for orbital decay
         activeBlackholes.forEach((entity) => {
           const bdx = entity.x - p.x;
           const bdy = entity.y - p.y;
           const bdist = Math.sqrt(bdx * bdx + bdy * bdy) || 1;
-          const gravityRadiusMult = 4.5; // wider gravity field for fast debris particles
+          const gravityRadiusMult = 4.5;
           if (bdist < entity.radius * gravityRadiusMult) {
             const pullFactor = 1.0 - bdist / (entity.radius * gravityRadiusMult);
             const pullStrength = 3.5 * pullFactor;
@@ -162,6 +197,11 @@ export function simulateParticles(
         positions[i * 3] = p.x - currentW / 2;
         positions[i * 3 + 1] = -(p.y - currentH / 2);
         positions[i * 3 + 2] = p.z;
+        if (velocities) {
+          velocities[i * 3] = p.vx;
+          velocities[i * 3 + 1] = -p.vy;
+          velocities[i * 3 + 2] = p.vz;
+        }
 
         const r = p.r ?? 255;
         const g = p.g ?? 255;
@@ -201,6 +241,11 @@ export function simulateParticles(
         positions[i * 3] = -99999;
         positions[i * 3 + 1] = -99999;
         positions[i * 3 + 2] = 0;
+        if (velocities) {
+          velocities[i * 3] = 0;
+          velocities[i * 3 + 1] = 0;
+          velocities[i * 3 + 2] = 0;
+        }
         colors[i * 4] = 0;
         colors[i * 4 + 1] = 0;
         colors[i * 4 + 2] = 0;
@@ -218,7 +263,6 @@ export function simulateParticles(
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
       if (snElapsed < 200) {
-        // Implosion phase: vortex gravitational pull into singularity
         if (dist < 600) {
           const suck = (1.0 - dist / 600) * 3.5;
           const vortexAngle = 0.5;
@@ -228,7 +272,6 @@ export function simulateParticles(
           p.vy -= (dy / dist) * suck + ty * suck * vortexAngle;
         }
       } else if (snElapsed >= 200 && snElapsed < 2800) {
-        // Relativistic expansion phase: high-velocity shockwave wavefront
         const waveRadius = (snElapsed - 200) * 1.1;
         const waveBand = 160;
         const distDiff = Math.abs(dist - waveRadius);
@@ -236,9 +279,26 @@ export function simulateParticles(
           const push = (1.0 - distDiff / waveBand) * 12.0;
           p.vx += (dx / dist) * push;
           p.vy += (dy / dist) * push;
-          // Add outward z-scatter for 3D depth
-          p.vz += (Math.random() - 0.5) * push * 0.8;
+          p.vz += (hash01(i, 9) - 0.5) * push * 0.8;
         }
+      }
+    }
+
+    // Kilonova / TDE radial shockwave shell from TransitionDirector
+    if (directorShockwave > 0.01 && directorShockwave < 0.99 && !p.isCosmicAmbient) {
+      const dx = p.x - focalX;
+      const dy = p.y - focalY;
+      const dist = Math.hypot(dx, dy) || 1;
+      const shellR = directorShockwave * maxSceneSpan;
+      const band = 140;
+      const diff = Math.abs(dist - shellR);
+      if (diff < band) {
+        const impulse = (1.0 - diff / band) * 5.5;
+        const tx = -dy / dist;
+        const ty = dx / dist;
+        p.vx += ((dx / dist) * 0.7 + tx * 0.3) * impulse;
+        p.vy += ((dy / dist) * 0.7 + ty * 0.3) * impulse;
+        p.vz += (hash01(i, 11) - 0.5) * impulse * 1.2;
       }
     }
 
@@ -274,6 +334,11 @@ export function simulateParticles(
         positions[i * 3] = gx + parallaxX;
         positions[i * 3 + 1] = -(gy + parallaxY);
         positions[i * 3 + 2] = gz;
+        if (velocities) {
+          velocities[i * 3] = 0;
+          velocities[i * 3 + 1] = 0;
+          velocities[i * 3 + 2] = 0;
+        }
 
         if (!particleFilters.ambient) {
           colors[i * 4] = 0;
@@ -336,15 +401,15 @@ export function simulateParticles(
         const ldx = drawAmbX - entity.x;
         const ldy = drawAmbY - entity.y;
         const ldist = Math.sqrt(ldx * ldx + ldy * ldy) || 1;
-        
+
         const horizon = entity.radius;
         const lenseRadius = horizon * 1.35;
-        
+
         if (ldist > horizon * 0.95) {
           const shiftDist = Math.sqrt(ldist * ldist + lenseRadius * lenseRadius);
           const lensedX = entity.x + (ldx / ldist) * shiftDist;
           const lensedY = entity.y + (ldy / ldist) * shiftDist;
-          
+
           const blendFactor = Math.pow(Math.max(0, 1.0 - ldist / (horizon * 5.0)), 1.5);
           drawAmbX = drawAmbX + (lensedX - drawAmbX) * blendFactor;
           drawAmbY = drawAmbY + (lensedY - drawAmbY) * blendFactor;
@@ -356,22 +421,29 @@ export function simulateParticles(
       const parallaxFactor = 0.05;
       const parallaxX = mouseNormX * (p.z * 0.08) * parallaxFactor;
       const parallaxY = mouseNormY * (p.z * 0.08) * parallaxFactor;
-      
+
       let finalX = drawAmbX - currentW / 2 + parallaxX;
       let finalY = -(drawAmbY - currentH / 2 + parallaxY);
       let finalZ = p.z;
 
+      if (ctx.idleBreath) {
+        const breath = sampleIdleParticle(ctx.idleTime ?? 0, p.seed?.[0] ?? i * 0.618, ctx.idleBreath);
+        finalX += breath.x;
+        finalY += breath.y;
+        finalZ += breath.z;
+      }
+
       if (isTransitActive && transitProgress > 0) {
         const cx = transitCx - currentW / 2;
         const cy = -(transitCy - currentH / 2);
-        
+
         const dx = finalX - cx;
         const dy = finalY - cy;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        
+
         const tunnelRadius = 150 + hash01(i, 1) * 200;
         const pullFactor = Math.pow(transitEnvelope, 1.5);
-        
+
         finalX += (dx / dist * tunnelRadius - dx) * pullFactor;
         finalY += (dy / dist * tunnelRadius - dy) * pullFactor;
         finalZ -= 2000 * pullFactor * (hash01(i, 2) * 0.5 + 0.5);
@@ -380,6 +452,11 @@ export function simulateParticles(
       positions[i * 3] = finalX;
       positions[i * 3 + 1] = finalY;
       positions[i * 3 + 2] = finalZ;
+      if (velocities) {
+        velocities[i * 3] = p.vx;
+        velocities[i * 3 + 1] = -p.vy;
+        velocities[i * 3 + 2] = p.vz || 0;
+      }
 
       if (!particleFilters.ambient) {
         colors[i * 4] = 0;
@@ -412,6 +489,28 @@ export function simulateParticles(
       continue;
     }
 
+    // ── Foreground Particle Physics: Wavefront Activation, 3D Curl Noise, Gravitational Slingshot, Critically Damped Spring ──
+    const seed0 = p.seed?.[0] ?? hash01(i, 1.1);
+    const seed1 = p.seed?.[1] ?? hash01(i, 2.3);
+    const seed2 = p.seed?.[2] ?? hash01(i, 3.7);
+    const dNorm =
+      p.normDistFromOrigin !== undefined && isFinite(p.normDistFromOrigin)
+        ? p.normDistFromOrigin
+        : Math.min(1.0, Math.hypot(p.x - focalX, p.y - focalY) / maxSceneSpan);
+
+    // 1. Per-particle staggered wavefront triggering t_local and quintic smoothstep easing
+    const tLocal = isMorphTransitionActive
+      ? computeLocalWavefrontProgress(uTransitionProgress, dNorm, seed0, 0.45, 0.20)
+      : 1.0;
+    const tEased = quinticSmoothstep(tLocal);
+    const previousLocalProgress = p.localProgress ?? 1;
+    p.localProgress = tLocal;
+    p.easedProgress = tEased;
+
+    // Bell curve over local transition progress peaking at t_local = 0.5 via sin(pi * t_local)^2
+    const sinBell = Math.sin(Math.PI * tLocal);
+    const curlBellWeight = isMorphTransitionActive ? sinBell * sinBell : 0.0;
+
     // Calculate gravitational Time Dilation near black holes
     let localTimeDilation = globalTimeMultiplier;
     activeBlackholes.forEach((entity) => {
@@ -429,32 +528,51 @@ export function simulateParticles(
     });
 
     p.vy -= scrollVelocity * 0.16;
-    p.vx +=
-      Math.sin(i * 0.05 + time * 0.1) *
-      Math.abs(scrollVelocity) *
-      0.03;
+    p.vx += Math.sin(i * 0.05 + time * 0.1) * Math.abs(scrollVelocity) * 0.03;
 
-    // Continuous Curl Noise vector field for fluid dynamics and spatiotemporal coherence
-    const curl = computeCurlNoise(p.x, p.y, time * 0.12);
-    const fluidTransitionFactor = isTypographyMode ? 0.12 : 0.75;
-    const springDistSq = (p.targetX - p.x) * (p.targetX - p.x) + (p.targetY - p.y) * (p.targetY - p.y);
-    const springFactorSq = Math.max(0.01, Math.min(1.0, springDistSq / 25000));
-    let fluidInfluence = Math.max(0.0, Math.min(0.85, (1.0 - (p.isProjectText ? 0.75 : 0.22)) * fluidTransitionFactor * springFactorSq));
-    if (p.isProjectText) {
-      fluidInfluence *= ((textParticleSpeed ?? 0.12) * 1.5);
+    // 2. Divergence-free 3D Curl Noise Field (\nabla \times \vec{\Psi})
+    // During transitions, weight by sin(pi * t_local)^2 so particles peel away into fluid streams
+    if (curlBellWeight > 0.005) {
+      const curl3 = computeCurlNoise3D(p.x, p.y, p.z || 0, time * 0.12, 0.0028, 22.0);
+      const dispersionBoost = isTypographyMode ? 1.15 : 1.45;
+      p.vx += curl3.x * curlBellWeight * dispersionBoost;
+      p.vy += curl3.y * curlBellWeight * dispersionBoost;
+      p.vz = (p.vz || 0) + curl3.z * curlBellWeight * dispersionBoost;
+
+      // Gravitational Slingshot & Tangential Swirl (\vec{v}_{tangential} = \hat{n}_{axis} \times \vec{r})
+      const rdx = p.x - focalX;
+      const rdy = p.y - focalY;
+      const rdz = (p.z || 0) - focalZ;
+      const rDist = Math.hypot(rdx, rdy, rdz) || 1;
+      // Tangential swirl around tilted relativistic axis \hat{n} = (0.12, 0.24, 0.96)
+      const nx = 0.12, ny = 0.24, nz = 0.96;
+      const tangX = (ny * rdz - nz * rdy) / rDist;
+      const tangY = (nz * rdx - nx * rdz) / rDist;
+      const tangZ = (nx * rdy - ny * rdx) / rDist;
+
+      const swirlStrength = (3.8 + seed1 * 4.2) * curlBellWeight;
+      // Slingshot inward in first half (t_local < 0.5), sling outward along jet/target arc in second half
+      const radialSlingshot = (tLocal < 0.5 ? -1.8 : 2.2) * curlBellWeight;
+      const jetAxisPush = ((seed2 > 0.5 ? 1 : -1) * 2.4 * curlBellWeight) * (rDist < 220 ? 1.5 : 0.4);
+
+      p.vx += tangX * swirlStrength + (rdx / rDist) * radialSlingshot;
+      p.vy += tangY * swirlStrength + (rdy / rDist) * radialSlingshot + jetAxisPush;
+      p.vz = (p.vz || 0) + tangZ * swirlStrength + (rdz / rDist) * radialSlingshot;
+    } else {
+      // Ambient steady-state subtle 2D/3D curl coherence
+      const curl = computeCurlNoise(p.x, p.y, time * 0.12);
+      const fluidTransitionFactor = isTypographyMode ? 0.12 : 0.75;
+      const springDistSq = (p.targetX - p.x) * (p.targetX - p.x) + (p.targetY - p.y) * (p.targetY - p.y);
+      const springFactorSq = Math.max(0.01, Math.min(1.0, springDistSq / 25000));
+      let fluidInfluence = Math.max(0.0, Math.min(0.85, (1.0 - (p.isProjectText ? 0.75 : 0.22)) * fluidTransitionFactor * springFactorSq));
+      if (p.isProjectText) {
+        fluidInfluence *= ((textParticleSpeed ?? 0.12) * 1.5);
+      }
+      p.vx += curl.x * fluidInfluence;
+      p.vy += curl.y * fluidInfluence;
     }
-    
-    p.vx += curl.x * fluidInfluence;
-    p.vy += curl.y * fluidInfluence;
 
-    p.x += p.vx * localTimeDilation;
-    p.y += p.vy * localTimeDilation;
-    p.z += p.vz * localTimeDilation;
-
-    p.vx *= 0.86;
-    p.vy *= 0.86;
-    p.vz *= 0.86;
-
+    // Update orbital targets for interstellar structures
     if (isInterstellar && p.interstellarType) {
       const objSpeedMult = (objectParticleSpeed ?? 0.15) / 0.15;
       const ambSpeedMult = (ambientParticleSpeed ?? 0.15) / 0.15;
@@ -603,21 +721,21 @@ export function simulateParticles(
         }
       } else if (p.interstellarType === "background_galaxy") {
         p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.012) * localTimeDilation * musicSpeedFactor * ambSpeedMult;
-        
+
         const rx = p.orbitRadius || 20;
         const ry = p.galaxyType === "spiral" ? rx * 0.35 : rx * 0.8;
         const ox = Math.cos(p.orbitAngle) * rx;
         const oy = Math.sin(p.orbitAngle) * ry;
-        
+
         const cosP = Math.cos(p.galaxyPitch || 0);
         const sinP = Math.sin(p.galaxyPitch || 0);
         const cosY = Math.cos(p.galaxyYaw || 0);
         const sinY = Math.sin(p.galaxyYaw || 0);
-        
+
         const lx = ox * cosY - oy * sinY * cosP;
         const ly = ox * sinY + oy * cosY * cosP;
         const lz = oy * sinP;
-        
+
         p.targetX = (p.galaxyX || 0) + lx;
         p.targetY = (p.galaxyY || 0) + ly;
         p.targetZ = (p.galaxyZ || 1600) + lz;
@@ -630,11 +748,13 @@ export function simulateParticles(
     let particleBrightness = 1.0;
     let suctionAlpha = 0;
 
-    const isInterferenceSuppressed = !isInterstellar && (snElapsed < 4000);
+    // A settled reading plane must not be consumed/respawned by a background
+    // singularity while the camera is completing its typography shot.
+    const isInterferenceSuppressed = !isInterstellar && (snElapsed < 4000 || (isTypographyMode && p.isProjectText));
 
     if (!isInterferenceSuppressed) {
       const gravityRadiusMult = isInterstellar ? 3.6 : 2.2;
-      
+
       // 1. Black hole attraction & event horizon consumption
       activeBlackholes.forEach((entity) => {
         const bdx = entity.x - p.x;
@@ -663,13 +783,11 @@ export function simulateParticles(
           if (bdist < entity.radius * 1.08) {
             const horizonFade = Math.max(0.0, (bdist - entity.radius * 0.95) / (entity.radius * 0.13));
             particleBrightness = Math.min(particleBrightness, horizonFade);
-            
-            // Quantum tunneling at the Schwarzschild radius boundary layer
+
             const isAtSchwarzschildEdge = bdist >= entity.radius * 0.88 && bdist <= entity.radius * 1.16;
             const tunnelingProbability = isInterstellar ? 0.032 : 0.042;
 
             if (isAtSchwarzschildEdge && Math.random() < tunnelingProbability) {
-              // Particle tunnels across the gravitational potential barrier away from the event horizon
               const escapeAngle = Math.atan2(p.y - entity.y, p.x - entity.x) + (Math.random() - 0.5) * 0.7;
               const tunnelDist = entity.radius * (2.85 + Math.random() * 0.85);
 
@@ -677,7 +795,6 @@ export function simulateParticles(
               p.y = entity.y + Math.sin(escapeAngle) * tunnelDist;
               p.z = (p.z || 0) + (Math.random() - 0.5) * 25;
 
-              // Energetic quantum ejection velocity pointing outward with subtle tangential variance
               const escapeSpeed = 4.0 + Math.random() * 4.5;
               const outX = Math.cos(escapeAngle);
               const outY = Math.sin(escapeAngle);
@@ -688,27 +805,23 @@ export function simulateParticles(
               p.vy = outY * escapeSpeed + tangY * (Math.random() - 0.5) * 2.4;
               p.vz = (Math.random() - 0.5) * 3.5;
 
-              // Break lock / expand orbit for black hole interstellar particles
               if (p.interstellarType === "blackhole") {
                 p.orbitRadius = Math.max(p.orbitRadius || 50, tunnelDist * 1.35);
                 p.orbitAngle = escapeAngle;
               }
               p.targetX = p.x;
               p.targetY = p.y;
-
-              // Quantum excitation state for Hawking radiation spectral emission
               p.tunnelLife = 1.0;
 
-              // Subtle shimmering Hawking Radiation particle emission (intensifies with proximity & cinematic mode)
               if (spawnTailParticle) {
-                const hawkingIntensity = (window as any).__hawkingIntensity || 0.0;
-                const isCinematic = (window as any).__cinematicMode === true;
+                const hawkingIntensity = (typeof window !== "undefined" && (window as any).__hawkingIntensity) || 0.0;
+                const isCinematic = typeof window !== "undefined" && (window as any).__cinematicMode === true;
                 const baseProb = 0.4 + hawkingIntensity * 0.45 + (isCinematic ? 0.25 : 0.0);
                 const sparkCount = Math.random() < baseProb ? (isCinematic || hawkingIntensity > 0.4 ? 3 : 2) : 1;
                 for (let s = 0; s < sparkCount; s++) {
                   const emissionColor = Math.random() > 0.4
-                    ? (Math.random() > 0.5 ? "#38bdf8" : "#67e8f9") // Luminous Cherenkov quantum cyan
-                    : (Math.random() > 0.5 ? "#c084fc" : "#fef08a"); // Iridescent quantum violet or white-hot spark
+                    ? (Math.random() > 0.5 ? "#38bdf8" : "#67e8f9")
+                    : (Math.random() > 0.5 ? "#c084fc" : "#fef08a");
                   spawnTailParticle(
                     entity.x + Math.cos(escapeAngle) * (entity.radius * 2.2 + s * 8),
                     entity.y + Math.sin(escapeAngle) * (entity.radius * 2.2 + s * 8),
@@ -716,12 +829,11 @@ export function simulateParticles(
                     p.vx * (0.65 + s * 0.3) + (Math.random() - 0.5) * 2.2,
                     p.vy * (0.65 + s * 0.3) + (Math.random() - 0.5) * 2.2,
                     emissionColor,
-                    0.032 // gradual shimmering fade
+                    0.032
                   );
                 }
               }
 
-              // Micro-evaporation feedback to the black hole
               if (entity.mass && entity.mass > (entity.initialMass || entity.radius * entity.radius * 2) * 0.7) {
                 entity.mass -= 0.02;
               }
@@ -756,7 +868,7 @@ export function simulateParticles(
         if (bdist < colDist && !p.isTail) {
           const nx = bdx / bdist;
           const ny = bdy / bdist;
-          
+
           const dot = p.vx * nx + p.vy * ny;
           if (dot > 0) {
             p.vx -= 2 * dot * nx;
@@ -764,43 +876,81 @@ export function simulateParticles(
             p.vx += (Math.random() - 0.5) * 4;
             p.vy += (Math.random() - 0.5) * 4;
           }
-          
+
           p.x = entity.x - nx * (colDist + 1);
           p.y = entity.y - ny * (colDist + 1);
         }
       });
     }
 
+    // 3. Critically Damped Spring Arrival & Non-Linear Eased Convergence
+    // During an active morph transition:
+    // - Before t_local reaches 0.25: particles peel away into the curl noise / tangential swirl field
+    // - Between 0.25 and 0.65: soft guiding attraction curves paths toward target
+    // - For t_local > 0.65 (and in steady state): critically damped harmonic oscillator
+    //   \vec{F}_{spring} = -k * (\vec{x} - \vec{x}_{target}) - 2 * \sqrt{k} * \vec{v}
+    const targetZ = p.targetZ ?? 0;
     const dx = p.targetX - p.x;
     const dy = p.targetY - p.y;
-    const distSq = dx * dx + dy * dy;
+    const dz = targetZ - (p.z || 0);
+    const distSq = dx * dx + dy * dy + dz * dz;
 
-    const baseSpring = isTypographyMode
-      ? Math.max(0.04, Math.min(0.25, 20.0 / Math.max(1, distSq)))
-      : isInterstellar
-        ? 0.24
-        : 0.08;
+    if (isMorphTransitionActive) {
+      if (tLocal > 0.15) {
+        // Dynamically scale stiffness k as t_local -> 1.0 so particles never overshoot or snap
+        const arrivalFactor = tLocal > 0.65
+          ? 0.35 + 0.65 * ((tLocal - 0.65) / 0.35)
+          : (tEased * 0.28);
+        const speedScalar = p.isProjectText ? Math.max(0.08, textParticleSpeed ?? 0.12) * 1.4 : 0.18;
+        const k = Math.max(0.004, Math.min(0.28, speedScalar * arrivalFactor * attractionMultiplier * (1.0 - suctionAlpha)));
 
-    const effectiveSpring = (p.isProjectText
-      ? baseSpring * textParticleSpeed
-      : baseSpring) * (1.0 - suctionAlpha);
-
-    if (distSq > 0.1) {
-      if (p.isProjectText) {
-        const mdx = mousePos.x - p.x;
-        const mdy = mousePos.y - p.y;
-        const mDistSq = mdx * mdx + mdy * mdy;
-        if (mDistSq < 10000) {
-          const mDist = Math.sqrt(mDistSq);
-          const mForce = (1 - mDist / 100) * 0.1 * textParticleSpeed;
-          p.x += mdx * mForce;
-          p.y += mdy * mForce;
-        }
+        advanceCriticalSpring(p, p.targetX, p.targetY, targetZ, k, localTimeDilation);
+      } else {
+        // Before attraction begins, preserve the departure's free-flight momentum.
+        p.x += p.vx * localTimeDilation;
+        p.y += p.vy * localTimeDilation;
+        p.z = (p.z || 0) + (p.vz || 0) * localTimeDilation;
       }
-      p.x += dx * effectiveSpring * attractionMultiplier * localTimeDilation;
-      p.y += dy * effectiveSpring * attractionMultiplier * localTimeDilation;
+
+      const drag = tLocal > 0.65 ? 0.88 : 0.92;
+      p.vx *= drag;
+      p.vy *= drag;
+      p.vz = (p.vz || 0) * drag;
     } else {
-      if (attractionMultiplier > 0.01) {
+      // Equilibrium state (uTransitionProgress === 1.0): critically damped spring + interactive mouse response
+      p.x += p.vx * localTimeDilation;
+      p.y += p.vy * localTimeDilation;
+      p.z = (p.z || 0) + (p.vz || 0) * localTimeDilation;
+
+      p.vx *= 0.86;
+      p.vy *= 0.86;
+      p.vz = (p.vz || 0) * 0.86;
+
+      const baseSpring = isTypographyMode
+        ? Math.max(0.04, Math.min(0.25, 20.0 / Math.max(1, distSq)))
+        : isInterstellar
+          ? 0.24
+          : 0.08;
+
+      const effectiveSpring = (p.isProjectText
+        ? baseSpring * textParticleSpeed
+        : baseSpring) * (1.0 - suctionAlpha);
+
+      if (distSq > 0.1) {
+        if (p.isProjectText) {
+          const mdx = mousePos.x - p.x;
+          const mdy = mousePos.y - p.y;
+          const mDistSq = mdx * mdx + mdy * mdy;
+          if (mDistSq < 10000) {
+            const mDist = Math.sqrt(mDistSq);
+            const mForce = (1 - mDist / 100) * 0.1 * textParticleSpeed;
+            p.x += mdx * mForce;
+            p.y += mdy * mForce;
+          }
+        }
+        p.x += dx * effectiveSpring * attractionMultiplier * localTimeDilation;
+        p.y += dy * effectiveSpring * attractionMultiplier * localTimeDilation;
+      } else if (attractionMultiplier > 0.01) {
         if (p.isProjectText) {
           p.x += dx * 0.1 * textParticleSpeed;
           p.y += dy * 0.1 * textParticleSpeed;
@@ -809,15 +959,24 @@ export function simulateParticles(
           p.y = p.targetY;
         }
       }
-    }
-    
-    if (p.targetZ !== undefined) {
-      const dz = p.targetZ - (p.z || 0);
-      if (Math.abs(dz) > 0.1) {
-        p.z = (p.z || 0) + dz * effectiveSpring * attractionMultiplier * localTimeDilation;
-      } else {
-        p.z = p.targetZ;
+
+      if (p.targetZ !== undefined) {
+        if (Math.abs(dz) > 0.1) {
+          p.z = (p.z || 0) + dz * effectiveSpring * attractionMultiplier * localTimeDilation;
+        } else {
+          p.z = p.targetZ;
+        }
       }
+    }
+
+    const landing = computeArrivalCorrection(previousLocalProgress, tLocal);
+    if (landing > 0) {
+      p.x += (p.targetX - p.x) * landing;
+      p.y += (p.targetY - p.y) * landing;
+      p.z += (targetZ - p.z) * landing;
+      p.vx *= 1 - landing;
+      p.vy *= 1 - landing;
+      p.vz = (p.vz ?? 0) * (1 - landing);
     }
 
     let floatX = 0;
@@ -839,14 +998,7 @@ export function simulateParticles(
         floatX += Math.sin(time * bassWaveSpeed + p.y * bassWaveFreq + i * 0.01) * bassWaveAmp;
         floatY += Math.cos(time * bassWaveSpeed * 0.9 + p.x * bassWaveFreq + i * 0.01) * bassWaveAmp;
       }
-      if (musicBands.treble > 0.03) {
-        const trebleJitter = musicBands.treble * 5.0;
-        floatX += Math.sin(time * 0.45 + i * 0.2) * trebleJitter;
-        floatY += Math.cos(time * 0.42 + i * 0.2) * trebleJitter;
-      }
     }
-    const floatZ = Math.sin(time * floatSpeed * 0.7 + i * 0.04) * 8;
-    p.z += (floatZ - p.z) * 0.05;
 
     const selfMovementX = isTypographyMode
       ? 0
@@ -861,15 +1013,15 @@ export function simulateParticles(
       const ldx = drawX - entity.x;
       const ldy = drawY - entity.y;
       const ldist = Math.sqrt(ldx * ldx + ldy * ldy) || 1;
-      
+
       const horizon = entity.radius;
       const lenseRadius = horizon * 1.35;
-      
+
       if (ldist > horizon * 0.95) {
         const shiftDist = Math.sqrt(ldist * ldist + lenseRadius * lenseRadius);
         const lensedX = entity.x + (ldx / ldist) * shiftDist;
         const lensedY = entity.y + (ldy / ldist) * shiftDist;
-        
+
         const blendFactor = Math.pow(Math.max(0, 1.0 - ldist / (horizon * 5.0)), 1.5);
         drawX = drawX + (lensedX - drawX) * blendFactor;
         drawY = drawY + (lensedY - drawY) * blendFactor;
@@ -938,7 +1090,7 @@ export function simulateParticles(
       const gdy = entity.y - drawY;
       const gdistSq = gdx * gdx + gdy * gdy;
       const gdist = Math.sqrt(gdistSq) || 1;
-      
+
       const range = entity.radius * (entity.type === "blackhole" ? 3.5 : 1.8);
       if (gdist < range) {
         const intensity = (range - gdist) / range;
@@ -965,7 +1117,7 @@ export function simulateParticles(
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
       const tunnelRadius = 50 + hash01(i, 3) * 150;
       const pullFactor = Math.pow(transitEnvelope, 1.2);
-      
+
       finalX += (dx / dist * tunnelRadius - dx) * pullFactor;
       finalY += (dy / dist * tunnelRadius - dy) * pullFactor;
       finalZ -= 3000 * pullFactor * (hash01(i, 4) * 0.8 + 0.2);
@@ -974,10 +1126,37 @@ export function simulateParticles(
     positions[i * 3] = finalX;
     positions[i * 3 + 1] = finalY;
     positions[i * 3 + 2] = finalZ;
+    if (velocities) {
+      velocities[i * 3] = p.vx;
+      velocities[i * 3 + 1] = -p.vy;
+      velocities[i * 3 + 2] = p.vz || 0;
+    }
 
-    let r = p.r ?? 255;
-    let g = p.g ?? 255;
-    let b = p.b ?? 255;
+    // 4. Color & Blackbody Temperature Continuity
+    const speed3D = Math.hypot(p.vx, p.vy, p.vz || 0);
+    const targetR = p.targetR ?? p.r ?? 255;
+    const targetG = p.targetG ?? p.g ?? 255;
+    const targetB = p.targetB ?? p.b ?? 255;
+    const sourceR = p.sourceR ?? targetR;
+    const sourceG = p.sourceG ?? targetG;
+    const sourceB = p.sourceB ?? targetB;
+
+    const bbColor = computeBlackbodyColorContinuity(
+      sourceR,
+      sourceG,
+      sourceB,
+      targetR,
+      targetG,
+      targetB,
+      tEased,
+      speed3D,
+      isMorphTransitionActive
+    );
+
+    let r = bbColor.r;
+    let g = bbColor.g;
+    let b = bbColor.b;
+    particleBrightness *= bbColor.heatBoost;
 
     let rFactor = 1.0;
     let gFactor = 1.0;
@@ -987,7 +1166,7 @@ export function simulateParticles(
       const snX = activeSupernova.x;
       const snY = activeSupernova.y;
       const dist = Math.sqrt((drawX - snX) * (drawX - snX) + (drawY - snY) * (drawY - snY));
-      
+
       const waveRadius = (snElapsed - 250) * 0.85;
       if (snElapsed >= 250 && Math.abs(dist - waveRadius) < 180) {
         const rippleGlow = (1.0 - Math.abs(dist - waveRadius) / 180) * 0.35;
@@ -1040,13 +1219,11 @@ export function simulateParticles(
       } else if (dist < bh.radius * 3.2) {
         const factor = (bh.radius * 3.2 - dist) / (bh.radius * 3.2);
         if (dx < 0) {
-          // Approaching limb (left side) -> intense blueshift & luminous energy
           dopplerR = 1.0 - factor * 0.25;
           dopplerG = 1.0 + factor * 0.15;
           dopplerB = 1.0 + factor * 0.75;
           dopplerIntensity = 1.0 + factor * 0.9;
         } else {
-          // Receding limb (right side) -> redshift
           dopplerR = 1.0 + factor * 0.45;
           dopplerG = 1.0 - factor * 0.15;
           dopplerB = 1.0 - factor * 0.35;
@@ -1076,7 +1253,6 @@ export function simulateParticles(
     if (p.tunnelLife && p.tunnelLife > 0) {
       p.tunnelLife = Math.max(0, p.tunnelLife - 0.022);
       const t = p.tunnelLife;
-      // High-energy quantum emission spectrum: boost cyan/violet components and luminescence
       r = Math.min(255, r * (1.0 - t * 0.35) + 165 * t);
       g = Math.min(255, g * (1.0 - t * 0.15) + 240 * t);
       b = Math.min(255, b * (1.0 + t * 0.5) + 255 * t);
@@ -1096,25 +1272,22 @@ export function simulateParticles(
         const bhDy = finalY - bhWorldY;
         const bhDist2D = Math.sqrt(bhDx * bhDx + bhDy * bhDy);
         const scale = bh.scale !== undefined && bh.scale > 0 ? bh.scale : 1.0;
-        const ehRadius = (bh.radius * scale) * 1.05; // 1:1 Schwarzschild Event Horizon absorption boundary
+        const ehRadius = (bh.radius * scale) * 1.05;
         const photonSphereRadius = (bh.radius * scale) * 1.55;
 
-        // Any particle crossing inside the physical event horizon is absorbed into the singularity
         if (bhDist2D <= ehRadius) {
           bhAbsorbFactor = 0.0;
-          finalZ = 5000.0; // Hide absorbed particle deep behind scene
+          finalZ = 5000.0;
           positions[i * 3 + 2] = 5000.0;
           break;
         } else if (bhDist2D < photonSphereRadius) {
-          // Relativistic blueshift & photon sphere radiance amplification
           const blueshift = 1.0 - (bhDist2D - ehRadius) / (photonSphereRadius - ehRadius);
           particleBrightness = Math.max(particleBrightness, 1.0 + blueshift * 2.8);
         }
 
-        // Relativistic Gravitational Redshift (shifts light to longer wavelengths near horizon)
         if (bhDist2D < ehRadius * 3.8) {
           const rsRatio = Math.min(0.98, ehRadius / Math.max(ehRadius * 1.01, bhDist2D));
-          const g00 = Math.sqrt(Math.max(0.02, 1.0 - rsRatio)); // Schwarzschild metric g_00
+          const g00 = Math.sqrt(Math.max(0.02, 1.0 - rsRatio));
           redshiftG = Math.min(redshiftG, Math.pow(g00, 1.4));
           redshiftB = Math.min(redshiftB, Math.pow(g00, 2.2));
           redshiftR = Math.max(redshiftR, Math.min(1.45, 1.0 + (1.0 - g00) * 0.45));
@@ -1151,7 +1324,6 @@ export function simulateParticles(
       colors[i * 4 + 2] = 0;
       colors[i * 4 + 3] = 0;
     } else {
-      // Background galaxies belong to the backdrop and are never veiled.
       const veil = p.interstellarType === "background_galaxy" ? 1 : foregroundAlpha;
       colors[i * 4] = Math.min(1.0, Math.max(0.0, (r / 255) * globalAlpha * rFactor * audioColorR * particleBrightness * textAlphaDimmer * dopplerR * dopplerIntensity * bhAbsorbFactor * redshiftR * veil));
       colors[i * 4 + 1] = Math.min(1.0, Math.max(0.0, (g / 255) * globalAlpha * gFactor * audioColorG * particleBrightness * textAlphaDimmer * dopplerG * dopplerIntensity * bhAbsorbFactor * redshiftG * veil));

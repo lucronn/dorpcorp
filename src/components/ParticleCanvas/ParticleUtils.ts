@@ -1,5 +1,105 @@
 import { Particle, projects } from "../../types";
 
+/**
+ * Expands a 10-bit integer into 30 bits by inserting 2 zeros between each bit
+ * for 3D Morton code (Z-order curve) spatial indexing.
+ */
+export const expandBits10 = (v: number): number => {
+  let x = Math.max(0, Math.min(1023, Math.floor(v))) & 0x000003ff;
+  x = (x | (x << 16)) & 0x030000ff;
+  x = (x | (x << 8)) & 0x0300f00f;
+  x = (x | (x << 4)) & 0x030c30c3;
+  x = (x | (x << 2)) & 0x09249249;
+  return x >>> 0;
+};
+
+/**
+ * Computes a 30-bit 3D Morton code (Z-order curve) for normalized coordinates in [0, 1].
+ */
+export const encodeMorton3D = (nx: number, ny: number, nz: number = 0.5): number => {
+  const sx = isFinite(nx) ? Math.max(0, Math.min(1, nx)) : 0.5;
+  const sy = isFinite(ny) ? Math.max(0, Math.min(1, ny)) : 0.5;
+  const sz = isFinite(nz) ? Math.max(0, Math.min(1, nz)) : 0.5;
+  const ix = Math.floor(sx * 1023);
+  const iy = Math.floor(sy * 1023);
+  const iz = Math.floor(sz * 1023);
+  return ((expandBits10(ix) | (expandBits10(iy) << 1) | (expandBits10(iz) << 2)) >>> 0);
+};
+
+/**
+ * Deterministic Mulberry32 PRNG for seeded spatial permutations.
+ */
+export const createSeededRng = (seed: number): (() => number) => {
+  let a = (Math.floor(isFinite(seed) ? seed : 1337) ^ 0x9e3779b9) >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+/**
+ * Deterministic seeded Fisher-Yates permutation in-place.
+ */
+export const seededFisherYatesShuffle = <T>(arr: T[], seed: number = 42): T[] => {
+  if (!Array.isArray(arr) || arr.length <= 1) return arr;
+  const rng = createSeededRng(seed);
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const tmp = arr[i]!;
+    arr[i] = arr[j]!;
+    arr[j] = tmp;
+  }
+  return arr;
+};
+
+/**
+ * Decouples buffer index order from sequential scanline / glyph spatial order:
+ * 1. Computes a jittered 3D Morton code (Z-order curve) for each target point.
+ * 2. Stratifies points along the Z-order curve into interleaved buckets.
+ * 3. Applies a seeded Fisher-Yates permutation so adjacent buffer indices
+ *    map to spatially dispersed coordinates across the entire formation.
+ */
+export const stratifyTargetsByMorton = <T extends { x: number; y: number; z?: number }>(
+  coords: T[],
+  width: number,
+  height: number,
+  seed: number = 1337
+): T[] => {
+  if (!Array.isArray(coords) || coords.length <= 1) return coords;
+  const safeW = isFinite(width) && width > 0 ? width : 1920;
+  const safeH = isFinite(height) && height > 0 ? height : 1080;
+  const rng = createSeededRng(seed);
+
+  const keyed = coords.map((pt, idx) => {
+    const jx = (rng() - 0.5) * 0.04;
+    const jy = (rng() - 0.5) * 0.04;
+    const jz = (rng() - 0.5) * 0.04;
+    const nx = pt.x / safeW + jx;
+    const ny = pt.y / safeH + jy;
+    const nz = ((pt.z ?? 0) + 500) / 1000 + jz;
+    const morton = encodeMorton3D(nx, ny, nz);
+    return { pt, morton, idx };
+  });
+
+  // Sort along Z-order space-filling curve first
+  keyed.sort((a, b) => a.morton - b.morton || a.idx - b.idx);
+
+  // Interleave Z-order strata (stride permutation across 16 strata) before seeded Fisher-Yates
+  const n = keyed.length;
+  const stride = Math.min(16, Math.max(1, Math.floor(Math.sqrt(n))));
+  const stratified: T[] = new Array(n);
+  let writeIdx = 0;
+  for (let offset = 0; offset < stride; offset++) {
+    for (let k = offset; k < n; k += stride) {
+      stratified[writeIdx++] = keyed[k]!.pt;
+    }
+  }
+
+  return seededFisherYatesShuffle(stratified, seed ^ 0x5bf03635);
+};
+
 export const drawStageLayoutTemplate = (
   ctx: CanvasRenderingContext2D,
   index: number,
@@ -189,6 +289,7 @@ export const particleText = (
 
   const step = Math.max(1, Math.round(baseDensity / densityMultiplier));
   const searchDist = Math.max(2, step);
+  const rng = createSeededRng(text.length * 4099 + Math.floor(x + y));
 
   for (let py = 0; py < height; py += step) {
     for (let px = 0; px < width; px += step) {
@@ -223,7 +324,7 @@ export const particleText = (
           g = Math.min(255, g + 60 * depth);
           b = Math.min(255, b + 90 * depth);
         } else {
-          if (Math.random() > 0.05 * (1 + depth)) continue; 
+          if (rng() > 0.05 * (1 + depth)) continue;
           r = Math.floor(r * 0.3);
           g = Math.floor(g * 0.3);
           b = Math.floor(b * 0.3);
@@ -312,8 +413,9 @@ export const generateTargetsForStage = (
     const lineStartX = hudX - hudMaxW / 2;
     const lineEndX = hudX + hudMaxW / 2;
     const density = width < 768 ? 4 : 2;
+    const lineRng = createSeededRng((index + 1) * 1999);
     for (let lx = lineStartX; lx <= lineEndX; lx += density) {
-      if (Math.random() < 0.3) continue;
+      if (lineRng() < 0.3) continue;
       p3.push({ x: lx, y: lineY, color: "rgb(242,95,53)", isProjectText: true });
     }
 
@@ -323,10 +425,6 @@ export const generateTargetsForStage = (
     coords = [...p1, ...p2, ...p3, ...p4];
   }
 
-  for (let i = coords.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [coords[i], coords[j]] = [coords[j], coords[i]];
-  }
-
-  return coords;
+  // Stratify and permute target coordinates using 3D Morton code (Z-order curve) + seeded Fisher-Yates
+  return stratifyTargetsByMorton(coords, width, height, (index + 1) * 7919);
 };

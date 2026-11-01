@@ -46,7 +46,7 @@ export interface CapturePose {
   done: boolean;
 }
 
-export const CAPTURE_DEFAULT_DURATION_MS = 4200;
+export const CAPTURE_DEFAULT_DURATION_MS = 3000;
 
 const fin = (v: number, d = 0) => (Number.isFinite(v) ? v : d);
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : Number.isFinite(v) ? v : 0);
@@ -84,16 +84,16 @@ export function computeCapturePose(state: CaptureState, now: number): CapturePos
   const vx = startPos.x - bh.x;
   const vy = startPos.y - bh.y;
   const vz = startPos.z - bh.z;
-  const r0 = Math.max(state.bhRadius * 1.5, Math.sqrt(vx * vx + vy * vy + vz * vz));
+  const r0 = Math.sqrt(vx * vx + vy * vy + vz * vz);
   const horiz = Math.sqrt(vx * vx + vz * vz) || 1e-6;
   const az0 = Math.atan2(vx, vz);
   const el0 = Math.atan2(vy, horiz);
 
   // Accelerating inspiral.
   const fall = Math.pow(u, 2.2);
-  const rEnd = state.bhRadius * 1.08;
+  const rEnd = Math.min(r0, state.bhRadius * 1.02);
   const r = r0 + (rEnd - r0) * fall;
-  const az = az0 + state.spin * Math.PI * 2.1 * u * u * u;
+  const az = az0 + state.spin * Math.PI * 1.15 * u * u * u;
   // Settle toward the accretion plane (slightly above it).
   const el = el0 + (0.1 - el0) * smooth(0, 0.85, u);
 
@@ -108,7 +108,7 @@ export function computeCapturePose(state: CaptureState, now: number): CapturePos
   const lookBlend = smooth(0, 0.3, u);
   const tx = Math.cos(az);
   const tz = -Math.sin(az);
-  const lead = r * 0.18 * u * state.spin;
+  const lead = r * 0.09 * u * (1 - smooth(0.65, 1, u)) * state.spin;
   const look = {
     x: state.startLook.x + (bh.x + tx * lead - state.startLook.x) * lookBlend,
     y: state.startLook.y + (bh.y - state.startLook.y) * lookBlend,
@@ -117,7 +117,8 @@ export function computeCapturePose(state: CaptureState, now: number): CapturePos
 
   const capture = smooth(0.0, 0.9, u);
   const redshift = smooth(0.55, 0.95, u);
-  const blackout = smooth(0.74, 1.0, u);
+  // Keep the photon-ring silhouette readable until the final horizon crossing.
+  const blackout = smooth(0.86, 1.0, u);
   return {
     pos,
     look,

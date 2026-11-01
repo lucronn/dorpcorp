@@ -231,7 +231,7 @@ export function setupBlackholeLensingPostProcess(
     );
     effect.setFloat("uRedshift", finite01(fx.redshift));
     effect.setFloat("uBlackout", finite01(fx.blackout));
-    effect.setFloat("uLensPulse", finite01(fx.lensPulse));
+    effect.setFloat("uLensPulse", finite01(fx.lensPulse + fx.transitionLens));
 
     const bhData: number[] = [];
     const bhColors: number[] = [];

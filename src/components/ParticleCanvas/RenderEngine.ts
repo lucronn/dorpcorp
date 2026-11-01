@@ -14,8 +14,9 @@ import { updateCollisionFlares } from "./CollisionEngine";
 import { NEUTRAL_SHOT, ShotSnapshot, smoothstep } from "./cinematic/CinematicTransitionDirector";
 import { CinematicRuntime, entitiesToGravityBodies } from "./cinematic/CinematicRuntime";
 import { CapturePose, computeCapturePose } from "./cinematic/BlackHoleCapture";
-import { smoothNoise } from "./cinematic/CameraRig";
-import { cinematicFx, collisionSeverity, drainCollisions } from "./cinematic/CinematicFxBus";
+import { advanceIdleBlend, sampleIdleBreathing, smoothNoise } from "./cinematic/CameraRig";
+import { cinematicFx, collisionSeverity, drainCollisions, updateCinematicOptics } from "./cinematic/CinematicFxBus";
+import { sampleWormholeTransit, WORMHOLE_DURATION_MS, WORMHOLE_EXIT_SETTLE_MS, WORMHOLE_REBUILD_PROGRESS } from "./cinematic/TransitChoreography";
 
 /** How long the user must keep pushing in at the horizon-zoom limit before the hole takes the camera. */
 const HORIZON_HOLD_MS = 1400;
@@ -82,6 +83,7 @@ export interface RenderEngineContext {
   positions: Float32Array;
   colors: Float32Array;
   extras: Float32Array;
+  velocities?: Float32Array;
   updateCelestial3DMeshes: () => void;
   generateInterstellarScene: (width: number, height: number, forceInterstellar?: boolean) => void;
   mapParticlesToInterstellar: (width: number, height: number) => void;
@@ -125,6 +127,14 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
 
   // ── Cinematic layer: transition shot, black-hole capture, FX decay ──────────
   const cine = ctx.cinematicRef?.current ?? null;
+  // Start the first shot once shaders/assets are ready, not while the first
+  // visible frame is still compiling on a cold load.
+  if (cine?.openingPending && ctx.sceneRef.current?.isReady()) {
+    cine.openingPending = false;
+    if (!cine.director.isBusy && !cine.capture && !ctx.isTransitActiveRef.current) {
+      cine.director.establish(now);
+    }
+  }
   let capturePose: CapturePose | null = null;
   if (cine?.capture) {
     capturePose = computeCapturePose(cine.capture, now);
@@ -147,7 +157,10 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
   cinematicFx.capture = capturePose ? capturePose.capture : cinematicFx.capture * Math.exp(-dtSec * 4);
   cinematicFx.redshift = Math.max(capturePose ? capturePose.redshift : 0, smoothstep(0.2, 1, emergeVeil) * 0.8);
   cinematicFx.blackout = Math.max(capturePose ? capturePose.blackout : 0, smoothstep(0.35, 1, emergeVeil));
-  cinematicFx.rackFocus = shot.rackFocus;
+  cinematicFx.transitionProgress = shot.particleProgress;
+  cinematicFx.transitionLens = shot.lensing;
+  cinematicFx.angularVelocity = shot.angularVelocity ?? 0.0;
+  cinematicFx.bloomSpike = shot.bloomSpike ?? 0.0;
   cinematicFx.flash *= Math.exp(-dtSec * 5.5);
   cinematicFx.lensPulse *= Math.exp(-dtSec * 1.8);
   if (cinematicFx.flash < 0.002) cinematicFx.flash = 0;
@@ -179,8 +192,6 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
   };
   const musicSpeedFactor = 1.0 + musicBands.mid * 0.4 + musicBands.bass * 0.2;
 
-  const idleTime = now - ctx.lastUserActivityRef.current;
-  const isIdle = idleTime > 10000;
   if (ctx.isScreensaverActiveRef) {
     ctx.isScreensaverActiveRef.current = false;
   }
@@ -205,18 +216,35 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
   let transitCy = currentH / 2;
   if (isTransitActive && ctx.transitStartTimeRef.current > 0) {
     const elapsed = now - ctx.transitStartTimeRef.current;
-    transitProgress = Math.min(elapsed / 3000, 1.0);
+    transitProgress = Math.min(elapsed / WORMHOLE_DURATION_MS, 1.0);
     transitCx = ctx.mouseRef.current.x > 0 ? ctx.mouseRef.current.x : currentW / 2;
     transitCy = ctx.mouseRef.current.y > 0 ? ctx.mouseRef.current.y : currentH / 2;
   }
 
-  // The wormhole rebuilds the scene at ~65 % progress: keep the subject veiled
-  // around that moment so the new system is already formed when it reappears.
+  // Keep particles visible during organic morph transitions so curl-noise dispersion,
+  // slingshot swirl, and velocity-stretched motion blur streaks are seen; only veil
+  // slightly during reduced-motion or full horizon blackout.
+  const isReducedMotion = Boolean(cine?.director.reducedMotion);
+  if (cine) {
+    const idleMs = now - Math.max(ctx.lastUserActivityRef.current, ctx.mouseRef.current.lastMoved);
+    const blocked = isReducedMotion || shot.phase !== "IDLE" || Boolean(capturePose) || isTransitActive
+      || Boolean(ctx.inputControllerRef.current?.targetLock?.active)
+      || Math.abs(ctx.scrollVelocityRef.current) > 0.1;
+    const idleDt = Math.min(1, dt / 1000);
+    cine.idleBlend = advanceIdleBlend(cine.idleBlend, idleMs, idleDt, blocked);
+    cine.idleTime += idleDt * cine.idleBlend * Math.max(0, speedMult);
+  }
+  if (isTransitActive) {
+    cinematicFx.transitionLens = sampleWormholeTransit(transitProgress).intensity * 0.45;
+  }
+  const effectiveShotAlpha = isReducedMotion
+    ? shot.foregroundAlpha
+    : Math.max(0.78, shot.foregroundAlpha);
   const transitVeil = isTransitActive && transitProgress > 0
-    ? smoothstep(0.3, 0.58, transitProgress) * (1 - smoothstep(0.74, 1.0, transitProgress))
+    ? smoothstep(0.35, 0.58, transitProgress) * (1 - smoothstep(0.72, 1.0, transitProgress)) * 0.35
     : 0;
-  const foregroundAlpha = Math.max(0, Math.min(shot.foregroundAlpha, 1 - transitVeil));
-  cinematicFx.foregroundAlpha = foregroundAlpha;
+  const foregroundAlpha = Math.max(0, Math.min(effectiveShotAlpha, 1 - transitVeil));
+  cinematicFx.foregroundAlpha = shot.foregroundAlpha;
 
   const activeSupernova = ctx.supernovaRef.current;
   let snElapsed = 0;
@@ -249,7 +277,7 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
       gravitationalProximity = Math.max(0, 1.0 - (effectiveDist - bhRadius) / (influenceZone - bhRadius));
       const rsRatio = Math.min(0.96, bhRadius / Math.max(bhRadius * 1.02, effectiveDist));
       const g00 = Math.sqrt(Math.max(0.04, 1.0 - rsRatio));
-      timeDilation = 1.0 / g00; // General relativistic time dilation factor
+      timeDilation = 1.0 / g00;
     }
   }
 
@@ -257,16 +285,14 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
     gravitationalProximity = Math.max(gravitationalProximity, Math.min(0.98, capturePose.capture));
   }
 
-  // Update audio pitch drop and muffled acoustic redshift
   if (ctx.audio?.setGravitationalProximity) {
     ctx.audio.setGravitationalProximity(gravitationalProximity);
   }
 
-  // Gravitational time dilation slows down particle clock ticks (Δτ = Δt / timeDilation)
   const clockTimeDilationFactor = Math.max(0.12, 1.0 / timeDilation);
   if (ctx.timeRef) {
     if (!isFinite(ctx.timeRef.current)) ctx.timeRef.current = 0;
-    ctx.timeRef.current += clockTimeDilationFactor;
+    ctx.timeRef.current += clockTimeDilationFactor * globalTimeMultiplier;
   }
   const time = ctx.timeRef?.current ?? 0;
 
@@ -306,7 +332,6 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
       });
     }
 
-    // Update 3D Multi-Layered Particle Spray & Shredding Shader System
     if (ctx.activeTdeFxRef) {
       if (!ctx.activeTdeFxRef.current && ctx.sceneRef.current) {
         ctx.activeTdeFxRef.current = spawnTidalDisruptionFX(ctx.sceneRef.current);
@@ -390,7 +415,7 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
     const transitionThreshold = 4950;
     if (snElapsed >= transitionThreshold && !activeSupernova.transitioned) {
       activeSupernova.transitioned = true;
-      
+
       if (ctx.activeSupernovaFxRef.current) {
         ctx.activeSupernovaFxRef.current.dispose();
         ctx.activeSupernovaFxRef.current = null;
@@ -413,45 +438,68 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
     };
   });
 
-  simulateParticles(particles, ctx.positions, ctx.colors, ctx.extras, {
-    currentW,
-    currentH,
-    time,
-    globalTimeMultiplier,
-    musicAmpVal,
-    musicBands,
-    musicSpeedFactor,
-    activeBlackholes,
-    activeCollidables,
-    activeSupernova,
-    snElapsed,
-    scrollVelocity: ctx.scrollVelocityRef.current,
-    ambientParticleSpeed: ctx.ambientParticleSpeedRef.current,
-    objectParticleSpeed: ctx.objectParticleSpeedRef.current,
-    textParticleSpeed: ctx.textParticleSpeedRef.current,
-    particleFilters: ctx.particleFiltersRef.current,
-    globalAlpha,
-    isTypographyMode,
-    isInterstellar: ctx.isInterstellarRef.current,
-    vortexMultiplier,
-    attractionMultiplier,
-    mousePos: ctx.mouseRef.current,
-    celestialEntities: ctx.celestialEntitiesRef.current,
-    spawnTailParticle: ctx.spawnTailParticleRef.current || (() => {}),
-    screensaverOpacity: ctx.screensaverOpacityRef.current,
-    isTransitActive,
-    transitProgress,
-    transitCx,
-    transitCy,
-    activeRipples,
-    audio: ctx.audio,
-    foregroundAlpha,
-  });
+  // Remapping, particle arrival, lensing and camera settle share a single clock.
+  const stageMorphProgress = Math.min(1.0, Math.max(0.0, elapsed / 1800));
+  const effectiveTransitionProgress = isTransitActive
+    ? Math.max(0, Math.min(1, (transitProgress - WORMHOLE_REBUILD_PROGRESS) / (1 - WORMHOLE_REBUILD_PROGRESS)))
+    : shot.phase !== "IDLE" ? shot.particleProgress
+    : stageMorphProgress;
+  cinematicFx.transitionProgress = effectiveTransitionProgress;
+
+  simulateParticles(
+    particles,
+    ctx.positions,
+    ctx.colors,
+    ctx.extras,
+    {
+      currentW,
+      currentH,
+      time,
+      globalTimeMultiplier,
+      musicAmpVal,
+      musicBands,
+      musicSpeedFactor,
+      activeBlackholes,
+      activeCollidables,
+      activeSupernova,
+      snElapsed,
+      scrollVelocity: ctx.scrollVelocityRef.current,
+      ambientParticleSpeed: ctx.ambientParticleSpeedRef.current,
+      objectParticleSpeed: ctx.objectParticleSpeedRef.current,
+      textParticleSpeed: ctx.textParticleSpeedRef.current,
+      particleFilters: ctx.particleFiltersRef.current,
+      globalAlpha,
+      isTypographyMode,
+      isInterstellar: ctx.isInterstellarRef.current,
+      vortexMultiplier,
+      attractionMultiplier,
+      mousePos: ctx.mouseRef.current,
+      celestialEntities: ctx.celestialEntitiesRef.current,
+      spawnTailParticle: ctx.spawnTailParticleRef.current || (() => {}),
+      screensaverOpacity: ctx.screensaverOpacityRef.current,
+      isTransitActive,
+      transitProgress,
+      transitCx,
+      transitCy,
+      activeRipples,
+      audio: ctx.audio,
+      foregroundAlpha,
+      transitionProgress: effectiveTransitionProgress,
+      velocities: ctx.velocities,
+      directorShockwaveRadius: shot.shockwaveRadius ?? 0,
+      idleBreath: isReducedMotion ? 0 : cine?.idleBlend ?? 0,
+      idleTime: cine?.idleTime ?? 0,
+    },
+    ctx.velocities
+  );
 
   if (ctx.pointsMeshRef.current) {
     ctx.pointsMeshRef.current.updateVerticesData(BABYLON.VertexBuffer.PositionKind, ctx.positions);
     ctx.pointsMeshRef.current.updateVerticesData(BABYLON.VertexBuffer.ColorKind, ctx.colors);
     ctx.pointsMeshRef.current.updateVerticesData("extraData", ctx.extras);
+    if (ctx.velocities) {
+      ctx.pointsMeshRef.current.updateVerticesData("aVelocity", ctx.velocities);
+    }
   }
 
   ctx.ripplesRef.current.forEach((r) => (r.life -= 0.02));
@@ -472,7 +520,6 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
   if (ctx.cameraShakeRef.current < 0.01) ctx.cameraShakeRef.current = 0;
 
   const shakeVal = ctx.cameraShakeRef.current;
-  // Smooth band-limited noise instead of per-frame Math.random() jitter.
   const shakeX = shakeVal > 0 ? (Math.sin(now * 0.08) * 0.6 + smoothNoise(now * 0.011, 11) * 0.4) * shakeVal : 0;
   const shakeY = shakeVal > 0 ? (Math.cos(now * 0.09) * 0.6 + smoothNoise(now * 0.012, 12) * 0.4) * shakeVal : 0;
   const shakeZ = shakeVal > 0 ? (Math.sin(now * 0.07) * 0.5) * shakeVal : 0;
@@ -547,22 +594,22 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
     (typeof window !== "undefined" ? (window as any).__cinematicCameraMode : "orbit") ||
     "orbit";
 
+  const cameraTime = cine ? cine.idleTime * 60 : time;
   if (isCinematic || ctx.isInterstellarRef.current) {
     if (camMode === 'horizon') {
-      // EVENT HORIZON CLOSE-UP: Low-angle dramatic pass skimming photon sphere of the black hole
       const bh = ctx.celestialEntitiesRef.current.find((e) => e && !e.isDestroyed && e.type === "blackhole");
       if (bh) {
         const bx = bh.x - currentW / 2;
         const by = -(bh.y - currentH / 2);
         const bz = bh.z || 0;
         const r = bh.radius * 2.598 * 1.85;
-        const a = time * 0.0018;
+        const a = cameraTime * 0.0018;
         finalTargetX = bx + Math.cos(a) * r + inputs.currentCameraParallaxX * 0.3;
-        finalTargetY = by + Math.sin(time * 0.0009) * (bh.radius * 0.6) + bh.radius * 0.4 + inputs.currentCameraParallaxY * 0.3;
+        finalTargetY = by + Math.sin(cameraTime * 0.0009) * (bh.radius * 0.6) + bh.radius * 0.4 + inputs.currentCameraParallaxY * 0.3;
         finalTargetZ = bz + Math.sin(a) * r + inputs.currentCameraZDepthOffset * 0.3;
         inputs.currentLock = { x: bx, y: by, z: bz, intensity: 1.0 };
       } else {
-        const orbitAngle = time * 0.0016;
+        const orbitAngle = cameraTime * 0.0016;
         const ox = (cameraZ * 0.75) * Math.sin(orbitAngle);
         const oz = (cameraZ * 0.75) * Math.cos(orbitAngle);
         finalTargetX = ox + inputs.currentCameraParallaxX;
@@ -570,14 +617,12 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
         finalTargetZ = oz + inputs.currentCameraZDepthOffset;
       }
     } else if (camMode === 'deep') {
-      // DEEP SPACE PERCH: Elevated majestic wide view looking down at orbital plane
       const deepZ = -cameraZ * 1.5;
-      finalTargetX = Math.sin(time * 0.0006) * 220 + inputs.currentCameraParallaxX;
+      finalTargetX = Math.sin(cameraTime * 0.0006) * 220 + inputs.currentCameraParallaxX;
       finalTargetY = cameraZ * 0.55 + inputs.currentCameraParallaxY;
       finalTargetZ = deepZ + inputs.currentCameraZDepthOffset;
       inputs.currentLock = { x: 0, y: -cameraZ * 0.1, z: 0, intensity: 1.0 };
     } else if (camMode === 'chase') {
-      // CELESTIAL CHASE: Dynamic camera tracking closest planet or companion body
       const companions = ctx.celestialEntitiesRef.current.filter(
         (e) => !e.isDestroyed && e.type !== "galaxy" && e.type !== "nebula"
       );
@@ -591,7 +636,7 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
         finalTargetZ = tz + 220 + inputs.currentCameraZDepthOffset * 0.4;
         inputs.currentLock = { x: tx, y: ty, z: tz, intensity: 1.0 };
       } else {
-        const orbitAngle = time * 0.0016;
+        const orbitAngle = cameraTime * 0.0016;
         const ox = (cameraZ * 0.75) * Math.sin(orbitAngle);
         const oz = (cameraZ * 0.75) * Math.cos(orbitAngle);
         finalTargetX = ox;
@@ -599,13 +644,11 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
         finalTargetZ = oz;
       }
     } else if (camMode === 'free') {
-      // FREE INERTIA: User-guided with silky inertia damping
       finalTargetX = inputs.currentCameraParallaxX * 2.2;
       finalTargetY = inputs.currentCameraParallaxY * 2.2;
       finalTargetZ = -cameraZ + inputs.currentCameraZDepthOffset;
     } else {
-      // 'orbit' DEFAULT: Majestic, stable 360 sweeping orbit without oscillating pitch loops
-      const orbitAngle = time * 0.0012;
+      const orbitAngle = cameraTime * 0.0012;
       const pitchAngle = 0.16;
 
       let maxSpread = 50;
@@ -640,12 +683,10 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
 
   if (ctx.stageRef.current === 0 && !ctx.isInterstellarRef.current && !isCinematic) {
     if (inputs.targetLock && inputs.targetLock.active) {
-      // User clicked or locked onto celestial object: smooth cinematic focus
       finalTargetX = inputs.targetLock.x * 0.45 + inputs.currentCameraParallaxX * 0.6;
       finalTargetY = inputs.targetLock.y * 0.45 + inputs.currentCameraParallaxY * 0.6;
       finalTargetZ = -cameraZ * 0.85 + inputs.currentCameraZDepthOffset;
     } else {
-      // Stage 0 is the hero "CURTIS CLICK" typography: lock camera front-facing with pristine parallax
       finalTargetX = inputs.currentCameraParallaxX;
       finalTargetY = inputs.currentCameraParallaxY;
       finalTargetZ = -cameraZ + inputs.currentCameraZDepthOffset;
@@ -675,8 +716,6 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
 
   const bh = ctx.celestialEntitiesRef.current.find((e) => !e.isDestroyed && e.type === "blackhole");
   if (cine) {
-    // Pushing past the horizon-zoom limit (sustained scroll-in) lets the hole
-    // take the camera. Merely resting at full zoom never triggers it.
     const pushAt = typeof window !== "undefined" ? Number((window as any).__horizonPushAt) || 0 : 0;
     const pushing = Date.now() - pushAt < HORIZON_PUSH_GRACE_MS;
     if (bh && currentZoom >= 0.9 && pushing && !cine.capture && !cine.director.isBusy) {
@@ -695,7 +734,6 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
     const bz = bh.z || 0;
     const bhRadius = bh.radius * (bh.scale || 1.0);
 
-    // Camera dollies smoothly towards the black hole center without penetrating inside near-plane clipping
     const minApproachDist = Math.max(bhRadius * 0.8, 55.0);
     const approachDist = minApproachDist + (1.0 - Math.min(0.9, currentZoom)) * (cameraZ * 0.55);
     const approachAngle = time * 0.0006;
@@ -713,16 +751,12 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
     inputs.currentLock.z = (1 - blendFactor) * inputs.currentLock.z + blendFactor * bz;
     inputs.currentLock.intensity = Math.max(inputs.currentLock.intensity, blendFactor);
 
-    // Frame-Shattering activation as camera approaches the center (currentZoom >= 0.82)
     let shatterIntensity = 0.0;
     if (currentZoom >= 0.82) {
       shatterIntensity = Math.min(1.0, (currentZoom - 0.82) / 0.16);
-
-      // Camera shake violently surges as spacetime ruptures
       const shatterShake = Math.pow(shatterIntensity, 1.8) * 45.0;
       ctx.cameraShakeRef.current = Math.max(ctx.cameraShakeRef.current, shatterShake);
 
-      // Trigger auditory spacetime rupture if crossing shatter threshold
       const hasShattered = typeof window !== "undefined" ? Boolean((window as any).__hasShatteredSound) : false;
       if (shatterIntensity > 0.45 && !hasShattered) {
         if (typeof window !== "undefined") {
@@ -760,7 +794,7 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
   const startPos = ctx.transitionStartPosRef.current;
 
   if (ctx.transitionActiveRef.current && startPos) {
-    const duration = 2400;
+    const duration = WORMHOLE_EXIT_SETTLE_MS;
     const elapsed = now - ctx.transitionStartTimeRef.current;
     if (elapsed >= duration) {
       ctx.transitionActiveRef.current = false;
@@ -773,26 +807,32 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
   }
 
   const camera = ctx.cameraRef.current;
+  let camVelX = 0;
+  let camVelY = 0;
+  let camVelZ = 0;
+
   if (camera) {
+    const prevCamX = camera.position.x;
+    const prevCamY = camera.position.y;
+    const prevCamZ = camera.position.z;
+
     if (ctx.isTransitActiveRef.current) {
       const transitElapsed =
         ctx.transitStartTimeRef.current > 0
           ? now - ctx.transitStartTimeRef.current
           : 99999;
-      if (transitElapsed > 3500) {
+      if (transitElapsed > WORMHOLE_DURATION_MS + 500) {
         ctx.isTransitActiveRef.current = false;
       }
     }
 
     if (cine && !ctx.isTransitActiveRef.current) {
-      // Work on the un-offset base pose; rig/director offsets are re-applied below.
       camera.position.x -= cine.appliedOffset.x;
       camera.position.y -= cine.appliedOffset.y;
       camera.position.z -= cine.appliedOffset.z;
     }
     if (cine) cine.appliedOffset = { x: 0, y: 0, z: 0 };
     if (cine && ctx.isTransitActiveRef.current) {
-      // The wormhole drives the camera directly; track its view so the hand-off is seamless.
       const tgt = camera.getTarget();
       const d = tgt.subtract(camera.position);
       const l = d.length();
@@ -836,10 +876,6 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
         camera.position.y += (sTargetY - camera.position.y) * 0.04 + shakeY;
         camera.position.z += (sTargetZ - camera.position.z) * 0.04 + shakeZ;
 
-        if (camera.minZ > 0.5) {
-          camera.minZ = 0.5;
-        }
-
         const rawLockX = inputs.currentLock.x * inputs.currentLock.intensity;
         const rawLockY = inputs.currentLock.y * inputs.currentLock.intensity;
         const rawLockZ = inputs.currentLock.z * inputs.currentLock.intensity;
@@ -862,7 +898,11 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
         } else {
           applyLook(
             camera,
-            new BABYLON.Vector3(lockX - yawOffset * 100, lockY + pitchOffset * 100, lockZ),
+            new BABYLON.Vector3(
+              lockX - yawOffset * 100 + (shot.lookOffset?.x ?? 0) * cameraZ,
+              lockY + pitchOffset * 100 + (shot.lookOffset?.y ?? 0) * cameraZ,
+              lockZ + (shot.lookOffset?.z ?? 0) * cameraZ
+            ),
             cine,
             dtSec,
             null
@@ -883,20 +923,49 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
         });
       }
 
-      // Subtle cinematic optical focal breathing
+      // Dynamic FOV choreography (including Relativistic Jet 45 -> 85 -> 45 deg pass)
       const baseFov = (ctx.fovRef.current * Math.PI) / 180;
-      const cineFov = shot.fov + (capturePose ? capturePose.fov : 0);
+      const maneuverFovOffset =
+        shot.phase !== "IDLE" && shot.fovDegrees
+          ? ((shot.fovDegrees - 45) * Math.PI) / 180
+          : 0;
+      const cineFov = shot.fov + maneuverFovOffset + (capturePose ? capturePose.fov : 0);
       if (isCinematic) {
-        const fovPulse = Math.sin(time * 0.001) * 0.025;
-        camera.fov = baseFov + fovPulse + cineFov;
+        const fovPulse = isReducedMotion ? 0 : Math.sin((cine?.idleTime ?? time / 60) * 0.06) * 0.015 * (cine?.idleBlend ?? 1);
+        camera.fov = Math.max(0.35, Math.min(1.65, baseFov + fovPulse + cineFov));
       } else {
-        camera.fov = baseFov + cineFov;
+        camera.fov = Math.max(0.35, Math.min(1.65, baseFov + cineFov));
       }
     }
+
+    camVelX = isFinite(camera.position.x - prevCamX) ? camera.position.x - prevCamX : 0;
+    camVelY = isFinite(camera.position.y - prevCamY) ? camera.position.y - prevCamY : 0;
+    camVelZ = isFinite(camera.position.z - prevCamZ) ? camera.position.z - prevCamZ : 0;
+    // Motion blur uses a 60 Hz reference shutter, not the entire slow frame.
+    const shutter = Math.min(1, 16.666 / dt);
+    camVelX *= shutter;
+    camVelY *= shutter;
+    camVelZ *= shutter;
   }
 
+  const focusEntity = ctx.celestialEntitiesRef.current.find(e => !e.isDestroyed && e.id === inputs.targetLock?.entityId)
+    ?? primaryBh ?? ctx.celestialEntitiesRef.current.find(e => !e.isDestroyed);
+  const focusPoint = focusEntity ? new BABYLON.Vector3(
+    focusEntity.worldX ?? focusEntity.x - currentW / 2,
+    focusEntity.worldY ?? -(focusEntity.y - currentH / 2),
+    focusEntity.worldZ ?? focusEntity.z ?? 0
+  ) : BABYLON.Vector3.Zero();
+  updateCinematicOptics(cinematicFx, {
+    dt: dtSec, subjectDistance: camera ? BABYLON.Vector3.Distance(camera.position, focusPoint) : cameraZ,
+    restDistance: cameraZ, rackFocus: shot.rackFocus,
+    apertureDepthFactor: shot.apertureDepthFactor, bloomSpike: shot.bloomSpike,
+    music: musicAmpVal, typography: !ctx.isInterstellarRef.current && !isCinematic,
+    cinematic: Boolean(isCinematic), reducedMotion: isReducedMotion,
+  });
+
   if (ctx.pointsMaterialRef.current) {
-    ctx.pointsMaterialRef.current.setFloat("electricPulse", 0.0);
+    const mat = ctx.pointsMaterialRef.current;
+    mat.setFloat("electricPulse", 0.0);
     const isCinematic =
       ctx.isCinematicModeRef?.current ||
       (typeof window !== "undefined" && (window as any).__cinematicMode);
@@ -905,12 +974,36 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
       : typeof window !== "undefined"
       ? (window as any).__dofEnabled !== false
       : true;
-    const dofActive = isCinematic && isDofExplicitlyEnabled ? 1.0 : 0.0;
-    ctx.pointsMaterialRef.current.setFloat("uCinematicMode", isCinematic ? 1.0 : 0.0);
-    ctx.pointsMaterialRef.current.setFloat("uDofActive", dofActive);
-    ctx.pointsMaterialRef.current.setFloat("uCameraZ", ctx.cameraZRef?.current ?? 2000);
+    const dofActive = isDofExplicitlyEnabled
+      ? cinematicFx.dofAmount
+      : 0.0;
+    const baseCamZ = ctx.cameraZRef?.current ?? 2000;
+
+    mat.setFloat("uCinematicMode", isCinematic ? 1.0 : 0.0);
+    mat.setFloat("uDofActive", dofActive);
+    mat.setFloat("uCameraZ", baseCamZ);
+    mat.setFloat("uTransitionProgress", effectiveTransitionProgress);
+    mat.setFloat("uFocusDistance", baseCamZ * cinematicFx.focusDistanceFactor);
+    mat.setFloat("uApertureDepth", 480.0 * cinematicFx.apertureDepthFactor);
+    mat.setVector3("uCameraVelocity", new BABYLON.Vector3(camVelX, camVelY, camVelZ));
+    mat.setFloat("uCameraAngularVelocity", shot.angularVelocity ?? 0.0);
+    mat.setFloat("uTime", time * 0.016);
+
+    if (primaryBh) {
+      mat.setVector3(
+        "uFocalOrigin",
+        new BABYLON.Vector3(
+          primaryBh.x - currentW / 2,
+          -(primaryBh.y - currentH / 2),
+          primaryBh.z || 0
+        )
+      );
+    } else {
+      mat.setVector3("uFocalOrigin", new BABYLON.Vector3(0, 0, 0));
+    }
+
     if (camera) {
-      ctx.pointsMaterialRef.current.setVector3("uCameraPos", camera.position);
+      mat.setVector3("uCameraPos", camera.position);
     }
   }
 
@@ -919,14 +1012,14 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
     const isCinematic =
       ctx.isCinematicModeRef?.current ||
       (typeof window !== "undefined" && (window as any).__cinematicMode);
-    const baseBloom = (isCinematic ? 0.10 : 0.06) + musicAmpVal * (isCinematic ? 0.28 : 0.20);
-    const shakeBloom = (shakeVal / 30.0) * 0.30;
-    pipeline.bloomWeight = Math.min(0.55, baseBloom + shakeBloom);
+    pipeline.bloomWeight = cinematicFx.bloom;
 
     if (pipeline.chromaticAberrationEnabled && pipeline.chromaticAberration) {
-      const baseAberration = (isCinematic ? 2.5 : 1.5) + musicBands.bass * 14.0;
-      const shakeAberration = shakeVal * 0.75;
-      pipeline.chromaticAberration.aberrationAmount = Math.min(24.0, baseAberration + shakeAberration);
+      // Preserve pinpoint stars at rest; reserve visible color separation for
+      // the rush/impact instead of giving every idle highlight a diagonal tail.
+      const baseAberration = (cinematicFx.typography ? 0.12 : 0.24) + musicBands.bass * 2;
+      const shakeAberration = Math.min(0.8, shakeVal * 0.04) + shot.angularVelocity * 0.22 + cinematicFx.capture * 0.8;
+      pipeline.chromaticAberration.aberrationAmount = Math.min(4, baseAberration + shakeAberration);
     }
 
     if (pipeline.imageProcessing && pipeline.imageProcessing.vignetteEnabled) {
@@ -937,9 +1030,8 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
       }
     }
     if (pipeline.imageProcessing) {
-      // Achromatic impact flash (collisions / horizon crossings) as a brief exposure bump.
       const baseExposure = isCinematic ? 1.08 : cineBaseExposure(pipeline);
-      pipeline.imageProcessing.exposure = baseExposure * (1 + Math.min(0.6, cinematicFx.flash) * 0.9);
+      pipeline.imageProcessing.exposure = baseExposure * cinematicFx.exposure;
     }
   }
 
@@ -978,9 +1070,7 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
   }
 }
 
-
 const BASE_EXPOSURE_KEY = "__cineBaseExposure";
-/** Remembers the pipeline's configured exposure so the flash can bump it non-destructively. */
 function cineBaseExposure(pipeline: BABYLON.DefaultRenderingPipeline): number {
   const holder = pipeline as unknown as Record<string, number | undefined>;
   if (holder[BASE_EXPOSURE_KEY] === undefined) {
@@ -990,11 +1080,6 @@ function cineBaseExposure(pipeline: BABYLON.DefaultRenderingPipeline): number {
   return holder[BASE_EXPOSURE_KEY] as number;
 }
 
-/**
- * Points the camera at `target`. With a cinematic runtime the view direction is
- * low-pass filtered (exp. smoothing) so look-target discontinuities (wormhole
- * hand-off, lock changes, scene rebuilds) turn into pans instead of cuts.
- */
 function applyLook(
   camera: BABYLON.TargetCamera,
   target: BABYLON.Vector3,
@@ -1040,12 +1125,6 @@ function applyLook(
   camera.rotation.z = 0;
 }
 
-/**
- * Adds the director's shot (pan-away yaw / pitch / roll / dolly) and the
- * gravity rig (drift, lean, sway, tidal shake, collision kicks) on top of the
- * base camera pose. The positional part is remembered and removed next frame
- * so the base lerp never integrates it.
- */
 function applyCinematicCamera(
   camera: BABYLON.TargetCamera,
   cine: CinematicRuntime,
@@ -1062,7 +1141,6 @@ function applyCinematicCamera(
   }
 ) {
   const f = cine.smoothedForward ?? { x: 0, y: 0, z: 1 };
-  // Left-handed basis: right = up × forward, up' = forward × right.
   let rx = f.z;
   let ry = 0;
   let rz = -f.x;
@@ -1082,7 +1160,6 @@ function applyCinematicCamera(
   };
   const basis = { right, up, forward: f };
 
-  // Collisions → camera impulse (shoved away from the contact) + flash.
   const hits = drainCollisions();
   for (const hit of hits) {
     const sev = collisionSeverity(hit.energy);
@@ -1093,17 +1170,14 @@ function applyCinematicCamera(
       z: camera.position.z - hit.z,
     };
     const dist = Math.hypot(away.x, away.y, away.z) || 1;
-    // Distant impacts are felt less.
     const falloff = Math.min(1, (o.cameraZ * 1.2) / dist);
     cine.rig.addImpulse(away, sev * falloff, basis);
     cinematicFx.flash = Math.max(cinematicFx.flash, (0.1 + sev * 0.45) * falloff);
+    cinematicFx.collisionStress = Math.max(cinematicFx.collisionStress, sev * falloff);
   }
 
   const isTypographyStage = !ctx.isInterstellarRef.current && !o.isCinematic && ctx.stageRef.current >= 1;
   const bodies = entitiesToGravityBodies(ctx.celestialEntitiesRef.current, o.currentW, o.currentH);
-  // Rig offsets are fractions of the rest distance. When the camera is close
-  // to a black hole (horizon zoom, capture) scale them to that distance so the
-  // drift and tidal shake stay proportional on screen instead of violent.
   let rigScale = o.cameraZ;
   for (const b of bodies) {
     if (!b.isBlackHole) continue;
@@ -1127,13 +1201,27 @@ function applyCinematicCamera(
     time: o.now / 1000,
     dt: o.dtSec,
   });
+  const breath = sampleIdleBreathing(cine.idleTime, cine.idleBlend, isTypographyStage);
+  if (cine.director.reducedMotion) {
+    rigOut.offset = { x: 0, y: 0, z: 0 };
+    rigOut.yaw = rigOut.pitch = rigOut.roll = 0;
+  }
 
-  // Director dolly: + pulls back along the view axis, − pushes in.
+  // Director dolly + 3D spline maneuver offset (Singularity Fly-Through, Whip-Pan, Relativistic Jet)
   const dolly = o.capturePose ? 0 : -o.shot.dolly * o.cameraZ;
+  const sp = {
+    x: o.shot.splineOffset.x + breath.x,
+    y: o.shot.splineOffset.y + breath.y,
+    z: o.shot.splineOffset.z + breath.z,
+  };
+  const splineWorldX = (right.x * sp.x + up.x * sp.y + f.x * sp.z) * o.cameraZ;
+  const splineWorldY = (right.y * sp.x + up.y * sp.y + f.y * sp.z) * o.cameraZ;
+  const splineWorldZ = (right.z * sp.x + up.z * sp.y + f.z * sp.z) * o.cameraZ;
+
   const offset = {
-    x: rigOut.offset.x + f.x * dolly,
-    y: rigOut.offset.y + f.y * dolly,
-    z: rigOut.offset.z + f.z * dolly,
+    x: rigOut.offset.x + f.x * dolly + (o.capturePose ? 0 : splineWorldX),
+    y: rigOut.offset.y + f.y * dolly + (o.capturePose ? 0 : splineWorldY),
+    z: rigOut.offset.z + f.z * dolly + (o.capturePose ? 0 : splineWorldZ),
   };
   if (Number.isFinite(offset.x + offset.y + offset.z)) {
     camera.position.x += offset.x;
@@ -1144,7 +1232,7 @@ function applyCinematicCamera(
 
   const yaw = o.shot.yaw + rigOut.yaw;
   const pitch = o.shot.pitch + rigOut.pitch;
-  const roll = o.shot.roll + rigOut.roll + (o.capturePose ? o.capturePose.roll : 0);
+  const roll = o.shot.roll + rigOut.roll + breath.roll + (o.capturePose ? o.capturePose.roll : 0);
   if (Number.isFinite(yaw)) camera.rotation.y += yaw;
   if (Number.isFinite(pitch)) camera.rotation.x += pitch;
   camera.rotation.z = Number.isFinite(roll) ? roll : 0;

@@ -1,13 +1,17 @@
 /**
- * Pure-logic tests for the cinematic camera layer
- * (director, gravity rig, black-hole capture, FX bus, instant settling).
+ * Pure-logic tests for the cinematic camera layer & physics-driven transition pipeline
+ * (director, multi-stage phases, camera splines, Morton Z-order stratification,
+ * 3D spatial bucket optimal transport, per-particle wavefront activation, 3D curl noise,
+ * critically damped spring arrival, blackbody continuity, gravity rig, black-hole capture, FX bus).
  */
 import assert from "node:assert/strict";
 import {
   CinematicTransitionDirector,
+  TransitionDirector,
   SHOT_PRESETS,
   NEUTRAL_SHOT,
   smoothstep,
+  resolveTransitionStagePhase,
 } from "../src/components/ParticleCanvas/cinematic/CinematicTransitionDirector";
 import {
   CameraRig,
@@ -15,6 +19,9 @@ import {
   computeGravityField,
   springStep,
   smoothNoise,
+  advanceIdleBlend,
+  sampleIdleBreathing,
+  sampleIdleParticle,
 } from "../src/components/ParticleCanvas/cinematic/CameraRig";
 import {
   createCaptureState,
@@ -26,11 +33,33 @@ import {
   drainCollisions,
   emitCollision,
   resetCinematicFx,
+  updateCinematicOptics,
 } from "../src/components/ParticleCanvas/cinematic/CinematicFxBus";
 import { entitiesToGravityBodies } from "../src/components/ParticleCanvas/cinematic/CinematicRuntime";
-import { settleParticlesToTargets } from "../src/components/ParticleCanvas/ParticleMapper";
+import {
+  settleParticlesToTargets,
+  assignTargetsOptimalTransport,
+  snapshotParticleTransitionStart,
+  triggerOrganicParticleDisperse,
+} from "../src/components/ParticleCanvas/ParticleMapper";
+import {
+  encodeMorton3D,
+  seededFisherYatesShuffle,
+  stratifyTargetsByMorton,
+} from "../src/components/ParticleCanvas/ParticleUtils";
+import {
+  computeCurlNoise3D,
+  computeLocalWavefrontProgress,
+  quinticSmoothstep,
+  computeCriticallyDampedSpringForce,
+  advanceCriticalSpring,
+  computeArrivalCorrection,
+  computeBlackbodyColorContinuity,
+} from "../src/components/ParticleCanvas/PhysicsUtils";
 import { settleEntitiesInstantly } from "../src/components/ParticleCanvas/TransitionManager";
+import { simulateParticles } from "../src/components/ParticleCanvas/ParticleSimulationEngine";
 import { CelestialEntity, Particle } from "../src/components/ParticleCanvas/types";
+import { sampleWormholeTransit, WORMHOLE_REBUILD_PROGRESS } from "../src/components/ParticleCanvas/cinematic/TransitChoreography";
 
 let passed = 0;
 let total = 0;
@@ -53,7 +82,179 @@ function drive(d: CinematicTransitionDirector, from: number, until: number) {
   return shots;
 }
 
-console.log("\nCinematic camera layer");
+console.log("\nCinematic camera layer & Physics-Driven Transition Pipeline");
+
+runTest("entry: visible establish beat, wide-to-close settle, reduced-motion bypass", () => {
+  const d = new CinematicTransitionDirector();
+  d.establish(0);
+  const start = d.update(0);
+  assert.equal(start.foregroundAlpha, 1);
+  assert.ok(start.dolly >= 0.15);
+  assert.equal(d.update(100).dolly, start.dolly, "hold the first composition long enough to read");
+  const shots = drive(d, 100, 2000);
+  assert.ok(shots.every(s => s.foregroundAlpha === 1));
+  assert.ok(d.update(2000).phase === "IDLE");
+  assert.ok(shots.find(s => s.t > 1400)!.dolly < start.dolly * 0.2);
+  d.reducedMotion = true;
+  d.establish(3000);
+  assert.equal(d.update(3000), NEUTRAL_SHOT);
+});
+
+runTest("continuity: remap starts the arrival clock and low frame rates do not add holds", () => {
+  for (const preset of ["stage", "scene"] as const) {
+    const timing = SHOT_PRESETS[preset];
+    assert.ok(timing.holdMs <= 64);
+    for (const fps of [30, 60, 120]) {
+      const d = new CinematicTransitionDirector();
+      let rebuilds = 0;
+      d.request({ key: "scene", preset, apply: () => rebuilds++ }, 0);
+      let progress = 0;
+      const duration = timing.departMs + timing.holdMs + timing.revealMs;
+      for (let t = 0; t < duration; t += 1000 / fps) {
+        const s = d.update(t);
+        if (s.phase === "DEPART") assert.equal(s.particleProgress, 1);
+        if (s.phase === "HIDDEN") assert.equal(s.particleProgress, 0);
+        if (s.phase === "REVEAL") {
+          assert.ok(s.particleProgress >= progress);
+          progress = s.particleProgress;
+        }
+      }
+      assert.equal(d.update(duration).phase, "IDLE");
+      assert.equal(rebuilds, 1);
+    }
+    const stalled = new CinematicTransitionDirector();
+    let rebuilds = 0;
+    stalled.request({ key: "stalled", preset, apply: () => rebuilds++ }, 0);
+    assert.equal(stalled.update(10000).phase, "IDLE");
+    assert.equal(rebuilds, 1);
+  }
+});
+
+runTest("continuity: scene spline, FOV and lensing have no boundary discontinuity", () => {
+  const d = new CinematicTransitionDirector();
+  d.request({ key: "scene", preset: "scene", apply: () => {} }, 0);
+  let prev = d.update(0);
+  for (let t = 8; t <= 2300; t += 8) {
+    const s = d.update(t);
+    assert.ok(Math.abs(s.fovDegrees - prev.fovDegrees) < 1.5, `FOV jump at ${t}`);
+    assert.ok(Math.abs(s.splineOffset.z - prev.splineOffset.z) < 0.03, `dolly jump at ${t}`);
+    assert.ok(Math.abs(s.lensing - prev.lensing) < 0.06);
+    prev = s;
+  }
+});
+
+runTest("continuity: rapid navigation preserves the full pose and lens, not just the veil", () => {
+  const d = new CinematicTransitionDirector();
+  let n = 0;
+  d.request({ key: "stage", preset: "stage", apply: () => n++ }, 0);
+  drive(d, 0, 900);
+  const before = d.update(900);
+  d.request({ key: "stage", preset: "scene", apply: () => n++ }, 900);
+  const after = d.update(901);
+  for (const key of ["yaw", "pitch", "roll", "dolly", "fovDegrees", "focusDistanceFactor", "lensing"] as const) {
+    assert.ok(Math.abs(after[key] - before[key]) < 0.01, key);
+  }
+  assert.ok(Math.abs(after.splineOffset.z - before.splineOffset.z) < 0.01);
+  drive(d, 902, 5000);
+  assert.equal(n, 2);
+  d.request({ key: "stage", preset: "stage", apply: () => n++ }, 6000);
+  const departing = d.update(6350);
+  d.request({ key: "scene", preset: "supernova", apply: () => n++ }, 6350);
+  const upgraded = d.update(6351);
+  assert.ok(Math.abs(upgraded.yaw - departing.yaw) < 0.01);
+  assert.ok(Math.abs(upgraded.fovDegrees - departing.fovDegrees) < 0.01);
+});
+
+runTest("transit: capture → tunnel → emerge shares a bounded rush and masks the remap", () => {
+  assert.equal(sampleWormholeTransit(0).intensity, 0);
+  assert.equal(sampleWormholeTransit(0).travel, 0);
+  assert.equal(sampleWormholeTransit(1).intensity, 0);
+  assert.equal(sampleWormholeTransit(1).travel, 1);
+  assert.equal(sampleWormholeTransit(1).fovOffset, 0);
+  assert.equal(sampleWormholeTransit(1).roll, 0);
+  assert.equal(sampleWormholeTransit(WORMHOLE_REBUILD_PROGRESS).eclipse, 1);
+  assert.equal(sampleWormholeTransit(0.15).phase, "capture");
+  assert.equal(sampleWormholeTransit(0.5).phase, "tunnel");
+  assert.equal(sampleWormholeTransit(0.85).phase, "emerge");
+  let previous = 0;
+  for (let u = 0; u <= 1; u += 0.005) {
+    const s = sampleWormholeTransit(u);
+    assert.ok(s.travel >= previous && s.fovOffset <= 0.38);
+    assert.ok(s.intensity >= 0 && s.intensity <= 1);
+    previous = s.travel;
+  }
+});
+
+runTest("capture: horizon silhouette survives the rush; close-range takeover cannot jump outward", () => {
+  const state = createCaptureState(0, { x: 0, y: 0, z: -65 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, 60);
+  assert.ok(Math.abs(computeCapturePose(state, 0).pos.z + 65) < 1e-6);
+  assert.equal(computeCapturePose(state, state.durationMs * 0.85).blackout, 0);
+  assert.equal(computeCapturePose(state, state.durationMs).blackout, 1);
+});
+
+runTest("optics: distance tracking and severity response preserve bounded HUD headroom", () => {
+  const evaluate = (distance: number, severity: number, typography = false) => {
+    resetCinematicFx();
+    for (let i = 0; i < 180; i++) {
+      cinematicFx.collisionStress = severity;
+      updateCinematicOptics(cinematicFx, {
+        dt: 1 / 60, subjectDistance: distance, restDistance: 1500, rackFocus: 0.6,
+        apertureDepthFactor: 0.8, bloomSpike: severity, music: 0.1,
+        typography, cinematic: !typography, reducedMotion: false,
+      });
+    }
+    return { ...cinematicFx };
+  };
+  const wide = evaluate(1500, 0);
+  const near = evaluate(450, 0);
+  const impact = evaluate(450, 1);
+  const text = evaluate(450, 1, true);
+  assert.ok(near.focusDistanceFactor < wide.focusDistanceFactor * 0.5);
+  assert.ok(near.apertureDepthFactor < wide.apertureDepthFactor);
+  assert.ok(impact.exposure > near.exposure && impact.bloom > near.bloom);
+  assert.ok(impact.exposure <= 1.16 && impact.bloom <= 0.28);
+  assert.ok(text.exposure <= 1.07 && text.bloom <= 0.13 && text.dofAmount <= 0.18);
+  resetCinematicFx();
+  assert.equal(cinematicFx.exposure, 1);
+  assert.equal(cinematicFx.collisionStress, 0);
+});
+
+runTest("idle: breath yields to navigation, recovers smoothly and agrees across frame rates", () => {
+  const step = (fps: number, previous: number, idle: number, blocked: boolean) => {
+    for (let i = 0; i < fps; i++) previous = advanceIdleBlend(previous, idle, 1 / fps, blocked);
+    return previous;
+  };
+  assert.ok(Math.abs(step(30, 0, 5000, false) - step(120, 0, 5000, false)) < 1e-6);
+  const idle = step(60, 0, 5000, false);
+  assert.ok(idle > 0.7);
+  assert.ok(step(60, idle, 0, false) < 0.001);
+  assert.ok(step(60, idle, 5000, true) < 0.001);
+  assert.ok(advanceIdleBlend(1, 0, 0.6, false) < 0.001, "slow frames still yield promptly to input");
+  assert.notDeepEqual(sampleIdleBreathing(1, 1), sampleIdleBreathing(4, 1));
+  assert.ok(Math.abs(sampleIdleBreathing(2, 1, true).x) < Math.abs(sampleIdleBreathing(2, 1).x) * 0.25);
+  assert.ok(Object.values(sampleIdleBreathing(10, 0)).every(n => n === 0));
+  assert.deepEqual(sampleIdleParticle(2, 0.5, 1), sampleIdleParticle(2, 0.5, 1));
+  assert.ok(Object.values(sampleIdleParticle(5, 2, 0)).every(n => n === 0));
+});
+
+runTest("arrival: exact spring is stable at low FPS and every wave lands on the shared deadline", () => {
+  const initial = { x: 1400, y: -700, z: 900, vx: 0, vy: 0, vz: 0 };
+  const fast = { ...initial }, slow = { ...initial };
+  for (let i = 0; i < 60; i++) advanceCriticalSpring(fast, 0, 0, 0, 0.28, 1);
+  for (let i = 0; i < 20; i++) advanceCriticalSpring(slow, 0, 0, 0, 0.28, 3);
+  assert.ok(Math.hypot(slow.x, slow.y, slow.z) < 0.01);
+  assert.ok(Math.abs(fast.x - slow.x) < 1e-8, "the analytic solution agrees across frame rates");
+  for (const step of [0.01, 0.2, 0.75]) {
+    let previous = 0, distance = 1000;
+    for (let progress = step; previous < 1; progress += step) {
+      const current = Math.min(1, progress);
+      distance *= 1 - computeArrivalCorrection(previous, current);
+      previous = current;
+    }
+    assert.equal(distance, 0);
+  }
+  assert.equal(computeArrivalCorrection(1, 1), 0, "steady state remains interactive");
+});
 
 runTest("director: IDLE → DEPART → HIDDEN → REVEAL → IDLE, rebuild runs exactly once while hidden", () => {
   const d = new CinematicTransitionDirector();
@@ -64,16 +265,119 @@ runTest("director: IDLE → DEPART → HIDDEN → REVEAL → IDLE, rebuild runs 
   d.request({ key: "stage", preset: "stage", apply: () => { applied++; veilAtApply = last; } }, 0);
   assert.equal(d.currentPhase, "DEPART");
   const phases = new Set<string>();
+  const stagePhases = new Set<string>();
   for (let t = 0; t <= 4000; t += 1000 / 60) {
     const s = d.update(t);
     last = s.veil;
     phases.add(s.phase);
+    stagePhases.add(s.transitionPhase);
   }
   assert.deepEqual([...phases].sort(), ["DEPART", "HIDDEN", "IDLE", "REVEAL"].sort());
+  assert.ok(stagePhases.has("PHASE_DESTABILIZE"));
+  assert.ok(stagePhases.has("PHASE_TRANSIT_CUTSCENE"));
+  assert.ok(stagePhases.has("PHASE_SETTLE"));
   assert.equal(applied, 1);
   assert.ok(veilAtApply > 0.95, `rebuild must happen with the subject hidden (veil ${veilAtApply})`);
   assert.equal(d.currentPhase, "IDLE");
   assert.equal(d.isBusy, false);
+});
+
+runTest("TransitionDirector: multi-stage phases map 0-25% DESTABILIZE, 25-75% TRANSIT_CUTSCENE, 75-100% SETTLE", () => {
+  assert.equal(resolveTransitionStagePhase(0.0, true), "IDLE");
+  assert.equal(resolveTransitionStagePhase(0.10, false), "PHASE_DESTABILIZE");
+  assert.equal(resolveTransitionStagePhase(0.24, false), "PHASE_DESTABILIZE");
+  assert.equal(resolveTransitionStagePhase(0.25, false), "PHASE_TRANSIT_CUTSCENE");
+  assert.equal(resolveTransitionStagePhase(0.50, false), "PHASE_TRANSIT_CUTSCENE");
+  assert.equal(resolveTransitionStagePhase(0.74, false), "PHASE_TRANSIT_CUTSCENE");
+  assert.equal(resolveTransitionStagePhase(0.75, false), "PHASE_SETTLE");
+  assert.equal(resolveTransitionStagePhase(0.99, false), "PHASE_SETTLE");
+});
+
+runTest("TransitionDirector: maneuvers produce expected FOV warp, bloom spike, shockwave, and angular velocity", () => {
+  const d = new TransitionDirector();
+  // Relativistic jet / warp pass widens FOV from 45 deg toward 85 deg and back to 45 deg
+  d.request({ key: "w", preset: "warp", apply: () => {} }, 0);
+  const warpShots = drive(d, 0, 3000);
+  const maxFovDeg = Math.max(...warpShots.map((s) => s.fovDegrees));
+  assert.ok(maxFovDeg > 75 && maxFovDeg <= 85.1, `Expected FOV to widen near 85 deg, got ${maxFovDeg}`);
+
+  // Kilonova / Supernova flash masking produces volumetric bloomSpike and shockwaveRadius
+  d.reset(true);
+  d.request({ key: "sn", preset: "supernova", apply: () => {} }, 0);
+  const snShots = drive(d, 0, 4500);
+  const maxBloom = Math.max(...snShots.map((s) => s.bloomSpike));
+  const maxShockwave = Math.max(...snShots.map((s) => s.shockwaveRadius));
+  assert.ok(maxBloom > 0.7, `Expected strong bloom spike, got ${maxBloom}`);
+  assert.ok(maxShockwave > 0.8, `Expected expanding shockwave shell, got ${maxShockwave}`);
+});
+
+runTest("Morton 3D Z-order stratification & Optimal Transport bucketing decouple sequential glyph order", () => {
+  const m0 = encodeMorton3D(0, 0, 0);
+  const m1 = encodeMorton3D(1, 1, 1);
+  assert.equal(m0, 0);
+  assert.ok(m1 > 0);
+
+  // Create sequential scanline points (left-to-right, top-to-bottom)
+  const scanline: { x: number; y: number; color: string }[] = [];
+  for (let y = 0; y < 10; y++) {
+    for (let x = 0; x < 20; x++) {
+      scanline.push({ x: x * 50, y: y * 50, color: "#4deeea" });
+    }
+  }
+  const stratified = stratifyTargetsByMorton(scanline, 1000, 500, 42);
+  assert.equal(stratified.length, scanline.length);
+
+  // Verify adjacent indices in stratified output are spatially dispersed (not 50px scanline neighbors)
+  let totalStepDist = 0;
+  for (let i = 1; i < stratified.length; i++) {
+    totalStepDist += Math.hypot(stratified[i]!.x - stratified[i - 1]!.x, stratified[i]!.y - stratified[i - 1]!.y);
+  }
+  const avgStepDist = totalStepDist / (stratified.length - 1);
+  assert.ok(avgStepDist > 180, `Expected dispersed adjacent targets (>180px avg distance), got ${avgStepDist}`);
+
+  // Optimal transport coarse 3D spatial bucket assignment
+  const dummyParticles: Particle[] = scanline.map((pt, idx) => ({
+    x: pt.x,
+    y: pt.y,
+    z: 0,
+    targetX: 0,
+    targetY: 0,
+    vx: 0,
+    vy: 0,
+    vz: 0,
+    color: "#ffffff",
+    baseColor: "#ffffff",
+    size: 1,
+    seed: [(idx * 0.13) % 1, (idx * 0.29) % 1, (idx * 0.47) % 1, (idx * 0.71) % 1],
+  }));
+  const assigned = assignTargetsOptimalTransport(dummyParticles, stratified, 1000, 500, 99);
+  assert.equal(assigned.length, dummyParticles.length);
+});
+
+runTest("Wavefront triggering t_local, quintic smoothstep, 3D curl noise, critically damped spring, and blackbody continuity", () => {
+  // Outer particle (dNorm = 0.0) activates before inner particle (dNorm = 1.0)
+  const tOuter = computeLocalWavefrontProgress(0.35, 0.0, 0.1, 0.45, 0.20);
+  const tInner = computeLocalWavefrontProgress(0.35, 1.0, 0.1, 0.45, 0.20);
+  assert.ok(tOuter > tInner, `Outer wavefront (${tOuter}) must lead inner wavefront (${tInner})`);
+  assert.equal(quinticSmoothstep(0), 0);
+  assert.equal(quinticSmoothstep(1), 1);
+  assert.equal(quinticSmoothstep(0.5), 0.5);
+
+  // 3D Curl Noise is finite and deterministic
+  const c1 = computeCurlNoise3D(120, -45, 80, 2.5);
+  const c2 = computeCurlNoise3D(120, -45, 80, 2.5);
+  assert.deepEqual(c1, c2);
+  assert.ok(Number.isFinite(c1.x) && Number.isFinite(c1.y) && Number.isFinite(c1.z));
+  assert.deepEqual(computeCurlNoise3D(NaN, 0, 0, 1), { x: 0, y: 0, z: 0 });
+
+  // Critically damped spring pulls toward target and opposes velocity
+  const f = computeCriticallyDampedSpringForce(100, 0, 0, 0, 0, 0, 10, 0, 0, 0.16);
+  assert.ok(f.fx < 0, "Restoring + damping force must oppose positive displacement and velocity");
+
+  // Blackbody continuity shifts high-velocity transit particles toward hotter blue/white
+  const cold = computeBlackbodyColorContinuity(200, 100, 50, 200, 100, 50, 0.5, 0, false);
+  const hot = computeBlackbodyColorContinuity(200, 100, 50, 200, 100, 50, 0.5, 35, true);
+  assert.ok(hot.b > cold.b && hot.heatBoost > 1.0, "High velocity in transit boosts blue channel and emissive heat");
 });
 
 runTest("director: veil is continuous (no frame-to-frame jump > 0.08) and fg is fully hidden at HIDDEN", () => {
@@ -339,6 +643,91 @@ runTest("settleEntitiesInstantly: replaces bodies at their final pose with fresh
 runTest("smoothstep handles equal edges", () => {
   assert.equal(smoothstep(1, 1, 0.5), 0);
   assert.equal(smoothstep(1, 1, 2), 1);
+});
+
+runTest("simulateParticles: organic wavefront morphing, 3D curl dispersion, and spring arrival converge without NaNs or block locking", () => {
+  const count = 64;
+  const particles: Particle[] = [];
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x: 200 + (i % 8) * 40,
+      y: 200 + Math.floor(i / 8) * 40,
+      z: 0,
+      targetX: 800 + ((i * 7) % 8) * 35,
+      targetY: 400 + ((i * 3) % 8) * 35,
+      targetZ: 10,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      color: "#4deeea",
+      baseColor: "#4deeea",
+      size: 1,
+      isProjectText: true,
+    });
+  }
+  snapshotParticleTransitionStart(particles, 500, 300, 0, 600, true);
+  triggerOrganicParticleDisperse(particles, 500, 300, 0, 1.0);
+
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 4);
+  const extras = new Float32Array(count);
+  const velocities = new Float32Array(count * 3);
+
+  for (let step = 0; step <= 40; step++) {
+    const uProgress = step / 40;
+    simulateParticles(
+      particles,
+      positions,
+      colors,
+      extras,
+      {
+        currentW: 1920,
+        currentH: 1080,
+        time: step * 1.0,
+        globalTimeMultiplier: 1.0,
+        musicAmpVal: 0,
+        musicBands: { bass: 0, mid: 0, treble: 0 },
+        musicSpeedFactor: 1.0,
+        activeBlackholes: [{ type: "blackhole", x: 960, y: 540, radius: 55, color: "#ff8800" }],
+        activeCollidables: [],
+        activeSupernova: null,
+        snElapsed: 9999,
+        scrollVelocity: 0,
+        ambientParticleSpeed: 0.15,
+        objectParticleSpeed: 0.15,
+        textParticleSpeed: 0.18,
+        particleFilters: { ambient: true, celestial: true, bridges: true, tails: true, typography: true },
+        globalAlpha: 1.0,
+        isTypographyMode: true,
+        isInterstellar: false,
+        vortexMultiplier: 1.0,
+        attractionMultiplier: 1.0,
+        mousePos: { x: -1000, y: -1000 },
+        celestialEntities: [],
+        spawnTailParticle: () => {},
+        screensaverOpacity: 0,
+        isTransitActive: false,
+        transitProgress: 0,
+        transitCx: 960,
+        transitCy: 540,
+        activeRipples: [],
+        audio: null,
+        foregroundAlpha: 1.0,
+        transitionProgress: uProgress,
+        velocities,
+        directorShockwaveRadius: uProgress < 0.8 ? uProgress : 0,
+      },
+      velocities
+    );
+  }
+
+  for (let i = 0; i < count; i++) {
+    assert.ok(Number.isFinite(positions[i * 3]!) && Number.isFinite(positions[i * 3 + 1]!) && Number.isFinite(positions[i * 3 + 2]!));
+    assert.ok(Number.isFinite(velocities[i * 3]!) && Number.isFinite(velocities[i * 3 + 1]!) && Number.isFinite(velocities[i * 3 + 2]!));
+    assert.ok(Number.isFinite(colors[i * 4]!) && colors[i * 4 + 3]! > 0);
+  }
+  const arrivalError = particles.reduce((sum, p) => sum + Math.hypot(p.x - p.targetX, p.y - p.targetY), 0) / count;
+  assert.ok(arrivalError < 8, `formation must be readable when the shot settles (mean error ${arrivalError}px)`);
 });
 
 console.log(`\n  Cinematic tests passed: ${passed} / ${total}\n`);

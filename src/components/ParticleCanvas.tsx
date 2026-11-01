@@ -43,7 +43,7 @@ import { GravitationalInteractionsOverlay } from "./ParticleCanvas/Gravitational
 import { SlingshotAimState, SlingshotProbe } from "./ParticleCanvas/SlingshotEngine";
 import { TdeState, createInitialTdeState, triggerTidalDisruptionEvent } from "./ParticleCanvas/TidalDisruptionEngine";
 import { TidalDisruptionFXInstance } from "./ParticleCanvas/TidalDisruptionFX";
-import { settleParticlesToTargets } from "./ParticleCanvas/ParticleMapper";
+import { settleParticlesToTargets, triggerOrganicParticleDisperse } from "./ParticleCanvas/ParticleMapper";
 import { CinematicRuntime, createCinematicRuntime } from "./ParticleCanvas/cinematic/CinematicRuntime";
 import { createCaptureState, CAPTURE_DEFAULT_DURATION_MS } from "./ParticleCanvas/cinematic/BlackHoleCapture";
 import { cinematicFx, resetCinematicFx } from "./ParticleCanvas/cinematic/CinematicFxBus";
@@ -414,29 +414,43 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     supernovaX?: number,
     supernovaY?: number
   ) => {
+    lastStageChangeRef.current = Date.now();
     generateInterstellarSceneInstant(width, height, forceInterstellar, supernovaX, supernovaY);
     mapParticlesToInterstellar(width, height);
-    settleParticlesToTargets(particlesRef.current);
+    if (cinematicRef.current?.director.reducedMotion) {
+      settleParticlesToTargets(particlesRef.current);
+    } else {
+      triggerOrganicParticleDisperse(particlesRef.current, supernovaX ?? width / 2, supernovaY ?? height / 2, 0, 1.15);
+    }
   };
 
-  /** Lays the typography for `targetStage` out fully formed (hidden rebuild). */
+  /** Lays the typography for `targetStage` out via organic physics-driven morphing. */
   const rebuildStageInstant = (targetStage: number) => {
     stageRef.current = targetStage;
     lastStageChangeRef.current = Date.now();
     mapParticlesToStage(targetStage, false);
-    settleParticlesToTargets(particlesRef.current);
+    if (cinematicRef.current?.director.reducedMotion) {
+      settleParticlesToTargets(particlesRef.current);
+    } else {
+      triggerOrganicParticleDisperse(particlesRef.current, window.innerWidth / 2, window.innerHeight / 2, 0, 0.95);
+    }
     updateHudTexture(targetStage, hudPlaneRef.current, hudTextureRef.current);
   };
 
-  /** Mapping helper for the wormhole: maps then settles (wormhole veils the subject). */
+  /** Mapping helper for the wormhole: maps and triggers organic dispersion out of the throat. */
   const mapParticlesToInterstellarSettled = (width: number, height: number) => {
+    lastStageChangeRef.current = Date.now();
     mapParticlesToInterstellar(width, height);
-    settleParticlesToTargets(particlesRef.current);
+    if (cinematicRef.current?.director.reducedMotion) {
+      settleParticlesToTargets(particlesRef.current);
+    } else {
+      triggerOrganicParticleDisperse(particlesRef.current, width / 2, height / 2, 0, 1.25);
+    }
   };
 
   const directorRequest = (
     key: string,
-    preset: "stage" | "scene" | "supernova" | "emerge",
+    preset: "stage" | "scene" | "supernova" | "emerge" | "warp",
     apply: () => void
   ) => {
     const cine = cinematicRef.current;
@@ -561,6 +575,17 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     targetPos?: BABYLON.Vector3,
     viewDir?: BABYLON.Vector3
   ) => {
+    const cine = cinematicRef.current;
+    if (cine?.capture || isTransitActiveRef.current) return;
+    if (cine?.director.reducedMotion) {
+      directorRequest("scene", "scene", () => {
+        isInterstellarRef.current = true;
+        rebuildInterstellarInstant(window.innerWidth, window.innerHeight, true);
+        animationComplete?.();
+      });
+      return;
+    }
+    cine?.director.reset(true);
     await _startWormholeTransit(
       {
         cameraRef,
@@ -854,10 +879,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   // Synchronize ref synchronously on render to prevent stale reads
   isInterstellarRef.current = isInterstellar;
 
-  // Every rebuild below is routed through the cinematic director: the camera
-  // pans / pulls focus away, the new layout is placed (fully formed) while the
-  // subject is veiled, then the camera returns to reveal it. Nothing morphs
-  // or teleports on screen.
+  // The director masks body rebuilds at the handoff, then reveals the incoming
+  // particle wavefront while the camera and lens settle on the same clock.
   useEffect(() => {
     if (!hasInitializedRef.current) return;
     if (prevInterstellarPropRef.current === isInterstellar) return;
@@ -1040,6 +1063,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       positions,
       colors,
       extras,
+      velocities,
     } = buildParticleSystem(scene, ww, wh, stageRef.current, isMobileDevice, glowLayerRef.current);
 
     let tailIndex = 0;
@@ -1146,6 +1170,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     prevInterstellarPropRef.current = isInterstellarRef.current;
     prevStagePropRef.current = stageRef.current;
     hasInitializedRef.current = true;
+    if (cinematicRef.current) cinematicRef.current.openingPending = true;
 
     const spawnTailParticle = (
       x: number,
@@ -1271,6 +1296,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         positions,
         colors,
         extras,
+        velocities,
         updateCelestial3DMeshes,
         generateInterstellarScene,
         mapParticlesToInterstellar,
@@ -1355,6 +1381,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         phase: cinematicRef.current?.director.currentPhase ?? "IDLE",
         capturing: Boolean(cinematicRef.current?.capture),
         transitActive: Boolean(isTransitActiveRef.current),
+        idleBlend: cinematicRef.current?.idleBlend ?? 0,
+        camera: cameraRef.current ? {
+          x: cameraRef.current.position.x, y: cameraRef.current.position.y,
+          z: cameraRef.current.position.z, fov: cameraRef.current.fov,
+        } : null,
         fx: { ...cinematicFx },
       }),
       nextScene: () => {

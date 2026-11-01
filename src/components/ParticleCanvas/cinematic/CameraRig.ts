@@ -136,6 +136,39 @@ export function smoothNoise(t: number, seed: number): number {
   );
 }
 
+/** Slow operator breath in camera-distance fractions; independent of frame rate. */
+export function sampleIdleBreathing(time: number, amount: number, typography = false) {
+  const t = fin(time);
+  const a = clamp(fin(amount), 0, 1) * (typography ? 0.22 : 1);
+  return {
+    x: Math.sin(t * 0.23) * 0.009 * a,
+    y: Math.sin(t * 0.31 + 0.8) * 0.005 * a,
+    z: Math.sin(t * 0.19 + 1.4) * 0.008 * a,
+    roll: Math.sin(t * 0.17) * 0.003 * a,
+  };
+}
+
+/** Yield promptly to navigation, then fade back after a quiet interval. */
+export function advanceIdleBlend(previous: number, idleMs: number, dt: number, blocked: boolean): number {
+  const target = blocked ? 0 : clamp((fin(idleMs) - 1400) / 2400, 0, 1);
+  const rate = target < previous ? 12 : 1.4;
+  // Exponential damping remains stable on a slow frame; do not use the physics
+  // timestep cap here or input suppression would take seconds on modest GPUs.
+  return clamp(fin(previous) + (target - fin(previous)) * (1 - Math.exp(-clamp(fin(dt), 0, 1) * rate)), 0, 1);
+}
+
+/** Render-only dust movement: never disturbs typography targets or physics. */
+export function sampleIdleParticle(time: number, seed: number, amount: number) {
+  const a = clamp(fin(amount), 0, 1);
+  const t = fin(time);
+  const s = fin(seed);
+  return {
+    x: Math.sin(t * 0.28 + s * 6.28) * 3 * a,
+    y: Math.cos(t * 0.21 + s * 9.1) * 2 * a,
+    z: Math.sin(t * 0.17 + s * 4.7) * 12 * a,
+  };
+}
+
 export interface RigInput {
   /** Base camera position (before rig offsets). */
   cameraPos: Vec3;

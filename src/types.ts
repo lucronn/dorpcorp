@@ -46,6 +46,22 @@ export interface Particle {
   g?: number;
   b?: number;
   tunnelLife?: number;
+
+  // Per-particle deterministic attributes & transition state for organic morphing
+  seed?: [number, number, number, number];
+  phaseOffset?: number;
+  normDistFromOrigin?: number;
+  localProgress?: number;
+  easedProgress?: number;
+  sourceX?: number;
+  sourceY?: number;
+  sourceZ?: number;
+  sourceR?: number;
+  sourceG?: number;
+  sourceB?: number;
+  targetR?: number;
+  targetG?: number;
+  targetB?: number;
 }
 
 export interface Project {

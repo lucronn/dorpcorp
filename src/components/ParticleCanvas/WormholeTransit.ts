@@ -1,6 +1,7 @@
 import React from "react";
 import * as BABYLON from "@babylonjs/core";
 import { generateAccretionDiskTexture, generateDistortedLightwaveTexture, createCircularGlowTexture } from "./TextureUtils";
+import { sampleWormholeTransit, WORMHOLE_DURATION_MS, WORMHOLE_REBUILD_PROGRESS } from "./cinematic/TransitChoreography";
 
 export interface WormholeTransitParams {
   cameraRef: React.MutableRefObject<BABYLON.TargetCamera | BABYLON.Camera | null>;
@@ -64,7 +65,7 @@ export async function startWormholeTransit(
   if (!scene || scene.isDisposed || !camera || !engine) return;
 
   isTransitActiveRef.current = true;
-  const transitDurationMs = 3000;
+  const transitDurationMs = WORMHOLE_DURATION_MS;
   const transitStartTime = Date.now();
   transitStartTimeRef.current = transitStartTime;
   transitTargetPosRef.current = targetPos || null;
@@ -86,6 +87,8 @@ export async function startWormholeTransit(
         uniform sampler2D textureSampler;
         uniform float time;
         uniform float intensity;
+        uniform float eclipse;
+        uniform float aspect;
 
         void main(void) {
           if (intensity <= 0.001) {
@@ -95,7 +98,7 @@ export async function startWormholeTransit(
           vec2 uv = vUV;
           vec2 center = vec2(0.5);
           vec2 dir = center - uv;
-          float dist = length(dir);
+          float dist = length(dir * vec2(aspect, 1.0));
 
           float pull = (1.0 - smoothstep(0.0, 0.62, dist)) * intensity * 1.35;
           float angle = pull * (1.2 + sin(time * 1.8) * 0.4);
@@ -118,13 +121,14 @@ export async function startWormholeTransit(
           sum /= samples;
 
           // Subtle Cherenkov cyan/indigo Einstein ring glow around the wormhole throat
-          float throatRing = smoothstep(0.06, 0.22, dist) * smoothstep(0.48, 0.22, dist);
+          float throatRing = smoothstep(0.08, 0.16, dist) * (1.0 - smoothstep(0.2, 0.3, dist));
           vec3 eventHorizonGlow = mix(vec3(0.18, 0.78, 0.98), vec3(0.45, 0.25, 0.95), dist * 1.6)
-            * (pow(pull, 2.2) * 0.85 + throatRing * intensity * 0.32);
+            * throatRing * intensity * 0.45;
 
           vec4 baseCol = texture2D(textureSampler, uv);
           vec4 finalColor = mix(baseCol, sum, clamp(intensity * 0.92, 0.0, 1.0));
-          finalColor.rgb += eventHorizonGlow;
+          finalColor.rgb *= 1.0 - (1.0 - smoothstep(0.04, 0.15, dist)) * intensity * 0.88;
+          finalColor.rgb = finalColor.rgb * (1.0 - eclipse) + eventHorizonGlow;
 
           gl_FragColor = vec4(finalColor.rgb, 1.0);
         }
@@ -133,15 +137,17 @@ export async function startWormholeTransit(
       const wormholePP = new BABYLON.PostProcess(
         "WormholePP",
         "wormhole",
-        ["time", "intensity"],
+        ["time", "intensity", "eclipse", "aspect"],
         null,
         1.0,
         camera
       );
       wormholePP.onApply = (effect) => {
-        wormholeTimeRef.current += 0.016;
+        wormholeTimeRef.current = Math.max(0, (Date.now() - transitStartTimeRef.current) / 1000);
         effect.setFloat("time", wormholeTimeRef.current);
         effect.setFloat("intensity", wormholeIntensityRef.current);
+        effect.setFloat("eclipse", isTransitActiveRef.current ? sampleWormholeTransit(wormholeTimeRef.current * 1000 / WORMHOLE_DURATION_MS).eclipse : 0);
+        effect.setFloat("aspect", engine.getRenderWidth() / Math.max(1, engine.getRenderHeight()));
       };
       wormholePostProcessRef.current = wormholePP;
     }
@@ -151,6 +157,9 @@ export async function startWormholeTransit(
 
     const origCameraPos = camera.position.clone();
     const baseFov = (fovRef.current * Math.PI) / 180 || 1.047;
+    const entryFov = camera.fov;
+    const entryLook = camera.getTarget().clone();
+    const entryRoll = camera.rotation.z;
 
     // Determine true camera forward direction so we never snap 180 degrees
     let forwardDir: BABYLON.Vector3;
@@ -163,7 +172,7 @@ export async function startWormholeTransit(
     ) {
       forwardDir = viewDir.clone().normalize();
     } else {
-      const toOrigin = BABYLON.Vector3.Zero().subtract(origCameraPos);
+      const toOrigin = entryLook.subtract(origCameraPos);
       if (toOrigin.lengthSquared() > 1.0) {
         forwardDir = toOrigin.normalize();
       } else {
@@ -183,7 +192,7 @@ export async function startWormholeTransit(
     const getTunnelPoint = (distanceAlong: number) => {
       const wavePhase = distanceAlong * 0.0032;
       const swayX = Math.sin(wavePhase) * 45.0;
-      const swayY = Math.cos(wavePhase * 0.85) * 35.0;
+      const swayY = (Math.cos(wavePhase * 0.85) - 1) * 35.0;
       return origCameraPos
         .add(forwardDir.scale(distanceAlong))
         .add(rightDir.scale(swayX))
@@ -297,27 +306,24 @@ export async function startWormholeTransit(
         const elapsed = Date.now() - transitStartTime;
         const progress = Math.min(1.0, Math.max(0.0, elapsed / transitDurationMs));
 
-        // Smooth bell-curve intensity envelope (ramps up smoothly, peaks mid-transit, fades out cleanly)
-        const envelope = Math.sin(progress * Math.PI);
-        const smoothEnvelope = envelope * envelope * (3.0 - 2.0 * envelope);
+        const beat = sampleWormholeTransit(progress);
+        const smoothEnvelope = beat.intensity;
         wormholeIntensityRef.current = smoothEnvelope;
 
-        // Smooth FOV warp expansion and restoration
-        camera.fov = baseFov + smoothEnvelope * 0.48;
+        // Smooth FOV warp expansion and restoration (45 degrees -> 85 degrees -> 45 degrees)
+        camera.fov = Math.min(1.65, entryFov + (baseFov - entryFov) * beat.travel + beat.fovOffset);
 
         // Smooth S-curve camera flight along the curved wormhole throat
-        const easeT =
-          progress < 0.5
-            ? 4 * progress * progress * progress
-            : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+        const easeT = beat.travel;
         const travelDist = easeT * 1850;
         const camPos = getTunnelPoint(travelDist);
         const lookAheadPos = getTunnelPoint(travelDist + 420);
 
         camera.position.copyFrom(camPos);
         if (typeof camera.setTarget === "function") {
-          camera.setTarget(lookAheadPos);
+          camera.setTarget(BABYLON.Vector3.Lerp(entryLook, lookAheadPos, Math.min(1, beat.travel * 5)));
         }
+        camera.rotation.z = entryRoll * (1 - beat.travel) + beat.roll;
 
         // Fade tunnel and mouth smoothly at entry and exit
         tunnelMat.alpha = 0.58 * smoothEnvelope;
@@ -326,20 +332,21 @@ export async function startWormholeTransit(
         wispMat.alpha = 0.75 * smoothEnvelope;
 
         if (tTex && "uOffset" in tTex) {
-          (tTex as BABYLON.Texture).uOffset += 0.022;
-          (tTex as BABYLON.Texture).vOffset += 0.014;
+          (tTex as BABYLON.Texture).uOffset = elapsed * 0.0013;
+          (tTex as BABYLON.Texture).vOffset = elapsed * 0.00084;
         }
-        vortexDisc.rotation.z += 0.055;
+        vortexDisc.rotation.z = elapsed * 0.0033;
 
         flyingObjects.forEach((m, idx) => {
-          if (m && !m.isDisposed && m !== mouthMesh && m !== vortexDisc) {
-            m.position.subtractInPlace(forwardDir.scale(14));
-            m.rotation.z += 0.04 + (idx % 3) * 0.015;
+          if (m && !m.isDisposed() && m !== mouthMesh && m !== vortexDisc) {
+            const frameScale = Math.min(3, engine.getDeltaTime() / 16.666);
+            m.position.subtractInPlace(forwardDir.scale((2 + 12 * smoothEnvelope) * frameScale));
+            m.rotation.z += (0.04 + (idx % 3) * 0.015) * frameScale;
           }
         });
 
         // At 65% of the transit (while inside the wormhole throat at peak swirl), seed the new cosmic system
-        if (progress >= 0.65 && !hasSpawnedNewSystem) {
+        if (progress >= WORMHOLE_REBUILD_PROGRESS && !hasSpawnedNewSystem) {
           hasSpawnedNewSystem = true;
           const ww = typeof window !== "undefined" && window.innerWidth > 0 ? window.innerWidth : 1920;
           const wh = typeof window !== "undefined" && window.innerHeight > 0 ? window.innerHeight : 1080;
@@ -365,6 +372,7 @@ export async function startWormholeTransit(
         scene.stopAnimation(camera);
         camera.animations = [];
         camera.fov = baseFov;
+        camera.rotation.z = 0;
         wormholeIntensityRef.current = 0.0;
 
         // Ensure new system was generated even if tab was backgrounded
@@ -397,7 +405,7 @@ export async function startWormholeTransit(
           tunnelMesh = null;
         }
         flyingObjects.forEach((m) => {
-          if (m && !m.isDisposed) {
+          if (m && !m.isDisposed()) {
             if (m.material) materialsToDispose.add(m.material);
             m.dispose();
           }
