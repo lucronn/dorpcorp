@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
@@ -9,7 +8,7 @@ dotenv.config();
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json());
 
@@ -35,7 +34,15 @@ async function startServer() {
 
   // Procedural Fallback Cosmic System Generator
   function getProceduralFallbackSystem() {
-    const archetypes = ["BLACKHOLE_CENTRIC", "BINARY_PLANETS", "NEBULA_CRADLE", "EXOPLANET_CLUSTER", "SPIRAL_GALAXY"];
+    const archetypes = [
+      "BLACKHOLE_CENTRIC",
+      "KILONOVA_MERGER",
+      "RELATIVISTIC_BLAZAR",
+      "BINARY_PLANETS",
+      "NEBULA_CRADLE",
+      "EXOPLANET_CLUSTER",
+      "SPIRAL_GALAXY"
+    ];
     const chosenArchetype = archetypes[Math.floor(Math.random() * archetypes.length)] || "BLACKHOLE_CENTRIC";
 
     const prefixes = ["Aethel", "Vespera", "Helios", "Kalypsos", "Zephyrus", "Hyperion", "Thalassa", "Kronos", "Astraea", "Celestia", "Elysium", "Nebulon", "Xenon"];
@@ -50,8 +57,8 @@ async function startServer() {
     const randomColor = () => hexColors[Math.floor(Math.random() * hexColors.length)];
 
     if (chosenArchetype === "BLACKHOLE_CENTRIC") {
-      systemDesc = `A highly unstable gravitational pocket dominated by a spinning Kerr black hole. Relativistic lensing bends the luminescent light from twin surrounding diamond exoplanets into warped Einstein rings.`;
-      systemTags = ["🕳 KERR SINGULARITY", "☄ RELATIVISTIC LENS", "★ ACCRETION PULSE"];
+      systemDesc = `A spinning Kerr black hole surrounded by a geometrically thin accretion disk and an inner frame-dragged ergosphere. Strong-field null-geodesic bending generates primary and secondary Einstein rings with Doppler-boosted flux asymmetry.`;
+      systemTags = ["🕳 KERR ERGOSPHERE", "☄ NULL GEODESICS", "★ DOPPLER BEAMING"];
       
       entities.push({
         type: "blackhole",
@@ -77,8 +84,8 @@ async function startServer() {
         secondaryColor: "#aaccff"
       });
     } else if (chosenArchetype === "BINARY_PLANETS") {
-      systemDesc = `Two massive, twin planets tidally locked to one another, orbiting a common barycenter. Ionized particle winds bridge their upper atmospheres, generating a permanent bridge of glowing auroral light.`;
-      systemTags = ["☄ TIDAL LOCK", "⚡ IONIC WIND", "★ BARYCENTER"];
+      systemDesc = `Two gravitationally bound planets in mutual orbit about their common barycenter. Hydrodynamic mass transfer occurs via Roche-lobe overflow through the inner L1 Lagrange point, producing an ionized atmospheric stream.`;
+      systemTags = ["☄ BARYCENTER ORBIT", "⚡ ROCHE-LOBE L1", "★ TIDAL STREAM"];
 
       entities.push({
         type: "star",
@@ -102,8 +109,8 @@ async function startServer() {
         hasRings: false
       });
     } else if (chosenArchetype === "NEBULA_CRADLE") {
-      systemDesc = `An ethereal, multicolored stellar nursery of ionized hydrogen gas and cosmic dust. Intense stellar winds from newly formed hypergiants sculpt majestic glowing hollows and dense protostellar cores.`;
-      systemTags = ["☁ COSMIC NURSERY", "★ STELLAR WIND", "⚛ HYDROGEN CLOUD"];
+      systemDesc = `An interstellar H II region of photoionized atomic hydrogen and silicate dust. Stellar radiation pressure from massive O/B stars carves ionized shock fronts around dense protostellar Bok globules.`;
+      systemTags = ["☁ H II REGION", "★ BOK GLOBULES", "⚛ PHOTOIONIZATION"];
 
       entities.push({
         type: "nebula",
@@ -126,8 +133,8 @@ async function startServer() {
         ringColor: "rgba(255, 255, 255, 0.45)"
       });
     } else if (chosenArchetype === "EXOPLANET_CLUSTER") {
-      systemDesc = `A rare, perfectly resonant chain of crystalline planets sharing a stable orbit. Silicate rich sands on their surfaces reflect the brilliant golden radiation of their host hypergiant star.`;
-      systemTags = ["💎 SILICATE DUNE", "☀ RESONANT CHAINS", "★ GOLDEN STAR"];
+      systemDesc = `A compact multi-planet system locked in a 3-body Laplace orbital resonance chain around an M-dwarf host star. Nested Keplerian semi-major axes create stable commensurabilities and periodic transit timing variations.`;
+      systemTags = ["🪐 LAPLACE CHAIN", "☀ M-DWARF HOST", "★ TTV RESONANCE"];
 
       entities.push({
         type: "star",
@@ -146,9 +153,59 @@ async function startServer() {
           ringColor: "rgba(255, 255, 255, 0.4)"
         });
       }
+    } else if (chosenArchetype === "KILONOVA_MERGER") {
+      systemDesc = `A binary neutron star coalescence emitting high-frequency gravitational-wave chirps, launching radioactive r-process ejecta that synthesize heavy elements like gold and platinum.`;
+      systemTags = ["💫 GW INSPIRAL", "⚛ r-PROCESS GOLD", "⚡ KILONOVA FIREBALL"];
+
+      entities.push({
+        type: "star",
+        radius: 20,
+        color: "#e0f2fe",
+        secondaryColor: "#38bdf8"
+      });
+      entities.push({
+        type: "star",
+        radius: 18,
+        color: "#fdf4ff",
+        secondaryColor: "#c084fc"
+      });
+      entities.push({
+        type: "nebula",
+        radius: 340,
+        color: "rgba(255, 185, 80, 0.22)",
+        secondaryColor: "rgba(168, 85, 247, 0.18)"
+      });
+    } else if (chosenArchetype === "RELATIVISTIC_BLAZAR") {
+      systemDesc = `A 6.5-billion-solar-mass Kerr black hole powering a collimated relativistic jet showing apparent superluminal motion (β_app ≈ 6c) and polarized synchrotron shock knots.`;
+      systemTags = ["⚡ SUPERLUMINAL (6c)", "🕳 SMBH SINGULARITY", "★ HST-1 SHOCK KNOT"];
+
+      entities.push({
+        type: "blackhole",
+        radius: 54,
+        color: "#ff7700",
+        secondaryColor: "#ffffff"
+      });
+      entities.push({
+        type: "star",
+        radius: 16,
+        color: "#ffffff",
+        secondaryColor: "#38bdf8"
+      });
+      entities.push({
+        type: "star",
+        radius: 20,
+        color: "#bae6fd",
+        secondaryColor: "#0284c7"
+      });
+      entities.push({
+        type: "nebula",
+        radius: 360,
+        color: "rgba(56, 189, 248, 0.16)",
+        secondaryColor: "rgba(249, 115, 22, 0.14)"
+      });
     } else {
-      systemDesc = `A spectacular galactic arm composed of countless blue giant stars, swirling dust filaments, and intense interstellar radiation fields centered around an ultra-dense stellar core.`;
-      systemTags = ["🌀 GALACTIC FILAMENT", "★ SWIRLING SHADOW", "☄ COLD DUST"];
+      systemDesc = `A grand-design spiral galaxy stabilized by an extended NFW dark matter halo. Lin-Shu density waves compress giant molecular clouds into bright blue OB starburst clusters, sustaining a flat rotational velocity profile.`;
+      systemTags = ["🌀 NFW HALO", "★ DENSITY WAVES", "☄ FLAT ROTATION"];
 
       entities.push({
         type: "star",
@@ -197,7 +254,7 @@ async function startServer() {
       const client = getAIClient();
       const response = await client.models.generateContent({
         model: "gemini-3.5-flash",
-        contents: "Generate a completely unique, highly imaginative, custom cosmic system. Focus on realistic, high-fidelity space objects, avoiding plain neon colors.",
+        contents: "Generate a completely unique, custom cosmic system strictly grounded in genuine astrophysics and General Relativity. Incorporate realistic stellar spectral classes (O, B, A, F, G, K, M), Keplerian multi-body orbital dynamics, accretion disk thermodynamics, or relativistic null-geodesic lensing. Avoid theatrical sci-fi clichés, impossible co-orbital paradoxes, or neon fantasy tropes. Colors must reflect blackbody stellar temperatures, synchrotron continuum, or natural mineral compositions.",
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -218,7 +275,7 @@ async function startServer() {
               },
               archetype: {
                 type: Type.STRING,
-                description: "Select most fitting category: 'BLACKHOLE_CENTRIC', 'BINARY_PLANETS', 'NEBULA_CRADLE', 'EXOPLANET_CLUSTER', 'SPIRAL_GALAXY'"
+                description: "Select most fitting category: 'BLACKHOLE_CENTRIC', 'KILONOVA_MERGER', 'RELATIVISTIC_BLAZAR', 'SPIRAL_GALAXY', 'STELLAR_PULSAR', 'BINARY_PLANETS', 'EXOPLANET_CLUSTER', 'NEBULA_CRADLE'"
               },
               entities: {
                 type: Type.ARRAY,
@@ -275,8 +332,12 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);

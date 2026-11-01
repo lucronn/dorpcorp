@@ -1,7 +1,9 @@
 import { CelestialEntity } from "./types";
 
 export const blendHexColors = (c1: string, c2: string, weight: number): string => {
-  if (!c1.startsWith("#") || !c2.startsWith("#")) return c1;
+  if (!c1 || !c2 || typeof c1 !== "string" || typeof c2 !== "string" || !c1.startsWith("#") || !c2.startsWith("#")) {
+    return c1 || c2 || "#ffffff";
+  }
   const r1 = parseInt(c1.slice(1, 3), 16);
   const g1 = parseInt(c1.slice(3, 5), 16);
   const b1 = parseInt(c1.slice(5, 7), 16);
@@ -80,6 +82,134 @@ export const computeCurlNoise = (x: number, y: number, time: number): { x: numbe
   return { x: vx * 12.0, y: vy * 12.0 };
 };
 
+/**
+ * C2-continuous Quintic Hermite interpolation (6t^5 - 15t^4 + 10t^3).
+ * Guarantees zero velocity and zero acceleration discontinuities at t = 0 and t = 1.
+ */
+export const quinticEaseInOut = (t: number): number => {
+  if (!Number.isFinite(t)) {
+    return t === Infinity ? 1.0 : 0.0;
+  }
+  const c = Math.max(0.0, Math.min(1.0, t));
+  return c * c * c * (c * (c * 6.0 - 15.0) + 10.0);
+};
+
+export type SceneChoreographyAct = "CALM_GENESIS" | "RISING_TENSION" | "CLIMAX" | "AFTERGLOW";
+
+export interface SceneChoreographyMetrics {
+  act: SceneChoreographyAct;    // Current 4-act choreography stage
+  tension: number;              // 0.0 (ambient genesis) -> 1.0 (climactic peak)
+  velocityMultiplier: number;   // 0.58 -> 1.85 orbital & stream velocity ramp
+  gravityMultiplier: number;    // 0.42 -> 1.75 gravitational pull & spacetime well depth ramp
+  densityCompression: number;   // 0.0 -> 0.24 radial accretion compaction
+  turbulenceMultiplier: number; // 0.40 -> 1.35 curl-noise fluid vorticity scale
+  emissionMultiplier: number;   // 0.25 -> 1.65 synchrotron spark & tail emission density
+  shaderIntensity: number;      // 0.0 -> 1.0 post-process & GPU shader intensification
+  climaxPulse: number;          // 0.0 -> 1.0 sustained climax eruption & afterglow envelope
+  transitionSpringScale: number;// 0.04 -> 1.0 momentum-preserving spring capture ramp
+  transitionDrag: number;       // 0.952 (inertial coast) -> 0.86 (orbital capture)
+}
+
+/**
+ * Computes continuous visual choreography and rising tension metrics across a scene's lifecycle:
+ * - Act I   (0s - 10s):  Calm, subtle ambient genesis & gentle typography coalescence
+ * - Act II  (10s - 42s): Gradual ramp of orbital velocity, density, gravity, and shader glow
+ * - Act III (Climax):    Extravagant high-impact cosmic peak with a long luminous afterglow
+ * - Act IV  (Transition): Momentum-carrying inertial release followed by smooth gravitational capture
+ */
+export const computeSceneChoreography = (
+  sceneAgeSec: number,
+  climaxElapsedSec?: number | null,
+  transitionElapsedSec?: number | null
+): SceneChoreographyMetrics => {
+  const safeAge = Number.isFinite(sceneAgeSec) ? Math.max(0.0, sceneAgeSec) : 0.0;
+  const safeClimax = typeof climaxElapsedSec === "number" && Number.isFinite(climaxElapsedSec) ? climaxElapsedSec : -1.0;
+  const safeTrans = typeof transitionElapsedSec === "number" && Number.isFinite(transitionElapsedSec) ? transitionElapsedSec : -1.0;
+
+  // 1. Climax envelope: 12.5-second arc (fast 1.8s rise -> 3.4s high-energy plateau -> 7.3s luminous afterglow)
+  let climaxPulse = 0.0;
+  if (safeClimax >= 0 && safeClimax < 12.5) {
+    if (safeClimax < 1.8) {
+      climaxPulse = quinticEaseInOut(safeClimax / 1.8);
+    } else if (safeClimax < 5.2) {
+      climaxPulse = 1.0 - 0.08 * Math.sin(((safeClimax - 1.8) / 3.4) * Math.PI);
+    } else {
+      const decayT = (safeClimax - 5.2) / 7.3;
+      climaxPulse = Math.max(0.0, 1.0 - quinticEaseInOut(decayT));
+    }
+  }
+
+  let act: SceneChoreographyAct = "CALM_GENESIS";
+  if (safeClimax >= 0 && safeClimax < 5.2) {
+    act = "CLIMAX";
+  } else if ((safeClimax >= 5.2 && safeClimax < 13.0) || (safeTrans >= 0 && safeTrans < 7.8)) {
+    act = "AFTERGLOW";
+  } else if (safeAge >= 10.0) {
+    act = "RISING_TENSION";
+  }
+
+  // 2. Progressive Scene Tension Curve (0s -> 42s)
+  let baseTension = 0.14;
+  if (safeAge < 10.0) {
+    // Act I: Ambient Genesis — serene, meditative opening
+    baseTension = 0.14 + quinticEaseInOut(safeAge / 10.0) * 0.14;
+  } else if (safeAge < 42.0) {
+    // Act II: Rising Tension — organic non-linear build-up
+    const buildT = (safeAge - 10.0) / 32.0;
+    baseTension = 0.28 + quinticEaseInOut(buildT) * 0.60;
+  } else {
+    // Sustained high tension with gentle harmonic breathing
+    baseTension = 0.88 + Math.sin((safeAge - 42.0) * 0.25) * 0.04;
+  }
+
+  // Smooth C2-continuous decompression from departing scene tension (0.88) into Act I genesis (0.14) during 7.8s voyage
+  if (safeTrans >= 0 && safeTrans < 7.8) {
+    const departureCarryover = (1.0 - quinticEaseInOut(safeTrans / 7.8)) * 0.74;
+    baseTension = Math.min(0.88, baseTension + departureCarryover);
+  }
+
+  const tension = Math.min(1.0, baseTension + climaxPulse * 0.35);
+
+  // 3. Physics & Shader Multipliers driven by tension & climax
+  const velocityMultiplier = 0.56 + tension * 0.84 + climaxPulse * 0.45;
+  const gravityMultiplier = 0.42 + Math.pow(tension, 1.35) * 0.92 + climaxPulse * 0.42;
+  const densityCompression = Math.pow(tension, 1.4) * 0.18 + climaxPulse * 0.06;
+  const turbulenceMultiplier = 0.40 + tension * 0.65 + climaxPulse * 0.35;
+  const emissionMultiplier = 0.24 + Math.pow(tension, 1.5) * 0.86 + climaxPulse * 0.65;
+  const shaderIntensity = Math.min(1.0, Math.pow(tension, 1.25) * 0.72 + climaxPulse * 0.55);
+
+  // 4. Momentum-Preserving Transition Envelope (7.8s deep-space voyage)
+  let transitionSpringScale = 1.0;
+  let transitionDrag = 0.86;
+  if (safeTrans >= 0 && safeTrans < 7.8) {
+    if (safeTrans < 1.8) {
+      // Inertial release & cosmic slipstream coasting: particles carry existing momentum
+      const releaseT = quinticEaseInOut(safeTrans / 1.8);
+      transitionSpringScale = 0.18 * (1.0 - releaseT) + 0.035 * releaseT;
+      transitionDrag = 0.86 + releaseT * 0.092; // up to 0.952 for long sweeping inertial arcs
+    } else {
+      // Gradual gravitational capture into the newly discovered celestial system
+      const captureT = quinticEaseInOut((safeTrans - 1.8) / 6.0);
+      transitionSpringScale = 0.035 + captureT * 0.965;
+      transitionDrag = 0.952 - captureT * 0.092;
+    }
+  }
+
+  return {
+    act,
+    tension,
+    velocityMultiplier,
+    gravityMultiplier,
+    densityCompression,
+    turbulenceMultiplier,
+    emissionMultiplier,
+    shaderIntensity,
+    climaxPulse,
+    transitionSpringScale,
+    transitionDrag,
+  };
+};
+
 export interface CollisionResult {
   kineticEnergyDissipated: number;
   contactPointX: number;
@@ -87,111 +217,8 @@ export interface CollisionResult {
   contactPointZ: number;
 }
 
-// Enforces Conservation of Momentum & Energy during rigid elastic/inelastic 3D mesh collisions
-export const resolveCelestialCollision = (
-  e1: CelestialEntity,
-  e2: CelestialEntity,
-  restitution: number = 0.75
-): CollisionResult | null => {
-  const dx = e2.x - e1.x;
-  const dy = e2.y - e1.y;
-  const dz = (e2.z || 0) - (e1.z || 0);
-  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-  const colDist = e1.radius + e2.radius;
-
-  if (dist >= colDist || dist === 0) return null;
-
-  // Unshackle both entities into full active 3D physics body simulation
-  e1.isPhysicsEnabled = true;
-  e2.isPhysicsEnabled = true;
-
-  // Normalize contact axis
-  const nx = dx / dist;
-  const ny = dy / dist;
-  const nz = dz / dist;
-
-  // Approximate relative masses via radius cubics
-  const m1 = e1.mass || e1.radius * e1.radius * 2;
-  const m2 = e2.mass || e2.radius * e2.radius * 2;
-
-  // Retrieve velocities
-  const v1x = e1.vx || 0;
-  const v1y = e1.vy || 0;
-  const v1z = e1.vz || 0;
-  const v2x = e2.vx || 0;
-  const v2y = e2.vy || 0;
-  const v2z = e2.vz || 0;
-
-  const rvx = v2x - v1x;
-  const rvy = v2y - v1y;
-  const rvz = v2z - v1z;
-
-  const vn = rvx * nx + rvy * ny + rvz * nz;
-
-  // Always resolve position overlaps to eliminate visual sticking
-  const overlap = colDist - dist;
-  const correctionScale = (overlap / (1 / m1 + 1 / m2)) * 0.7;
-  e1.x -= (correctionScale / m1) * nx;
-  e1.y -= (correctionScale / m1) * ny;
-  e1.z = (e1.z || 0) - (correctionScale / m1) * nz;
-
-  e2.x += (correctionScale / m2) * nx;
-  e2.y += (correctionScale / m2) * ny;
-  e2.z = (e2.z || 0) + (correctionScale / m2) * nz;
-
-  // If already moving away along contact normal, position separation is sufficient
-  if (vn >= 0) {
-    return {
-      kineticEnergyDissipated: 0,
-      contactPointX: e1.x + nx * e1.radius,
-      contactPointY: e1.y + ny * e1.radius,
-      contactPointZ: (e1.z || 0) + nz * e1.radius,
-    };
-  }
-
-  // Calculate kinetic energy before collision: E_k = 0.5 * m * v^2
-  const keBefore = 0.5 * m1 * (v1x * v1x + v1y * v1y + v1z * v1z) +
-                   0.5 * m2 * (v2x * v2x + v2y * v2y + v2z * v2z);
-
-  // Coefficient of restitution collision impulse scalar
-  const impulse = -(1 + restitution) * vn / (1 / m1 + 1 / m2);
-
-  // Apply impulse vector to conserve momentum and bounce physically
-  e1.vx = v1x - (impulse / m1) * nx;
-  e1.vy = v1y - (impulse / m1) * ny;
-  e1.vz = v1z - (impulse / m1) * nz;
-
-  e2.vx = v2x + (impulse / m2) * nx;
-  e2.vy = v2y + (impulse / m2) * ny;
-  e2.vz = v2z + (impulse / m2) * nz;
-
-  // Apply tangential friction to impart spin/traction on bounce
-  const tangentX = rvx - vn * nx;
-  const tangentY = rvy - vn * ny;
-  const tangentZ = rvz - vn * nz;
-  const friction = 0.18;
-
-  e1.vx += friction * tangentX * (m2 / (m1 + m2));
-  e1.vy += friction * tangentY * (m2 / (m1 + m2));
-  e1.vz = (e1.vz || 0) + friction * tangentZ * (m2 / (m1 + m2));
-
-  e2.vx -= friction * tangentX * (m1 / (m1 + m2));
-  e2.vy -= friction * tangentY * (m1 / (m1 + m2));
-  e2.vz = (e2.vz || 0) - friction * tangentZ * (m1 / (m1 + m2));
-
-  // Calculate kinetic energy after collision
-  const keAfter = 0.5 * m1 * ((e1.vx || 0) * (e1.vx || 0) + (e1.vy || 0) * (e1.vy || 0) + (e1.vz || 0) * (e1.vz || 0)) +
-                  0.5 * m2 * ((e2.vx || 0) * (e2.vx || 0) + (e2.vy || 0) * (e2.vy || 0) + (e2.vz || 0) * (e2.vz || 0));
-
-  const kineticEnergyDissipated = Math.max(0, keBefore - keAfter);
-
-  return {
-    kineticEnergyDissipated,
-    contactPointX: e1.x + nx * e1.radius,
-    contactPointY: e1.y + ny * e1.radius,
-    contactPointZ: (e1.z || 0) + nz * e1.radius,
-  };
-};
+// Re-export unified General Relativity & hydrodynamic collision solver
+export { resolveCelestialCollision } from "./CollisionEngine";
 
 type SpawnParticleFn = (
   x: number,

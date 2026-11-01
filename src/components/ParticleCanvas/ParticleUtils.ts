@@ -252,36 +252,42 @@ export const generateTargetsForStage = (
   let coords: { x: number; y: number; color: string, isProjectText: boolean }[] = [];
 
   if (index === 0) {
-    let fontSize = Math.min(width * 0.12, 140);
-    const ls = width < 768 ? "6px" : "16px";
-    coords = particleText("CURTIS CLICK", fontSize, 1.0, 1.0, 0.6, width / 2, height / 2, "#4deeea", width, height, '"Inter", sans-serif', "800", "center", ls);
-  } else if (index === 1) {
-    const maxW = 1200;
-    const mx = Math.max(0, (width - maxW) / 2);
-    const pxLayout = width < 768 ? 24 : width < 1024 ? 48 : 64;
-    const headerX = mx + pxLayout;
-    const headerY = height / 2 - 40;
+    let fontSize = Math.min(width * 0.11, 130);
+    const ls = width < 768 ? "6px" : "14px";
+    const p1 = particleText("CURTIS CLICK", fontSize, 1.0, 1.0, 0.6, width / 2, height / 2 - 20, "#4deeea", width, height, '"Inter", sans-serif', "800", "center", ls);
     
-    const smallFontSize = Math.max(16, width * 0.018);
-    const p1 = particleText("01 // SELECTED WORKS", smallFontSize, 1.0, 1.0, 0.6, headerX, headerY - 60, "#f25f35", width, height, '"JetBrains Mono", monospace', "800", "left", "4px", 0.05);
-    
-    const bigFontSize = Math.min(width * 0.07, 72);
-    const p2 = particleText("ENGINEERED EXPERIENCES\nFOR THE MODERN WEB.", bigFontSize, 1.0, 1.0, 0.6, headerX, headerY, "#f25f35", width, height, '"Inter", sans-serif', "900", "left", "2px", width < 768 ? 0.06 : 0.11);
+    const subFontSize = Math.min(13, Math.max(9, width * 0.011));
+    const p2 = particleText("AI ENGINEERING  •  AUTONOMOUS ARCHITECTURE  •  FRONTIER MODEL ALIGNMENT", subFontSize, 1.0, 1.0, 0.6, width / 2, height / 2 + fontSize * 0.65, "#e0f7fa", width, height, '"JetBrains Mono", monospace', "600", "center", "3px", 0.04);
     
     coords = [...p1, ...p2];
+  } else if (index === 1) {
+    const maxW = 1200;
+    const headerX = width / 2;
+    const headerY = height / 2 - 20;
+    
+    const smallFontSize = Math.max(14, width * 0.016);
+    const p1 = particleText("01 // SELECTED WORKS", smallFontSize, 1.0, 1.0, 0.6, headerX, headerY - 80, "#f25f35", width, height, '"JetBrains Mono", monospace', "800", "center", "4px", 0.05);
+    
+    const bigFontSize = Math.min(width * 0.065, 68);
+    const p2 = particleText("ENGINEERED EXPERIENCES\nFOR THE MODERN WEB.", bigFontSize, 1.0, 1.0, 0.6, headerX, headerY - 10, "#f25f35", width, height, '"Inter", sans-serif', "900", "center", "2px", width < 768 ? 0.06 : 0.11);
+    
+    const p3 = particleText("AI ENGINEERING  •  AUTONOMY  •  FRONTIER ALIGNMENT  •  SYNTHESIS", smallFontSize * 0.85, 1.0, 1.0, 0.6, headerX, headerY + 95, "#ffd778", width, height, '"JetBrains Mono", monospace', "600", "center", "2px", 0.04);
+    
+    coords = [...p1, ...p2, ...p3];
   } else if (index >= 2 && index <= 5) {
     const pIndex = index - 2;
     const p = projects[pIndex];
+    if (!p) return [];
     const isMobile = width < 640;
     const containerPad = isMobile ? 24 : 48;
     const hudMaxW = Math.min(1100, width - containerPad * 2);
     const hudX = width / 2;
     const descMaxW = hudMaxW;
     const titleFontSize = isMobile
-      ? Math.min(54, height * 0.08)
+      ? Math.min(50, height * 0.075)
       : width < 1024
-        ? 90
-        : 130;
+        ? 80
+        : 110;
     
     const measureCanvas = document.createElement("canvas");
     const mctx = measureCanvas.getContext("2d");
@@ -291,32 +297,50 @@ export const generateTargetsForStage = (
       (mctx as any).letterSpacing = "-0.02em";
       while (
         mctx.measureText(p.title).width > descMaxW &&
-        appliedTitleFontSize > 30
+        appliedTitleFontSize > 28
       ) {
         appliedTitleFontSize -= 2;
         mctx.font = `bold ${appliedTitleFontSize}px "Playfair Display", Georgia, serif`;
       }
     }
 
-    const p1 = particleText(p.title, appliedTitleFontSize, 1.0, 1.0, 0.6, hudX, height / 2 - 30, "#ffd778", width, height, '"Playfair Display", Georgia, serif', "bold", "center", "-0.02em");
+    const p1 = particleText(p.title, appliedTitleFontSize, 1.0, 1.0, 0.6, hudX, height / 2 - 25, "#ffd778", width, height, '"Playfair Display", Georgia, serif', "bold", "center", "-0.02em");
     
-    const catFontSize = Math.min(20, Math.max(11, width * 0.015));
-    const p2 = particleText(p.category, catFontSize, 1.0, 1.0, 0.6, hudX, height / 2 - 130, "#ffd778", width, height, '"JetBrains Mono", monospace', "bold", "center", "8px");
+    const catFontSize = Math.min(18, Math.max(11, width * 0.014));
+    const p2 = particleText(`0${index} // ${p.category}`, catFontSize, 1.0, 1.0, 0.6, hudX, height / 2 - 105, "#f25f35", width, height, '"JetBrains Mono", monospace', "bold", "center", "6px");
     
     const p3: {x:number,y:number,color:string, isProjectText: boolean}[] = [];
-    const lineY = height / 2 - 95;
-    const lineStartX = hudX - hudMaxW / 2;
-    const lineEndX = hudX + hudMaxW / 2;
+    const lineY = height / 2 - 75;
+    const lineStartX = hudX - Math.min(380, hudMaxW / 2);
+    const lineEndX = hudX + Math.min(380, hudMaxW / 2);
     const density = width < 768 ? 4 : 2;
     for (let lx = lineStartX; lx <= lineEndX; lx += density) {
-      if (Math.random() < 0.3) continue;
+      if (Math.random() < 0.25) continue;
       p3.push({ x: lx, y: lineY, color: "rgb(242,95,53)", isProjectText: true });
     }
 
-    const p4FontSize = Math.min(14, Math.max(10, width * 0.012));
-    const p4 = particleText("CURTIS CLICK // MULTI-MODAL PORTFOLIO", p4FontSize, 1.0, 1.0, 0.6, hudX, height / 2 + 150, "#4deeea", width, height, '"JetBrains Mono", monospace', "600", "center", "0px");
+    const descUpper = p.description.toUpperCase();
+    const splitIdx = descUpper.length > 60 ? descUpper.lastIndexOf(" ", 60) : -1;
+    const descText = splitIdx !== -1
+      ? `${descUpper.slice(0, splitIdx)}\n${descUpper.slice(splitIdx + 1)}`
+      : descUpper;
+    const descFontSize = Math.min(14, Math.max(10, width * 0.011));
+    const p4 = particleText(descText, descFontSize, 1.0, 1.0, 0.6, hudX, height / 2 + 65, "#e2e8f0", width, height, '"JetBrains Mono", monospace', "500", "center", "2px", 0.04);
 
-    coords = [...p1, ...p2, ...p3, ...p4];
+    const metricsText = (p.metrics || []).join("   ◆   ");
+    const metricFontSize = Math.min(12, Math.max(9, width * 0.009));
+    const p5 = metricsText ? particleText(
+      metricsText,
+      metricFontSize,
+      1.0, 1.0, 0.6,
+      hudX, height / 2 + 130,
+      "#4deeea",
+      width, height,
+      '"JetBrains Mono", monospace',
+      "700", "center", "3px", 0.04
+    ) : [];
+
+    coords = [...p1, ...p2, ...p3, ...p4, ...p5];
   }
 
   for (let i = coords.length - 1; i > 0; i--) {

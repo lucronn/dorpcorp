@@ -65,7 +65,7 @@ export const DebugObjectOverlay: React.FC<DebugObjectOverlayProps> = ({
       }
 
       const transformMatrix = scene.getTransformMatrix();
-      const viewport = camera.viewport.toGlobal(engine.getRenderWidth(), engine.getRenderHeight());
+      const viewport = camera.viewport.toGlobal(ww, wh);
 
       const entities = celestialEntitiesRef.current || [];
       const projectedList: ProjectedObject[] = [];
@@ -78,9 +78,9 @@ export const DebugObjectOverlay: React.FC<DebugObjectOverlayProps> = ({
           entity.id = `${entity.type}-${idx + 1}`;
         }
 
-        const wx = entity.x - ww / 2;
-        const wy = -(entity.y - wh / 2);
-        const wz = entity.z || 0;
+        const wx = entity.worldX !== undefined ? entity.worldX : entity.x - ww / 2;
+        const wy = entity.worldY !== undefined ? entity.worldY : -(entity.y - wh / 2);
+        const wz = entity.worldZ !== undefined ? entity.worldZ : (entity.z || 0);
 
         const pos3D = new BABYLON.Vector3(wx, wy, wz);
         const projected = BABYLON.Vector3.Project(

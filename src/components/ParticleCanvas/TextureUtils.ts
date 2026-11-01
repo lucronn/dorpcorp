@@ -2,7 +2,7 @@ import * as BABYLON from "@babylonjs/core";
 
 export const parseColorToRgb = (color: string) => {
   let r = 255, g = 255, b = 255;
-  if (!color) return { r, g, b };
+  if (!color || typeof color !== "string") return { r, g, b };
   const cleaned = color.trim().toLowerCase();
   if (cleaned.startsWith("#")) {
     const hex = cleaned.replace("#", "");
@@ -106,7 +106,7 @@ export const createCircularGlowTexture = (colorStr: string, scene: BABYLON.Scene
 
 /** Accretion Disk texture for Black Holes with a dark inner event horizon hole and smooth soft outer radial decay */
 export const generateAccretionDiskTexture = (colorStr: string, secondaryStr: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
-  const size = 512;
+  const size = 1024;
   const texture = new BABYLON.DynamicTexture("accretion_disk_tex", size, scene, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
   const ctx = texture.getContext() as CanvasRenderingContext2D;
   if (!ctx) return texture;
@@ -120,51 +120,86 @@ export const generateAccretionDiskTexture = (colorStr: string, secondaryStr: str
   // Outer glowing plasma ring with strict inner black void and smooth outer falloff
   const grad = ctx.createRadialGradient(center, center, 0, center, center, size * 0.5);
   grad.addColorStop(0.0, `rgba(0, 0, 0, 0.0)`);
-  grad.addColorStop(0.28, `rgba(0, 0, 0, 0.0)`);
-  grad.addColorStop(0.32, `rgba(${r1}, ${g1}, ${b1}, 0.98)`);
-  grad.addColorStop(0.42, `rgba(${r2}, ${g2}, ${b2}, 0.85)`);
-  grad.addColorStop(0.68, `rgba(${r1}, ${g1}, ${b1}, 0.35)`);
-  grad.addColorStop(0.88, `rgba(${r2}, ${g2}, ${b2}, 0.06)`);
+  grad.addColorStop(0.185, `rgba(0, 0, 0, 0.0)`);
+  grad.addColorStop(0.205, `rgba(255, 255, 255, 1.0)`);
+  grad.addColorStop(0.235, `rgba(255, 245, 215, 0.98)`);
+  grad.addColorStop(0.28, `rgba(${r1}, ${g1}, ${b1}, 0.95)`);
+  grad.addColorStop(0.42, `rgba(${r2}, ${g2}, ${b2}, 0.82)`);
+  grad.addColorStop(0.65, `rgba(${r1}, ${g1}, ${b1}, 0.38)`);
+  grad.addColorStop(0.85, `rgba(${r2}, ${g2}, ${b2}, 0.08)`);
+  grad.addColorStop(0.98, `rgba(0, 0, 0, 0.0)`);
   grad.addColorStop(1.0, `rgba(0, 0, 0, 0.0)`);
 
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, size, size);
 
-  // Add subtle swirl noise bands for realistic accretion plasma streams
+  // Add rich logarithmic spiral filament streams for realistic accretion plasma flow
   ctx.save();
   ctx.translate(center, center);
-  ctx.lineWidth = 3;
-  for (let a = 0; a < Math.PI * 2; a += 0.15) {
-    const startR = size * 0.30;
-    const endR = size * 0.44;
-    const alpha = 0.06 + Math.sin(a * 8) * 0.04;
-    ctx.strokeStyle = `rgba(${r2}, ${g2}, ${b2}, ${alpha})`;
-    ctx.beginPath();
-    ctx.arc(0, 0, startR + (endR - startR) * (a / (Math.PI * 2)), a, a + 0.4);
-    ctx.stroke();
+  const arms = 8;
+  for (let arm = 0; arm < arms; arm++) {
+    const baseAngle = (arm * Math.PI * 2) / arms;
+    for (let j = 0; j < 14; j++) {
+      ctx.beginPath();
+      const rStart = size * 0.205;
+      const rEnd = size * 0.47;
+      ctx.lineWidth = 2 + (j % 3);
+      const alpha = 0.05 + (Math.sin(arm + j * 0.7) * 0.025 + 0.025);
+      ctx.strokeStyle = j % 2 === 0 
+        ? `rgba(255, 255, 255, ${alpha * 1.6})` 
+        : `rgba(${r1}, ${g1}, ${b1}, ${alpha})`;
+
+      for (let t = 0; t <= 1.0; t += 0.035) {
+        const curR = rStart + (rEnd - rStart) * Math.pow(t, 0.82);
+        const curTheta = baseAngle + t * 3.2 + j * 0.14;
+        const x = Math.cos(curTheta) * curR;
+        const y = Math.sin(curTheta) * curR;
+        if (t === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
   }
   ctx.restore();
 
-  // Strict inner radial mask pass: enforce 100% pure transparent void at center
+  // Strict inner radial mask pass + General Relativistic Lorentz Doppler beaming & gravitational redshift
+  // (James, von Tunzelmann, Franklin & Thorne 2015, arXiv:1502.03808; EHT Collaboration 2019, arXiv:1906.11242)
   const imgData = ctx.getImageData(0, 0, size, size);
   const data = imgData.data;
-  const cutoffR = size * 0.28;
+  const cutoffR = size * 0.185;
   const cutoffR2 = cutoffR * cutoffR;
+  const sinInc = 0.927; // sin(68 deg) disk inclination
   for (let y = 0; y < size; y++) {
     const dy = y - center;
     for (let x = 0; x < size; x++) {
       const dx = x - center;
+      const d2 = dx * dx + dy * dy;
       const idx = (y * size + x) * 4;
-      if (dx * dx + dy * dy < cutoffR2) {
+      if (d2 < cutoffR2) {
         data[idx] = 0;
         data[idx + 1] = 0;
         data[idx + 2] = 0;
         data[idx + 3] = 0;
       } else if (data[idx + 3] > 0) {
-        const noise = (Math.random() - 0.5) * 3.5;
-        data[idx] = Math.min(255, Math.max(0, data[idx] + noise));
-        data[idx + 1] = Math.min(255, Math.max(0, data[idx + 1] + noise));
-        data[idx + 2] = Math.min(255, Math.max(0, data[idx + 2] + noise));
+        const rPx = Math.sqrt(d2);
+        const rOverRs = Math.max(1.55, (rPx / cutoffR) * 1.5);
+        // Relativistic Keplerian velocity beta(r) = sqrt(r_s / (2r - 3r_s)) clamped in prograde Kerr ISCO regime
+        const beta = Math.min(0.54, Math.sqrt(1.0 / Math.max(2.0 * rOverRs - 1.2, 3.4)));
+        const gamma = 1.0 / Math.sqrt(1.0 - beta * beta);
+        const cosPhi = -dx / rPx; // Left side (dx < 0) approaches observer
+        const dopplerDelta = 1.0 / (gamma * (1.0 - beta * sinInc * cosPhi));
+        const gravRedshift = Math.sqrt(Math.max(0.25, 1.0 - 1.0 / rOverRs));
+        // Liouville invariant specific intensity I_obs = (delta * g)^(3 - alpha)
+        const dopplerMult = Math.min(2.15, Math.max(0.22, Math.pow(dopplerDelta * gravRedshift, 2.6)));
+        const freqShift = dopplerDelta * gravRedshift - 1.0;
+        const blueshift = Math.max(0, freqShift * 95);
+        const redshift = Math.max(0, -freqShift * 65);
+
+        const noise = (Math.random() - 0.5) * 3.0;
+        data[idx] = Math.min(255, Math.max(0, data[idx] * dopplerMult + redshift + noise));
+        data[idx + 1] = Math.min(255, Math.max(0, data[idx + 1] * dopplerMult + blueshift * 0.55 + noise));
+        data[idx + 2] = Math.min(255, Math.max(0, data[idx + 2] * dopplerMult + blueshift + noise));
+        data[idx + 3] = Math.min(255, Math.max(0, data[idx + 3] * Math.min(1.45, 0.35 + dopplerMult * 0.65)));
       }
     }
   }
@@ -175,9 +210,66 @@ export const generateAccretionDiskTexture = (colorStr: string, secondaryStr: str
   return texture;
 };
 
-/** Crisp, razor-thin Photon Ring halo surrounding a Black Hole's pitch-black event horizon silhouette */
+/** High-energy astrophysical relativistic jet texture with intense laser core and synchrotron emission shock diamonds */
+export const generateRelativisticJetTexture = (
+  colorStr: string,
+  secondaryStr: string,
+  scene: BABYLON.Scene
+): BABYLON.DynamicTexture => {
+  const width = 256;
+  const height = 1024;
+  const texture = new BABYLON.DynamicTexture(
+    "rel_jet_tex",
+    { width, height },
+    scene,
+    true,
+    BABYLON.Texture.TRILINEAR_SAMPLINGMODE
+  );
+  const ctx = texture.getContext() as CanvasRenderingContext2D;
+  if (!ctx) return texture;
+
+  const { r: r1, g: g1, b: b1 } = parseColorToRgb(colorStr);
+  const { r: r2, g: g2, b: b2 } = parseColorToRgb(secondaryStr);
+
+  ctx.clearRect(0, 0, width, height);
+  const cx = width / 2;
+
+  // Vertical beam from nozzle (y = 0) out into space (y = height)
+  for (let y = 0; y < height; y += 4) {
+    const t = y / height;
+    const beamHalfWidth = 10 + t * 48;
+    const fadeY = Math.pow(1 - t * 0.85, 0.7);
+
+    // Shock diamond synchrotron pinch nodes
+    const shockWave = 1.0 + Math.sin(t * Math.PI * 12) * 0.32 * (1 - t * 0.5);
+
+    const grad = ctx.createLinearGradient(cx - beamHalfWidth, y, cx + beamHalfWidth, y);
+    grad.addColorStop(0.0, "rgba(0,0,0,0)");
+    grad.addColorStop(0.22, `rgba(${r2}, ${g2}, ${b2}, ${0.28 * fadeY * shockWave})`);
+    grad.addColorStop(0.40, `rgba(${r1}, ${g1}, ${b1}, ${0.78 * fadeY * shockWave})`);
+    grad.addColorStop(0.47, `rgba(255, 255, 255, ${0.98 * fadeY * shockWave})`);
+    grad.addColorStop(0.50, `rgba(255, 255, 255, ${1.0 * fadeY * shockWave})`);
+    grad.addColorStop(0.53, `rgba(255, 255, 255, ${0.98 * fadeY * shockWave})`);
+    grad.addColorStop(0.60, `rgba(${r1}, ${g1}, ${b1}, ${0.78 * fadeY * shockWave})`);
+    grad.addColorStop(0.78, `rgba(${r2}, ${g2}, ${b2}, ${0.28 * fadeY * shockWave})`);
+    grad.addColorStop(1.0, "rgba(0,0,0,0)");
+
+    ctx.fillStyle = grad;
+    ctx.fillRect(cx - beamHalfWidth, y, beamHalfWidth * 2, 4);
+  }
+
+  texture.hasAlpha = true;
+  texture.update(true);
+  return texture;
+};
+
+/**
+ * Two-Component Relativistic Photon Ring (n >= 2 critical curve) + Lensing Ring (n = 1 demagnified rear-disk image)
+ * surrounding the Black Hole Shadow at b_crit = (3*sqrt(3)/2)*r_s ~ 2.598 r_s, with EHT Doppler beaming asymmetry
+ * (Gralla, Holz & Wald 2019, arXiv:1906.00873; EHT Collaboration 2019 I & V, arXiv:1906.11238, arXiv:1906.11242).
+ */
 export const generatePhotonRingTexture = (colorStr: string, secondaryStr: string, scene: BABYLON.Scene): BABYLON.DynamicTexture => {
-  const size = 512;
+  const size = 1024;
   const texture = new BABYLON.DynamicTexture("photon_ring_tex", size, scene, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
   const ctx = texture.getContext() as CanvasRenderingContext2D;
   if (!ctx) return texture;
@@ -188,45 +280,60 @@ export const generatePhotonRingTexture = (colorStr: string, secondaryStr: string
   ctx.clearRect(0, 0, size, size);
   const center = size / 2;
 
-  // IMPORTANT: Inner radius 0.0 to size * 0.23 MUST BE 100% TRANSPARENT / PURE BLACK VOID
-  const ringInnerR = size * 0.23;
-  const ringPeakR = size * 0.255;
-  const ringOuterR = size * 0.46;
+  const ringInnerR = size * 0.185;
+  const photonRingPeakR = size * 0.202; // Critical curve b_c (n >= 2 logarithmic photon ring)
+  const lensingRingPeakR = size * 0.214; // ~5% larger radius n = 1 lensing ring (Gralla, Holz & Wald 2019)
+  const ringOuterR = size * 0.38;
 
   const grad = ctx.createRadialGradient(center, center, 0, center, center, size * 0.5);
   grad.addColorStop(0.0, "rgba(0, 0, 0, 0.0)");
   grad.addColorStop(ringInnerR / (size * 0.5), "rgba(0, 0, 0, 0.0)");
   
-  // Razor-sharp intense photon sphere ring (ISCO / photon orbit boundary)
-  grad.addColorStop((ringInnerR + (ringPeakR - ringInnerR) * 0.5) / (size * 0.5), `rgba(255, 255, 255, 1.0)`);
-  grad.addColorStop(ringPeakR / (size * 0.5), `rgba(${r1}, ${g1}, ${b1}, 0.95)`);
-  grad.addColorStop((ringPeakR + 18) / (size * 0.5), `rgba(${r2}, ${g2}, ${b2}, 0.60)`);
-  grad.addColorStop((ringPeakR + 45) / (size * 0.5), `rgba(${r1}, ${g1}, ${b1}, 0.18)`);
+  // 1) Razor-sharp n >= 2 critical curve photon ring at b_c
+  grad.addColorStop(photonRingPeakR / (size * 0.5), "rgba(255, 255, 255, 1.0)");
+  grad.addColorStop((photonRingPeakR + 4) / (size * 0.5), `rgba(255, 248, 232, 0.92)`);
+  // 2) Secondary n = 1 lensing ring centered ~5% outside the photon ring with width ~0.5-1M
+  grad.addColorStop(lensingRingPeakR / (size * 0.5), `rgba(${r1}, ${g1}, ${b1}, 0.96)`);
+  grad.addColorStop((lensingRingPeakR + 22) / (size * 0.5), `rgba(${r2}, ${g2}, ${b2}, 0.54)`);
+  grad.addColorStop((lensingRingPeakR + 58) / (size * 0.5), `rgba(${r1}, ${g1}, ${b1}, 0.14)`);
   grad.addColorStop(ringOuterR / (size * 0.5), "rgba(0, 0, 0, 0.0)");
 
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, size, size);
 
-  // Strict inner radial mask pass for photon ring
+  // Strict inner shadow mask + relativistic Doppler beaming across the ring (EHT M87* crescent asymmetry)
   const imgData = ctx.getImageData(0, 0, size, size);
   const data = imgData.data;
-  const ringCutoffR = size * 0.24;
+  const ringCutoffR = size * 0.185;
   const ringCutoffR2 = ringCutoffR * ringCutoffR;
+  const betaRing = 0.50; // Relativistic plasma orbital speed near photon orbit / prograde Kerr ISCO
+  const gammaRing = 1.0 / Math.sqrt(1.0 - betaRing * betaRing);
+  const sinInc = 0.927;
   for (let y = 0; y < size; y++) {
     const dy = y - center;
     for (let x = 0; x < size; x++) {
       const dx = x - center;
+      const d2 = dx * dx + dy * dy;
       const idx = (y * size + x) * 4;
-      if (dx * dx + dy * dy < ringCutoffR2) {
+      if (d2 < ringCutoffR2) {
         data[idx] = 0;
         data[idx + 1] = 0;
         data[idx + 2] = 0;
         data[idx + 3] = 0;
       } else if (data[idx + 3] > 0) {
+        const rPx = Math.sqrt(d2);
+        const cosPhi = -dx / rPx;
+        const dopplerDelta = 1.0 / (gammaRing * (1.0 - betaRing * sinInc * cosPhi));
+        // Photon ring is weakly asymmetric while n=1 lensing ring exhibits strong Doppler beaming
+        const radialBlend = Math.min(1.0, Math.max(0.0, (rPx - photonRingPeakR) / 28.0));
+        const effectiveBeaming = (1.0 - radialBlend * 0.45) + radialBlend * 0.45 * Math.pow(dopplerDelta, 2.4);
+        const blueshift = Math.max(0, (dopplerDelta - 1.0) * 55);
+        const redshift = Math.max(0, (1.0 - dopplerDelta) * 40);
         const noise = (Math.random() - 0.5) * 3.0;
-        data[idx] = Math.min(255, Math.max(0, data[idx] + noise));
-        data[idx + 1] = Math.min(255, Math.max(0, data[idx + 1] + noise));
-        data[idx + 2] = Math.min(255, Math.max(0, data[idx + 2] + noise));
+        data[idx] = Math.min(255, Math.max(0, data[idx] * effectiveBeaming + redshift + noise));
+        data[idx + 1] = Math.min(255, Math.max(0, data[idx + 1] * effectiveBeaming + blueshift * 0.5 + noise));
+        data[idx + 2] = Math.min(255, Math.max(0, data[idx + 2] * effectiveBeaming + blueshift + noise));
+        data[idx + 3] = Math.min(255, Math.max(0, data[idx + 3] * Math.min(1.35, 0.45 + effectiveBeaming * 0.55)));
       }
     }
   }

@@ -1,7 +1,7 @@
 import * as BABYLON from "@babylonjs/core";
 import { Particle } from "../../types";
 import { CelestialEntity, ParticleFilters } from "./types";
-import { computeCurlNoise } from "./PhysicsUtils";
+import { computeCurlNoise, SceneChoreographyMetrics, computeSceneChoreography } from "./PhysicsUtils";
 
 export interface SimulationContext {
   currentW: number;
@@ -35,7 +35,10 @@ export interface SimulationContext {
   transitCy: number;
   activeRipples: Array<{ x: number; y: number; life: number; maxDist: number; bandWidth: number; minDistSq: number; maxDistBoundSq: number }>;
   audio: any;
+  choreography?: SceneChoreographyMetrics;
 }
+
+const DEFAULT_CHOREOGRAPHY: SceneChoreographyMetrics = computeSceneChoreography(15, null, null);
 
 export function simulateParticles(
   particles: Particle[],
@@ -76,6 +79,7 @@ export function simulateParticles(
     transitCy,
     activeRipples,
     audio,
+    choreography = DEFAULT_CHOREOGRAPHY,
   } = ctx;
 
   const floatScaleX = isTypographyMode ? 0 : (1 - attractionMultiplier) * 0.5;
@@ -96,13 +100,13 @@ export function simulateParticles(
           const gravityRadiusMult = 4.5; // wider gravity field for fast debris particles
           if (bdist < entity.radius * gravityRadiusMult) {
             const pullFactor = 1.0 - bdist / (entity.radius * gravityRadiusMult);
-            const pullStrength = 3.5 * pullFactor;
+            const pullStrength = 3.5 * pullFactor * choreography.gravityMultiplier;
             p.vx += (bdx / bdist) * pullStrength;
             p.vy += (bdy / bdist) * pullStrength;
           }
         });
 
-        const objSpeedMult = (objectParticleSpeed ?? 0.15) / 0.15;
+        const objSpeedMult = ((objectParticleSpeed ?? 0.15) / 0.15) * Math.min(1.5, choreography.velocityMultiplier);
         p.x += p.vx * objSpeedMult;
         p.y += p.vy * objSpeedMult;
         p.z += p.vz * objSpeedMult;
@@ -111,7 +115,7 @@ export function simulateParticles(
         p.vy *= 0.94;
         p.vz *= 0.94;
 
-        p.life -= Math.max(0.02, (p.decay || 0.06) * Math.max(0.3, objSpeedMult));
+        p.life -= Math.max(0.016, (p.decay || 0.05) * Math.max(0.3, objSpeedMult));
         if (p.life < 0) p.life = 0;
 
         positions[i * 3] = p.x - currentW / 2;
@@ -122,8 +126,32 @@ export function simulateParticles(
         const g = p.g ?? 255;
         const b = p.b ?? 255;
 
-        const tailPulse = 1.0 + musicAmpVal * 0.8;
-        const tailOpacity = particleFilters.tails ? p.life * 0.45 : 0;
+        let tailOccluded = false;
+        for (let bIdx = 0; bIdx < celestialEntities.length; bIdx++) {
+          const bh = celestialEntities[bIdx];
+          if (bh && !bh.isDestroyed && !bh.isOutgoing && bh.type === "blackhole") {
+            const bhDist = Math.hypot(p.x - bh.x, p.y - bh.y);
+            const scale = bh.scale !== undefined && bh.scale > 0 ? bh.scale : 1.0;
+            if (bhDist <= (bh.radius * scale) * 1.05) {
+              tailOccluded = true;
+              break;
+            }
+          }
+        }
+        if (tailOccluded) {
+          positions[i * 3] = -99999;
+          positions[i * 3 + 1] = -99999;
+          positions[i * 3 + 2] = 0;
+          colors[i * 4] = 0;
+          colors[i * 4 + 1] = 0;
+          colors[i * 4 + 2] = 0;
+          colors[i * 4 + 3] = 0;
+          extras[i] = 2.0;
+          continue;
+        }
+
+        const tailPulse = 1.0 + musicAmpVal * 0.8 + choreography.climaxPulse * 0.45;
+        const tailOpacity = particleFilters.tails ? p.life * 0.48 : 0;
         colors[i * 4] = Math.min(1.0, Math.max(0.0, (r / 255) * globalAlpha * tailOpacity * tailPulse));
         colors[i * 4 + 1] = Math.min(1.0, Math.max(0.0, (g / 255) * globalAlpha * tailOpacity * tailPulse));
         colors[i * 4 + 2] = Math.min(1.0, Math.max(0.0, (b / 255) * globalAlpha * tailOpacity * tailPulse));
@@ -141,61 +169,101 @@ export function simulateParticles(
       continue;
     }
 
-    if (activeSupernova) {
+    if (activeSupernova && !activeSupernova.isCalmShift) {
       const cx = activeSupernova.x;
       const cy = activeSupernova.y;
       const dx = p.x - cx;
       const dy = p.y - cy;
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
-      if (snElapsed < 200) {
-        // Implosion phase: vortex gravitational pull into singularity
-        if (dist < 600) {
-          const suck = (1.0 - dist / 600) * 3.5;
-          const vortexAngle = 0.5;
+      if (snElapsed < 2600) {
+        // Core-Collapse Implosion phase (0 - 2600ms): accelerating gravitational infall into singularity
+        const implodeT = snElapsed / 2600;
+        if (dist < 720) {
+          const suck = (1.0 - dist / 720) * (1.2 + implodeT * implodeT * 4.2);
+          const vortexAngle = 0.55 + implodeT * 0.35;
           const tx = -dy / dist;
           const ty = dx / dist;
           p.vx -= (dx / dist) * suck + tx * suck * vortexAngle;
           p.vy -= (dy / dist) * suck + ty * suck * vortexAngle;
         }
-      } else if (snElapsed >= 200 && snElapsed < 2800) {
-        // Relativistic expansion phase: high-velocity shockwave wavefront
-        const waveRadius = (snElapsed - 200) * 1.1;
-        const waveBand = 160;
+      } else if (snElapsed >= 2600 && snElapsed < 8800) {
+        // Relativistic SASI Shock Breakout & Blastwave phase (2600 - 8800ms)
+        const waveRadius = (snElapsed - 2600) * 0.42;
+        const waveBand = 210;
         const distDiff = Math.abs(dist - waveRadius);
         if (distDiff < waveBand) {
-          const push = (1.0 - distDiff / waveBand) * 12.0;
+          const push = (1.0 - distDiff / waveBand) * 9.5;
           p.vx += (dx / dist) * push;
           p.vy += (dy / dist) * push;
-          // Add outward z-scatter for 3D depth
-          p.vz += (Math.random() - 0.5) * push * 0.8;
+          p.vz += (Math.random() - 0.5) * push * 0.75;
         }
       }
     }
 
     if (p.isCosmicAmbient) {
+      if (p.interstellarType === "background_galaxy") {
+        const ambSpeedMult = (ambientParticleSpeed ?? 0.15) / 0.15;
+        p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.012) * ambSpeedMult;
+
+        const rx = p.orbitRadius || 20;
+        const ry = p.galaxyType === "spiral" ? rx * 0.35 : rx * 0.8;
+        const ox = Math.cos(p.orbitAngle) * rx;
+        const oy = Math.sin(p.orbitAngle) * ry;
+
+        const cosP = Math.cos(p.galaxyPitch || 0);
+        const sinP = Math.sin(p.galaxyPitch || 0);
+        const cosY = Math.cos(p.galaxyYaw || 0);
+        const sinY = Math.sin(p.galaxyYaw || 0);
+
+        const lx = ox * cosY - oy * sinY * cosP;
+        const ly = ox * sinY + oy * cosY * cosP;
+        const lz = oy * sinP;
+
+        const gx = (p.galaxyX || 0) + lx;
+        const gy = (p.galaxyY || 0) + ly;
+        const gz = (p.galaxyZ || 1600) + lz;
+
+        positions[i * 3] = gx;
+        positions[i * 3 + 1] = -gy;
+        positions[i * 3 + 2] = gz;
+
+        if (!particleFilters.ambient) {
+          colors[i * 4] = 0;
+          colors[i * 4 + 1] = 0;
+          colors[i * 4 + 2] = 0;
+          colors[i * 4 + 3] = 0;
+        } else {
+          let r = 1.0, g = 1.0, b = 1.0;
+          if (p.color && typeof p.color === "string" && p.color.startsWith("#")) {
+            const hex = p.color.slice(1);
+            if (hex.length === 6) {
+              r = parseInt(hex.slice(0, 2), 16) / 255;
+              g = parseInt(hex.slice(2, 4), 16) / 255;
+              b = parseInt(hex.slice(4, 6), 16) / 255;
+            }
+          }
+          colors[i * 4] = r * 0.72;
+          colors[i * 4 + 1] = g * 0.72;
+          colors[i * 4 + 2] = b * 0.72;
+          colors[i * 4 + 3] = 0.68;
+        }
+        extras[i] = 3.0;
+        continue;
+      }
+
       const ambSpeedMult = (ambientParticleSpeed ?? 0.15) / 0.15;
       p.y -= scrollVelocity * (p.driftSpeed || 0.2) * ambSpeedMult;
       p.x += Math.sin(time * 0.005 + i) * 0.15 * ambSpeedMult;
 
-      if (p.y < currentH / 2 - currentH * 4) p.y = currentH / 2 + currentH * 4;
-      if (p.y > currentH / 2 + currentH * 4) p.y = currentH / 2 - currentH * 4;
-      if (p.x < currentW / 2 - currentW * 4) p.x = currentW / 2 + currentW * 4;
-      if (p.x > currentW / 2 + currentW * 4) p.x = currentW / 2 - currentW * 4;
-      if (p.z < currentW / 2 - currentW * 4) p.z = currentW / 2 + currentW * 4;
-      if (p.z > currentW / 2 + currentW * 4) p.z = currentW / 2 - currentW * 4;
-
-      const mdx = mousePos.x - p.x;
-      const mdy = mousePos.y - p.y;
-      const mDistSq = mdx * mdx + mdy * mdy;
-      if (mDistSq < 19600) {
-        const mDist = Math.sqrt(mDistSq);
-        const mForce = ((140 - mDist) / 140) * vortexMultiplier;
-        const tx = -mdy / (mDist || 1);
-        const ty = mdx / (mDist || 1);
-        p.vx += tx * mForce * 1.6;
-        p.vy += ty * mForce * 1.6;
-      }
+      const boundaryW = currentW * 2.5;
+      const boundaryH = currentH * 2.5;
+      if (p.y < currentH / 2 - boundaryH) p.y = currentH / 2 + boundaryH;
+      if (p.y > currentH / 2 + boundaryH) p.y = currentH / 2 - boundaryH;
+      if (p.x < currentW / 2 - boundaryW) p.x = currentW / 2 + boundaryW;
+      if (p.x > currentW / 2 + boundaryW) p.x = currentW / 2 - boundaryW;
+      if (p.z < 650) p.z = 3200;
+      if (p.z > 3500) p.z = 750;
 
       p.x += p.vx;
       p.y += p.vy;
@@ -224,14 +292,8 @@ export function simulateParticles(
         }
       });
 
-      const mouseNormX = (mousePos.x - currentW / 2) / (currentW / 2 || 1);
-      const mouseNormY = (mousePos.y - currentH / 2) / (currentH / 2 || 1);
-      const parallaxFactor = 0.15;
-      const parallaxX = mouseNormX * p.z * parallaxFactor;
-      const parallaxY = mouseNormY * p.z * parallaxFactor;
-      
-      let finalX = drawAmbX - currentW / 2 + parallaxX;
-      let finalY = -(drawAmbY - currentH / 2 + parallaxY);
+      let finalX = drawAmbX - currentW / 2;
+      let finalY = -(drawAmbY - currentH / 2);
       let finalZ = p.z;
 
       if (isTransitActive && transitProgress > 0) {
@@ -254,30 +316,46 @@ export function simulateParticles(
       positions[i * 3 + 1] = finalY;
       positions[i * 3 + 2] = finalZ;
 
-      let r = p.color === "#ffffff" ? 0.7 : 0.8;
-      let g = p.color === "#ffffff" ? 0.7 : 0.8;
-      let b = p.color === "#ffffff" ? 0.7 : 0.8;
-      
-      if (isTransitActive && transitProgress > 0) {
-        const shift = Math.pow(transitProgress, 1.2);
-        r = r * (1.0 - shift * 0.8) + shift * 0.4;
-        g = g * (1.0 - shift * 0.5) + shift * 1.5;
-        b = b * (1.0 + shift * 1.0) + shift * 3.0;
-      }
-
       if (!particleFilters.ambient) {
         colors[i * 4] = 0;
         colors[i * 4 + 1] = 0;
         colors[i * 4 + 2] = 0;
         colors[i * 4 + 3] = 0;
       } else {
-        colors[i * 4] = Math.min(1.0, Math.max(0.0, r));
-        colors[i * 4 + 1] = Math.min(1.0, Math.max(0.0, g));
-        colors[i * 4 + 2] = Math.min(1.0, Math.max(0.0, b));
-        colors[i * 4 + 3] = 1.0;
+        let r = 1.0, g = 1.0, b = 1.0;
+        if (p.color && typeof p.color === "string" && p.color.startsWith("#")) {
+          const hex = p.color.slice(1);
+          if (hex.length === 6) {
+            r = parseInt(hex.slice(0, 2), 16) / 255;
+            g = parseInt(hex.slice(2, 4), 16) / 255;
+            b = parseInt(hex.slice(4, 6), 16) / 255;
+          }
+        }
+        if (isTransitActive && transitProgress > 0) {
+          const shift = Math.pow(transitProgress, 1.2);
+          r = r * (1.0 - shift * 0.8) + shift * 0.4;
+          g = g * (1.0 - shift * 0.5) + shift * 1.5;
+          b = b * (1.0 + shift * 1.0) + shift * 3.0;
+        }
+        const twinkle = 0.55 + Math.sin(time * 0.003 + i * 0.45) * 0.22;
+        colors[i * 4] = Math.min(0.78, Math.max(0.0, r * twinkle));
+        colors[i * 4 + 1] = Math.min(0.78, Math.max(0.0, g * twinkle));
+        colors[i * 4 + 2] = Math.min(0.78, Math.max(0.0, b * twinkle));
+        colors[i * 4 + 3] = 0.72 * twinkle;
       }
       extras[i] = 0.0;
       continue;
+    }
+
+    // Continuous RGB color crossfading across scene transitions
+    if (p.targetR !== undefined) {
+      p.r = (p.r ?? 255) + (p.targetR - (p.r ?? 255)) * 0.036;
+    }
+    if (p.targetG !== undefined) {
+      p.g = (p.g ?? 255) + (p.targetG - (p.g ?? 255)) * 0.036;
+    }
+    if (p.targetB !== undefined) {
+      p.b = (p.b ?? 255) + (p.targetB - (p.b ?? 255)) * 0.036;
     }
 
     // Calculate gravitational Time Dilation near black holes
@@ -304,10 +382,10 @@ export function simulateParticles(
 
     // Continuous Curl Noise vector field for fluid dynamics and spatiotemporal coherence
     const curl = computeCurlNoise(p.x, p.y, time * 0.12);
-    const fluidTransitionFactor = isTypographyMode ? 0.12 : 0.75;
+    const fluidTransitionFactor = isTypographyMode ? 0.12 : 0.75 * choreography.turbulenceMultiplier;
     const springDistSq = (p.targetX - p.x) * (p.targetX - p.x) + (p.targetY - p.y) * (p.targetY - p.y);
     const springFactorSq = Math.max(0.01, Math.min(1.0, springDistSq / 25000));
-    let fluidInfluence = Math.max(0.0, Math.min(0.85, (1.0 - (p.isProjectText ? 0.75 : 0.22)) * fluidTransitionFactor * springFactorSq));
+    let fluidInfluence = Math.max(0.0, Math.min(1.15, (1.0 - (p.isProjectText ? 0.72 : 0.22)) * fluidTransitionFactor * springFactorSq));
     if (p.isProjectText) {
       fluidInfluence *= ((textParticleSpeed ?? 0.12) * 1.5);
     }
@@ -319,13 +397,15 @@ export function simulateParticles(
     p.y += p.vy * localTimeDilation;
     p.z += p.vz * localTimeDilation;
 
-    p.vx *= 0.86;
-    p.vy *= 0.86;
-    p.vz *= 0.86;
+    const dragFactor = choreography.transitionDrag;
+    p.vx *= dragFactor;
+    p.vy *= dragFactor;
+    p.vz *= dragFactor;
 
     if (isInterstellar && p.interstellarType) {
-      const objSpeedMult = (objectParticleSpeed ?? 0.15) / 0.15;
+      const objSpeedMult = ((objectParticleSpeed ?? 0.15) / 0.15) * choreography.velocityMultiplier;
       const ambSpeedMult = (ambientParticleSpeed ?? 0.15) / 0.15;
+      const densityCompaction = Math.max(0.68, 1.0 - choreography.densityCompression);
 
       if (
         p.interstellarType === "blackhole" ||
@@ -335,7 +415,7 @@ export function simulateParticles(
         let entity = p.interstellarEntity || celestialEntities[p.interstellarEntityIndex || 0];
 
         if (entity && entity.isDestroyed) {
-          const activeEntityIdx = celestialEntities.findIndex(e => e && !e.isDestroyed && e.type === "blackhole");
+          const activeEntityIdx = celestialEntities.findIndex(e => e && !e.isDestroyed && !e.isOutgoing && e.type === "blackhole");
           if (activeEntityIdx !== -1) {
             p.interstellarEntityIndex = activeEntityIdx;
             p.interstellarEntity = celestialEntities[activeEntityIdx];
@@ -345,8 +425,9 @@ export function simulateParticles(
         }
 
         if (entity) {
+          const ez = entity.z || 0;
           if (entity.type === "blackhole") {
-            const rx = p.orbitRadius || 50;
+            const rx = (p.orbitRadius || 50) * densityCompaction;
             const ry = rx * 0.25;
             const theta = 0.05;
             const cosT = Math.cos(theta);
@@ -355,10 +436,10 @@ export function simulateParticles(
             const oy = Math.sin(p.orbitAngle) * ry;
             p.targetX = entity.x + (ox * cosT - oy * sinT);
             p.targetY = entity.y + (ox * sinT + oy * cosT);
-            p.targetZ = Math.sin(p.orbitAngle) * rx * 0.55;
+            p.targetZ = ez + Math.sin(p.orbitAngle) * rx * 0.55;
           } else {
             if (p.isPlanetRing) {
-              const rx = p.orbitRadius || 50;
+              const rx = (p.orbitRadius || 50) * densityCompaction;
               const ry = rx * 0.22;
               const theta = 0.3;
               const cosT = Math.cos(theta);
@@ -367,9 +448,9 @@ export function simulateParticles(
               const oy = Math.sin(p.orbitAngle) * ry;
               p.targetX = entity.x + (ox * cosT - oy * sinT);
               p.targetY = entity.y + (ox * sinT + oy * cosT);
-              p.targetZ = Math.sin(p.orbitAngle) * rx * 0.4;
+              p.targetZ = ez + Math.sin(p.orbitAngle) * rx * 0.4;
             } else {
-              const rx = p.orbitRadius || 50;
+              const rx = (p.orbitRadius || 50) * densityCompaction;
               const ry = rx * 0.7;
               const theta = -0.15;
               const cosT = Math.cos(theta);
@@ -378,20 +459,74 @@ export function simulateParticles(
               const oy = Math.sin(p.orbitAngle) * ry;
               p.targetX = entity.x + (ox * cosT - oy * sinT);
               p.targetY = entity.y + (ox * sinT + oy * cosT);
-              p.targetZ = Math.sin(p.orbitAngle) * rx * 0.4;
+              p.targetZ = ez + Math.sin(p.orbitAngle) * rx * 0.4;
             }
           }
         }
+      } else if (p.interstellarType === "galaxy") {
+        const galSpeed = (p.orbitSpeed || 0.006) * 0.45 * localTimeDilation * musicSpeedFactor * objSpeedMult;
+        p.orbitAngle = (p.orbitAngle || 0) + galSpeed;
+        const entity = p.interstellarEntity || celestialEntities[p.interstellarEntityIndex || 0];
+        const cx = entity ? entity.x : currentW / 2;
+        const cy = entity ? entity.y : currentH / 2;
+        const cz = entity ? (entity.z || 0) : 0;
+        const r = (p.orbitRadius || 100) * densityCompaction;
+
+        const inc = Math.PI / 4.2;
+        const cosInc = Math.cos(inc);
+        const sinInc = Math.sin(inc);
+
+        const ox = Math.cos(p.orbitAngle) * r;
+        const oy = Math.sin(p.orbitAngle) * r * cosInc;
+        const oz = Math.sin(p.orbitAngle) * r * sinInc + (p.galaxyZOffset || 0);
+
+        p.targetX = cx + ox;
+        p.targetY = cy + oy;
+        p.targetZ = cz + oz;
+      } else if (p.interstellarType === "pulsar_ring") {
+        p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.02) * 0.45 * localTimeDilation * musicSpeedFactor * objSpeedMult;
+        const entity = p.interstellarEntity || celestialEntities[p.interstellarEntityIndex || 0];
+        const cx = entity ? entity.x : currentW / 2;
+        const cy = entity ? entity.y : currentH / 2;
+        const cz = entity ? (entity.z || 0) : 0;
+        const r = (p.orbitRadius || 50) * densityCompaction;
+
+        const wavePulse = 1.0 + Math.sin(time * 0.006 + (p.orbitRadius || 0) * 0.05) * (0.08 + choreography.climaxPulse * 0.08);
+        const ox = Math.cos(p.orbitAngle) * r * wavePulse;
+        const oy = Math.sin(p.orbitAngle) * r * 0.35 * wavePulse;
+        const oz = Math.sin(p.orbitAngle) * r * 0.65;
+
+        p.targetX = cx + ox;
+        p.targetY = cy + oy;
+        p.targetZ = cz + oz;
+      } else if (p.interstellarType === "pulsar_jet") {
+        const jetSpeed = (p.orbitSpeed || 0.035) * localTimeDilation * musicSpeedFactor * objSpeedMult;
+        p.orbitAngle = (p.orbitAngle || 0) + jetSpeed;
+        const entity = p.interstellarEntity || celestialEntities[p.interstellarEntityIndex || 0];
+        const cx = entity ? entity.x : currentW / 2;
+        const cy = entity ? entity.y : currentH / 2;
+        const cz = entity ? (entity.z || 0) : 0;
+
+        const jetDist = p.orbitRadius || 80;
+        const helixR = 8 + (jetDist / 200) * 16 * (1.0 + choreography.climaxPulse * 0.35);
+        const hx = Math.cos(p.orbitAngle * 4) * helixR;
+        const hz = Math.sin(p.orbitAngle * 4) * helixR;
+
+        const isNorth = (p.galaxyZOffset ?? 1) > 0;
+        p.targetX = cx + hx;
+        p.targetY = cy + (isNorth ? -jetDist : jetDist);
+        p.targetZ = cz + hz;
       } else if (p.interstellarType === "nebula") {
         p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.002) * 0.45 * localTimeDilation * musicSpeedFactor * objSpeedMult;
         const entity = p.interstellarEntity || celestialEntities[p.interstellarEntityIndex || 0];
         if (entity) {
           const angle = p.orbitAngle + i;
           const rad =
-            (p.orbitRadius || entity.radius * 0.5) +
+            ((p.orbitRadius || entity.radius * 0.5) * densityCompaction) +
             Math.sin(time * 0.01 + i) * 10;
           p.targetX = entity.x + Math.cos(angle) * rad;
           p.targetY = entity.y + Math.sin(angle) * rad;
+          p.targetZ = (entity.z || 0) + Math.sin(time * 0.008 + i * 0.1) * 25;
         }
       } else if (p.interstellarType === "bridge") {
         p.bridgeProgress =
@@ -415,9 +550,10 @@ export function simulateParticles(
             (1 - t) * (1 - t) * start.y +
             2 * (1 - t) * t * midY +
             t * t * end.y;
+          const midZ = ((start.z || 0) + (end.z || 0)) * 0.5;
           p.targetX = x;
           p.targetY = y;
-          p.targetZ = Math.sin(t * Math.PI) * 15;
+          p.targetZ = midZ + Math.sin(t * Math.PI) * 15;
         }
       } else if (p.interstellarType === "background_galaxy") {
         p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.012) * localTimeDilation * musicSpeedFactor * ambSpeedMult;
@@ -438,23 +574,36 @@ export function simulateParticles(
         
         p.targetX = (p.galaxyX || 0) + lx;
         p.targetY = (p.galaxyY || 0) + ly;
-        p.targetZ = (p.galaxyZ || -1400) + lz;
+        p.targetZ = (p.galaxyZ || 1600) + lz;
       } else if (p.interstellarType === "star") {
-        p.targetX += Math.sin(time * 0.01 + i) * 0.05 * objSpeedMult;
-        p.targetY += Math.cos(time * 0.01 + i) * 0.05 * objSpeedMult;
+        const entity = p.interstellarEntity || celestialEntities[p.interstellarEntityIndex || 0];
+        if (entity && p.orbitRadius) {
+          p.orbitAngle = (p.orbitAngle || 0) + (p.orbitSpeed || 0.015) * 0.45 * localTimeDilation * musicSpeedFactor * objSpeedMult;
+          const r = p.orbitRadius * densityCompaction;
+          const ox = Math.cos(p.orbitAngle) * r;
+          const oy = Math.sin(p.orbitAngle) * (r * 0.65);
+          const oz = Math.sin(p.orbitAngle * 2) * (r * 0.35);
+          p.targetX = entity.x + ox;
+          p.targetY = entity.y + oy;
+          p.targetZ = (entity.z || 0) + oz;
+        } else {
+          p.targetX += Math.sin(time * 0.01 + i) * 0.05 * objSpeedMult;
+          p.targetY += Math.cos(time * 0.01 + i) * 0.05 * objSpeedMult;
+        }
       }
     }
 
-    let particleBrightness = 1.0;
+    let particleBrightness = 1.0 + choreography.tension * 0.14 + choreography.climaxPulse * 0.42;
     let suctionAlpha = 0;
 
     const isInterferenceSuppressed = !isInterstellar && (snElapsed < 4000);
 
-    if (!isInterferenceSuppressed) {
-      const gravityRadiusMult = isInterstellar ? 3.6 : 2.2;
+    if (!isInterferenceSuppressed && !p.isProjectText) {
+      const gravityRadiusMult = (isInterstellar ? 3.6 : 2.2) * (0.92 + choreography.tension * 0.25);
       
       // 1. Black hole attraction & event horizon consumption
       activeBlackholes.forEach((entity) => {
+        if (entity.isOutgoing && (entity.scale ?? 1) < 0.25) return;
         const bdx = entity.x - p.x;
         const bdy = entity.y - p.y;
         const bdist = Math.sqrt(bdx * bdx + bdy * bdy) || 1;
@@ -462,7 +611,7 @@ export function simulateParticles(
           const pullFactor = 1.0 - bdist / (entity.radius * gravityRadiusMult);
           suctionAlpha = Math.max(suctionAlpha, pullFactor * (isInterstellar ? 1.0 : 0.4));
 
-          const basePullStrength = isInterstellar ? 6.2 : 2.2;
+          const basePullStrength = (isInterstellar ? 6.2 : 2.2) * choreography.gravityMultiplier;
           const tx = -bdy / bdist;
           const ty = bdx / bdist;
 
@@ -482,21 +631,21 @@ export function simulateParticles(
             const horizonFade = Math.max(0.0, (bdist - entity.radius * 0.95) / (entity.radius * 0.13));
             particleBrightness = Math.min(particleBrightness, horizonFade);
             
-            // Quantum tunneling at the Schwarzschild radius boundary layer
-            const isAtSchwarzschildEdge = bdist >= entity.radius * 0.88 && bdist <= entity.radius * 1.16;
-            const tunnelingProbability = isInterstellar ? 0.032 : 0.042;
+            // Kerr Ergosphere Penrose & Blandford-Znajek Magnetospheric Wind Ejection (arXiv:1906.11242, arXiv:2105.01173)
+            const isInErgosphereSheath = bdist >= entity.radius * 0.92 && bdist <= entity.radius * 1.18;
+            const bzWindProbability = (isInterstellar ? 0.032 : 0.042) * choreography.emissionMultiplier;
 
-            if (isAtSchwarzschildEdge && Math.random() < tunnelingProbability) {
-              // Particle tunnels across the gravitational potential barrier away from the event horizon
+            if (isInErgosphereSheath && Math.random() < bzWindProbability) {
+              // Plasma parcel accelerated outward along open twisted poloidal magnetic field lines
               const escapeAngle = Math.atan2(p.y - entity.y, p.x - entity.x) + (Math.random() - 0.5) * 0.7;
-              const tunnelDist = entity.radius * (1.35 + Math.random() * 0.65);
+              const tunnelDist = entity.radius * (2.85 + Math.random() * 0.85);
 
               p.x = entity.x + Math.cos(escapeAngle) * tunnelDist;
               p.y = entity.y + Math.sin(escapeAngle) * tunnelDist;
               p.z = (p.z || 0) + (Math.random() - 0.5) * 25;
 
-              // Energetic quantum ejection velocity pointing outward with subtle tangential variance
-              const escapeSpeed = 4.0 + Math.random() * 4.5;
+              // Relativistic Poynting-flux coronal wind velocity with prograde frame-dragging pitch
+              const escapeSpeed = (4.0 + Math.random() * 4.5) * choreography.velocityMultiplier;
               const outX = Math.cos(escapeAngle);
               const outY = Math.sin(escapeAngle);
               const tangX = -outY;
@@ -506,7 +655,7 @@ export function simulateParticles(
               p.vy = outY * escapeSpeed + tangY * (Math.random() - 0.5) * 2.4;
               p.vz = (Math.random() - 0.5) * 3.5;
 
-              // Break lock / expand orbit for black hole interstellar particles
+              // Expand orbit for MAD coronal wind particles
               if (p.interstellarType === "blackhole") {
                 p.orbitRadius = Math.max(p.orbitRadius || 50, tunnelDist * 1.35);
                 p.orbitAngle = escapeAngle;
@@ -514,41 +663,43 @@ export function simulateParticles(
               p.targetX = p.x;
               p.targetY = p.y;
 
-              // Quantum excitation state for Hawking radiation spectral emission
+              // Synchrotron coronal electron heating state (T_e ~ 6e10 K)
               p.tunnelLife = 1.0;
 
-              // Subtle randomized emission spark tails (Hawking evaporation effect)
+              // Polarized synchrotron flare sparks from equatorial current-sheet magnetic reconnection
               if (spawnTailParticle) {
-                const sparkCount = Math.random() < 0.4 ? 2 : 1;
+                const bzIntensity = (window as any).__hawkingIntensity || 0.0;
+                const isCinematic = (window as any).__cinematicMode === true;
+                const baseProb = (0.4 + bzIntensity * 0.45 + (isCinematic ? 0.25 : 0.0)) * choreography.emissionMultiplier;
+                const sparkCount = Math.random() < baseProb ? (isCinematic || bzIntensity > 0.4 || choreography.climaxPulse > 0.3 ? 3 : 2) : 1;
                 for (let s = 0; s < sparkCount; s++) {
-                  const emissionColor = Math.random() > 0.45
-                    ? "#a5f3fc" // Luminous Cherenkov / Hawking cyan
-                    : (Math.random() > 0.5 ? "#e0e7ff" : (entity.secondaryColor || "#c084fc"));
+                  const emissionColor = Math.random() > 0.35
+                    ? (Math.random() > 0.5 ? "#ffd778" : "#fff7ed") // Relativistic synchrotron golden-white continuum
+                    : (Math.random() > 0.5 ? "#f97316" : "#bae6fd"); // Doppler-boosted coronal flare
                   spawnTailParticle(
-                    entity.x + Math.cos(escapeAngle) * (entity.radius * 1.04 + s * 8),
-                    entity.y + Math.sin(escapeAngle) * (entity.radius * 1.04 + s * 8),
-                    p.z + (Math.random() - 0.5) * 12,
-                    p.vx * (0.55 + s * 0.25) + (Math.random() - 0.5) * 1.5,
-                    p.vy * (0.55 + s * 0.25) + (Math.random() - 0.5) * 1.5,
+                    entity.x + Math.cos(escapeAngle) * (entity.radius * 2.2 + s * 8),
+                    entity.y + Math.sin(escapeAngle) * (entity.radius * 2.2 + s * 8),
+                    p.z + (Math.random() - 0.5) * 14,
+                    p.vx * (0.65 + s * 0.3) + (Math.random() - 0.5) * 2.2,
+                    p.vy * (0.65 + s * 0.3) + (Math.random() - 0.5) * 2.2,
                     emissionColor,
-                    0.038 // soft gradual fade
+                    0.032
                   );
                 }
               }
-
-              // Micro-evaporation feedback to the black hole
-              if (entity.mass && entity.mass > (entity.initialMass || entity.radius * entity.radius * 2) * 0.7) {
-                entity.mass -= 0.02;
-              }
             } else if (bdist < entity.radius * 0.92) {
-              if (spawnTailParticle && Math.random() < 0.25) {
+              // Horizon capture: mass-energy crosses r_+ and increases BH mass (Hawking Area Theorem dA >= 0)
+              if (entity.mass) {
+                entity.mass += 0.004;
+              }
+              if (spawnTailParticle && Math.random() < 0.25 * choreography.emissionMultiplier) {
                 spawnTailParticle(
                   entity.x + (bdx / bdist) * entity.radius * 1.02,
                   entity.y + (bdy / bdist) * entity.radius * 1.02,
                   p.z,
                   tx * 2.5,
                   ty * 2.5,
-                  entity.color,
+                  entity.color || "#ff6600",
                   0.10
                 );
               }
@@ -564,6 +715,7 @@ export function simulateParticles(
       // 2. Rigid body collision with planets/stars
       const colOffset = currentW < 768 ? 2 : 3;
       activeCollidables.forEach((entity) => {
+        if (entity.isOutgoing) return;
         const bdx = entity.x - p.x;
         const bdy = entity.y - p.y;
         const bdist = Math.sqrt(bdx * bdx + bdy * bdy) || 1;
@@ -590,18 +742,15 @@ export function simulateParticles(
     const dy = p.targetY - p.y;
     const distSq = dx * dx + dy * dy;
 
-    const baseSpring = isTypographyMode
-      ? Math.max(0.04, Math.min(0.25, 20.0 / Math.max(1, distSq)))
-      : isInterstellar
-        ? 0.24
-        : 0.08;
+    const baseSpring = (isInterstellar ? 0.11 : 0.075) * choreography.transitionSpringScale;
+    const isDispersedText = p.isProjectText && (p.targetZ !== undefined && p.targetZ > 200);
 
-    const effectiveSpring = (p.isProjectText
-      ? baseSpring * textParticleSpeed
-      : baseSpring) * (1.0 - suctionAlpha);
+    const effectiveSpring = p.isProjectText
+      ? (isDispersedText ? 0.016 : 0.11 * textParticleSpeed * Math.max(0.25, choreography.transitionSpringScale))
+      : baseSpring * (1.0 - suctionAlpha);
 
     if (distSq > 0.1) {
-      if (p.isProjectText) {
+      if (p.isProjectText && !isDispersedText) {
         const mdx = mousePos.x - p.x;
         const mdy = mousePos.y - p.y;
         const mDistSq = mdx * mdx + mdy * mdy;
@@ -661,43 +810,46 @@ export function simulateParticles(
       }
     }
     const floatZ = Math.sin(time * floatSpeed * 0.7 + i * 0.04) * 8;
-    p.z += (floatZ - p.z) * 0.05;
 
-    const selfMovementX = isTypographyMode
+    const selfMovementX = p.isProjectText
       ? 0
       : Math.sin(time * 0.045 + i * 0.17) * 0.95;
-    const selfMovementY = isTypographyMode
+    const selfMovementY = p.isProjectText
       ? 0
       : Math.cos(time * 0.045 + i * 0.23) * 0.95;
     let drawX = p.x + floatX + selfMovementX;
     let drawY = p.y + floatY + selfMovementY;
 
-    activeBlackholes.forEach((entity) => {
-      const ldx = drawX - entity.x;
-      const ldy = drawY - entity.y;
-      const ldist = Math.sqrt(ldx * ldx + ldy * ldy) || 1;
-      
-      const horizon = entity.radius;
-      const lenseRadius = horizon * 1.35;
-      
-      if (ldist > horizon * 0.95) {
-        const shiftDist = Math.sqrt(ldist * ldist + lenseRadius * lenseRadius);
-        const lensedX = entity.x + (ldx / ldist) * shiftDist;
-        const lensedY = entity.y + (ldy / ldist) * shiftDist;
+    if (!p.isProjectText) {
+      activeBlackholes.forEach((entity) => {
+        const ldx = drawX - entity.x;
+        const ldy = drawY - entity.y;
+        const ldist = Math.sqrt(ldx * ldx + ldy * ldy) || 1;
         
-        const blendFactor = Math.pow(Math.max(0, 1.0 - ldist / (horizon * 5.0)), 1.5);
-        drawX = drawX + (lensedX - drawX) * blendFactor;
-        drawY = drawY + (lensedY - drawY) * blendFactor;
-      }
-    });
+        const scale = entity.scale !== undefined ? Math.max(0.01, entity.scale) : 1.0;
+        const horizon = entity.radius * scale;
+        const lenseRadius = horizon * 1.35;
+        
+        if (ldist > horizon * 0.95) {
+          const shiftDist = Math.sqrt(ldist * ldist + lenseRadius * lenseRadius);
+          const lensedX = entity.x + (ldx / ldist) * shiftDist;
+          const lensedY = entity.y + (ldy / ldist) * shiftDist;
+          
+          const blendFactor = Math.pow(Math.max(0, 1.0 - ldist / (horizon * 5.0)), 1.5);
+          drawX = drawX + (lensedX - drawX) * blendFactor;
+          drawY = drawY + (lensedY - drawY) * blendFactor;
+        }
+      });
+    }
 
     if (p.prevDrawX !== undefined && p.prevDrawY !== undefined) {
       const pdx = drawX - p.prevDrawX;
       const pdy = drawY - p.prevDrawY;
       const moveDistSq = pdx * pdx + pdy * pdy;
 
-      if (moveDistSq > 3.0 && Math.random() < 0.22) {
-        spawnTailParticle(p.prevDrawX, p.prevDrawY, p.z, pdx, pdy, p.color);
+      const tailProb = 0.22 * Math.min(2.2, choreography.emissionMultiplier);
+      if (moveDistSq > 3.0 && Math.random() < tailProb) {
+        spawnTailParticle(p.prevDrawX, p.prevDrawY, p.z, pdx, pdy, p.color || "#ffffff");
       }
     }
     p.prevDrawX = drawX;
@@ -707,11 +859,11 @@ export function simulateParticles(
     const mdy = mousePos.y - drawY;
     const mDistSq = mdx * mdx + mdy * mdy;
 
-    if (mDistSq < 40000) {
+    if (mDistSq < 40000 && p.interstellarType !== "background_galaxy") {
       const mDist = Math.sqrt(mDistSq);
       let mForce = Math.pow((200 - mDist) / 200, 1.5) * vortexMultiplier;
 
-      if (isTypographyMode && distSq < 15) {
+      if ((isTypographyMode || p.isProjectText) && distSq < 15) {
         mForce *= (distSq / 15) * 0.4;
       }
 
@@ -730,6 +882,7 @@ export function simulateParticles(
       }
     }
 
+    let rippleCrestGlow = 0;
     activeRipples.forEach((ripple) => {
       const rdx = ripple.x - drawX;
       const rdy = ripple.y - drawY;
@@ -740,37 +893,35 @@ export function simulateParticles(
         const rForce =
           (1 - Math.abs(rDist - ripple.maxDist) / ripple.bandWidth) *
           ripple.life;
-        p.vx -= (rdx / (rDist || 1)) * rForce * 4.0;
-        p.vy -= (rdy / (rDist || 1)) * rForce * 4.0;
-        p.vz -= rForce * 10;
+        p.vx -= (rdx / (rDist || 1)) * rForce * 3.8;
+        p.vy -= (rdy / (rDist || 1)) * rForce * 3.8;
+        p.vz -= rForce * 11;
+        rippleCrestGlow = Math.max(rippleCrestGlow, Math.max(0, rForce));
       }
     });
 
     let particleGravityZ = 0;
-    celestialEntities.forEach((entity) => {
-      if (entity.isDestroyed) return;
-      const gdx = entity.x - drawX;
-      const gdy = entity.y - drawY;
-      const gdistSq = gdx * gdx + gdy * gdy;
-      const gdist = Math.sqrt(gdistSq) || 1;
-      
-      const range = entity.radius * (entity.type === "blackhole" ? 3.5 : 1.8);
-      if (gdist < range) {
-        const intensity = (range - gdist) / range;
-        const pullDepth = entity.type === "blackhole" ? 220 : 60;
-        particleGravityZ += Math.pow(intensity, 1.8) * pullDepth;
-      }
-    });
+    if (!p.isProjectText && p.interstellarType !== "background_galaxy") {
+      celestialEntities.forEach((entity) => {
+        if (entity.isDestroyed || entity.isOutgoing) return;
+        const gdx = entity.x - drawX;
+        const gdy = entity.y - drawY;
+        const gdistSq = gdx * gdx + gdy * gdy;
+        const gdist = Math.sqrt(gdistSq) || 1;
+        
+        const scale = entity.scale !== undefined ? Math.max(0, Math.min(1, entity.scale)) : 1.0;
+        const range = entity.radius * (entity.type === "blackhole" ? 3.5 : 1.8);
+        if (gdist < range) {
+          const intensity = (range - gdist) / range;
+          const pullDepth = (entity.type === "blackhole" ? 220 : 60) * choreography.gravityMultiplier * scale;
+          particleGravityZ += Math.pow(intensity, 1.8) * pullDepth;
+        }
+      });
+    }
 
-    const mouseNormX = (mousePos.x - currentW / 2) / (currentW / 2 || 1);
-    const mouseNormY = (mousePos.y - currentH / 2) / (currentH / 2 || 1);
-    const parallaxFactor = 0.15;
-    const parallaxX = mouseNormX * p.z * parallaxFactor;
-    const parallaxY = mouseNormY * p.z * parallaxFactor;
-
-    let finalX = drawX - currentW / 2 + parallaxX;
-    let finalY = -(drawY - currentH / 2 + parallaxY);
-    let finalZ = p.z + particleGravityZ;
+    let finalX = drawX - currentW / 2;
+    let finalY = -(drawY - currentH / 2);
+    let finalZ = (p.z || 0) + floatZ + particleGravityZ;
 
     if (isTransitActive && transitProgress > 0) {
       const cx = transitCx - currentW / 2;
@@ -794,21 +945,24 @@ export function simulateParticles(
     let g = p.g ?? 255;
     let b = p.b ?? 255;
 
-    let rFactor = 1.0;
-    let gFactor = 1.0;
-    let bFactor = 1.0;
+    let rFactor = 1.0 + rippleCrestGlow * 0.55;
+    let gFactor = 1.0 + rippleCrestGlow * 0.65;
+    let bFactor = 1.0 + rippleCrestGlow * 0.95;
+    if (rippleCrestGlow > 0.01) {
+      particleBrightness = Math.max(particleBrightness, 1.0 + rippleCrestGlow * 1.35);
+    }
 
-    if (activeSupernova && snElapsed > 0 && snElapsed < 3000) {
+    if (activeSupernova && !activeSupernova.isCalmShift && snElapsed > 2600 && snElapsed < 8800) {
       const snX = activeSupernova.x;
       const snY = activeSupernova.y;
       const dist = Math.sqrt((drawX - snX) * (drawX - snX) + (drawY - snY) * (drawY - snY));
       
-      const waveRadius = (snElapsed - 250) * 0.85;
-      if (snElapsed >= 250 && Math.abs(dist - waveRadius) < 180) {
-        const rippleGlow = (1.0 - Math.abs(dist - waveRadius) / 180) * 0.35;
+      const waveRadius = (snElapsed - 2600) * 0.42;
+      if (Math.abs(dist - waveRadius) < 220) {
+        const rippleGlow = (1.0 - Math.abs(dist - waveRadius) / 220) * 0.55;
         rFactor += rippleGlow;
-        gFactor += rippleGlow * 0.8;
-        bFactor += rippleGlow * 1.2;
+        gFactor += rippleGlow * 0.85;
+        bFactor += rippleGlow * 1.3;
       }
     }
 
@@ -831,26 +985,46 @@ export function simulateParticles(
     let dopplerB = 1.0;
     let dopplerIntensity = 1.0;
 
-    if (isInterstellar && p.interstellarType === "blackhole" && p.orbitAngle !== undefined) {
-      const velLineOfSight = -Math.sin(p.orbitAngle);
+    if (activeBlackholes.length > 0) {
+      const bh = activeBlackholes[0]!;
+      const dx = p.x - bh.x;
+      const dy = p.y - bh.y;
+      const dist = Math.hypot(dx, dy);
 
-      if (velLineOfSight > 0) {
-        const factor = velLineOfSight * 0.42;
-        dopplerR = 1.0 - factor * 0.2;
-        dopplerG = 1.0 + factor * 0.1;
-        dopplerB = 1.0 + factor * 0.65;
-        dopplerIntensity = 1.0 + factor * 0.8;
-      } else {
-        const factor = -velLineOfSight * 0.42;
-        dopplerR = 1.0 + factor * 0.55;
-        dopplerG = 1.0 - factor * 0.15;
-        dopplerB = 1.0 - factor * 0.4;
-        dopplerIntensity = Math.max(0.35, 1.0 - factor * 0.65);
+      if (p.orbitAngle !== undefined) {
+        const velLineOfSight = -Math.sin(p.orbitAngle);
+        if (velLineOfSight > 0) {
+          const factor = velLineOfSight * 0.42;
+          dopplerR = 1.0 - factor * 0.2;
+          dopplerG = 1.0 + factor * 0.1;
+          dopplerB = 1.0 + factor * 0.65;
+          dopplerIntensity = 1.0 + factor * 0.8;
+        } else {
+          const factor = -velLineOfSight * 0.42;
+          dopplerR = 1.0 + factor * 0.55;
+          dopplerG = 1.0 - factor * 0.15;
+          dopplerB = 1.0 - factor * 0.4;
+          dopplerIntensity = Math.max(0.35, 1.0 - factor * 0.65);
+        }
+      } else if (dist < bh.radius * 3.2) {
+        const factor = (bh.radius * 3.2 - dist) / (bh.radius * 3.2);
+        if (dx < 0) {
+          // Approaching limb (left side) -> intense blueshift & luminous energy
+          dopplerR = 1.0 - factor * 0.25;
+          dopplerG = 1.0 + factor * 0.15;
+          dopplerB = 1.0 + factor * 0.75;
+          dopplerIntensity = 1.0 + factor * 0.9;
+        } else {
+          // Receding limb (right side) -> redshift
+          dopplerR = 1.0 + factor * 0.45;
+          dopplerG = 1.0 - factor * 0.15;
+          dopplerB = 1.0 - factor * 0.35;
+          dopplerIntensity = Math.max(0.4, 1.0 - factor * 0.5);
+        }
       }
 
-      const horizonRadius = 35;
-      if (p.orbitRadius && p.orbitRadius < horizonRadius * 2.2) {
-        const grFactor = (horizonRadius * 2.2 - p.orbitRadius) / (horizonRadius * 1.2);
+      if (dist < bh.radius * 2.2) {
+        const grFactor = (bh.radius * 2.2 - dist) / (bh.radius * 1.2);
         const redshift = Math.max(0, Math.min(0.65, grFactor));
         dopplerR *= (1.0 + redshift * 0.35);
         dopplerG *= (1.0 - redshift * 0.25);
@@ -867,42 +1041,53 @@ export function simulateParticles(
       dopplerIntensity = dopplerIntensity * (1.0 + shift * 3.0);
     }
 
-    // Quantum tunneling Hawking radiation emission glow & spectral blueshift
+    // Relativistic MAD coronal synchrotron heating & Doppler boosting (T_e ~ 6e10 K, arXiv:2105.01173)
     if (p.tunnelLife && p.tunnelLife > 0) {
       p.tunnelLife = Math.max(0, p.tunnelLife - 0.022);
       const t = p.tunnelLife;
-      // High-energy quantum emission spectrum: boost cyan/violet components and luminescence
-      r = Math.min(255, r * (1.0 - t * 0.35) + 165 * t);
-      g = Math.min(255, g * (1.0 - t * 0.15) + 240 * t);
-      b = Math.min(255, b * (1.0 + t * 0.5) + 255 * t);
+      // High-energy polarized synchrotron continuum: warm golden-white plasma luminescence
+      r = Math.min(255, r * (1.0 - t * 0.25) + 255 * t);
+      g = Math.min(255, g * (1.0 - t * 0.25) + 225 * t);
+      b = Math.min(255, b * (1.0 - t * 0.35) + 175 * t);
       particleBrightness = Math.max(particleBrightness, 1.0 + t * 2.4);
     }
 
     let bhAbsorbFactor = 1.0;
-    for (let bIdx = 0; bIdx < celestialEntities.length; bIdx++) {
-      const bh = celestialEntities[bIdx];
-      if (bh && !bh.isDestroyed && bh.type === "blackhole") {
-        const bhWorldX = bh.x - currentW / 2;
-        const bhWorldY = -(bh.y - currentH / 2);
-        const bhDx = finalX - bhWorldX;
-        const bhDy = finalY - bhWorldY;
-        const bhDist2D = Math.sqrt(bhDx * bhDx + bhDy * bhDy);
-        const ehRadius = bh.radius * 2.598; // Schwarzschild shadow radius b_crit = (3*sqrt(3)/2) * r_s
-        const ergosphereRadius = bh.radius * 4.5;
+    let redshiftR = 1.0;
+    let redshiftG = 1.0;
+    let redshiftB = 1.0;
+    if (!p.isProjectText) {
+      for (let bIdx = 0; bIdx < celestialEntities.length; bIdx++) {
+        const bh = celestialEntities[bIdx];
+        if (bh && !bh.isDestroyed && !bh.isOutgoing && bh.type === "blackhole") {
+          const bhWorldX = bh.x - currentW / 2;
+          const bhWorldY = -(bh.y - currentH / 2);
+          const bhDx = finalX - bhWorldX;
+          const bhDy = finalY - bhWorldY;
+          const bhDist2D = Math.sqrt(bhDx * bhDx + bhDy * bhDy);
+          const scale = bh.scale !== undefined && bh.scale > 0 ? bh.scale : 1.0;
+          const ehRadius = (bh.radius * scale) * 1.05; // 1:1 Schwarzschild Event Horizon absorption boundary
+          const photonSphereRadius = (bh.radius * scale) * 1.55;
 
-        // Particles actively tunneling away from horizon bypass instantaneous shadow absorption
-        const isActivelyTunneling = (p.tunnelLife && p.tunnelLife > 0.15);
-
-        if (bhDist2D < ergosphereRadius && !isActivelyTunneling) {
+          // Any particle crossing inside the physical event horizon is absorbed into the singularity
           if (bhDist2D <= ehRadius) {
             bhAbsorbFactor = 0.0;
             finalZ = 5000.0; // Hide absorbed particle deep behind scene
             positions[i * 3 + 2] = 5000.0;
             break;
-          } else {
-            const normDist = (bhDist2D - ehRadius) / (ergosphereRadius - ehRadius);
-            const smoothAtt = Math.pow(normDist, 2.0);
-            bhAbsorbFactor = Math.min(bhAbsorbFactor, smoothAtt);
+          } else if (bhDist2D < photonSphereRadius) {
+            // Relativistic blueshift & photon sphere radiance amplification
+            const blueshift = 1.0 - (bhDist2D - ehRadius) / (photonSphereRadius - ehRadius);
+            particleBrightness = Math.max(particleBrightness, 1.0 + blueshift * 2.8);
+          }
+
+          // Relativistic Gravitational Redshift (shifts light to longer wavelengths near horizon)
+          if (bhDist2D < ehRadius * 3.8) {
+            const rsRatio = Math.min(0.98, ehRadius / Math.max(ehRadius * 1.01, bhDist2D));
+            const g00 = Math.sqrt(Math.max(0.02, 1.0 - rsRatio)); // Schwarzschild metric g_00
+            redshiftG = Math.min(redshiftG, Math.pow(g00, 1.4));
+            redshiftB = Math.min(redshiftB, Math.pow(g00, 2.2));
+            redshiftR = Math.max(redshiftR, Math.min(1.45, 1.0 + (1.0 - g00) * 0.45));
           }
         }
       }
@@ -914,13 +1099,16 @@ export function simulateParticles(
       visibleByFilter = false;
     } else if (p.interstellarType === "bridge" && !filters.bridges) {
       visibleByFilter = false;
-    } else if (p.interstellarType === "background_galaxy" && !filters.ambient) {
+    } else if ((p.interstellarType === "background_galaxy" || p.isCosmicAmbient) && !filters.ambient) {
       visibleByFilter = false;
     } else if (
       (p.interstellarType === "blackhole" ||
        p.interstellarType === "planet" ||
-       p.interstellarType === "star" ||
        p.interstellarType === "nebula" ||
+       p.interstellarType === "galaxy" ||
+       p.interstellarType === "star" ||
+       p.interstellarType === "pulsar_ring" ||
+       p.interstellarType === "pulsar_jet" ||
        p.isPlanetRing ||
        (!p.interstellarType && !p.isCosmicAmbient && !p.isProjectText && !p.isTail)) &&
       !filters.celestial
@@ -934,9 +1122,9 @@ export function simulateParticles(
       colors[i * 4 + 2] = 0;
       colors[i * 4 + 3] = 0;
     } else {
-      colors[i * 4] = Math.min(1.0, Math.max(0.0, (r / 255) * globalAlpha * rFactor * audioColorR * particleBrightness * textAlphaDimmer * dopplerR * dopplerIntensity * bhAbsorbFactor));
-      colors[i * 4 + 1] = Math.min(1.0, Math.max(0.0, (g / 255) * globalAlpha * gFactor * audioColorG * particleBrightness * textAlphaDimmer * dopplerG * dopplerIntensity * bhAbsorbFactor));
-      colors[i * 4 + 2] = Math.min(1.0, Math.max(0.0, (b / 255) * globalAlpha * bFactor * audioColorB * particleBrightness * textAlphaDimmer * dopplerB * dopplerIntensity * bhAbsorbFactor));
+      colors[i * 4] = Math.min(1.0, Math.max(0.0, (r / 255) * globalAlpha * rFactor * audioColorR * particleBrightness * textAlphaDimmer * dopplerR * dopplerIntensity * bhAbsorbFactor * redshiftR));
+      colors[i * 4 + 1] = Math.min(1.0, Math.max(0.0, (g / 255) * globalAlpha * gFactor * audioColorG * particleBrightness * textAlphaDimmer * dopplerG * dopplerIntensity * bhAbsorbFactor * redshiftG));
+      colors[i * 4 + 2] = Math.min(1.0, Math.max(0.0, (b / 255) * globalAlpha * bFactor * audioColorB * particleBrightness * textAlphaDimmer * dopplerB * dopplerIntensity * bhAbsorbFactor * redshiftB));
       colors[i * 4 + 3] = globalAlpha * textAlphaDimmer * bhAbsorbFactor;
     }
     extras[i] = p.isTail ? 2.0 : (p.interstellarType === "background_galaxy" ? 3.0 : (!p.isCosmicAmbient ? 1.0 : 0.0));

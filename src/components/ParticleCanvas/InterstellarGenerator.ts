@@ -1,13 +1,11 @@
 import React from "react";
 import { CelestialEntity } from "./types";
 import { buildBlackholeCentricScene } from "./scenes/blackhole_centric";
-import { buildBinaryPlanetsScene } from "./scenes/binary_planets";
-import { buildNebulaCradleScene } from "./scenes/nebula_cradle";
-import { buildExoplanetClusterScene } from "./scenes/exoplanet_cluster";
+import { buildStellarPulsarScene } from "./scenes/stellar_pulsar";
 import { buildSpiralGalaxyScene } from "./scenes/spiral_galaxy";
 
 export function hexToRgba(hex: string, alpha: number): string {
-  if (!hex || !hex.startsWith("#")) return hex;
+  if (!hex || typeof hex !== "string" || !hex.startsWith("#")) return hex || `rgba(255, 255, 255, ${alpha})`;
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
@@ -159,11 +157,6 @@ export function generateInterstellarSceneLogic(
   supernovaY?: number,
   onSequenceGenerated?: (seq: { id: string; name: string; description: string; tags: string[] }) => void
 ): void {
-  if (!isInterstellar && !forceInterstellar) {
-    celestialEntitiesRef.current = [];
-    return;
-  }
-
   let entities: CelestialEntity[] = [];
   const isMobile = width < 768;
   const spawnX = supernovaX !== undefined ? supernovaX : width / 2;
@@ -230,7 +223,8 @@ export function generateInterstellarSceneLogic(
           vy: 0,
           mass: Math.min(bhEntity.radius || 30, 120) * Math.min(bhEntity.radius || 30, 120) * 15,
           initialMass: Math.min(bhEntity.radius || 30, 120) * Math.min(bhEntity.radius || 30, 120) * 15,
-          scale: 0,
+          scale: 1.0,
+          targetScale: 1.0,
           currentRadius: Math.min(bhEntity.radius || 30, 120),
           originalRadius: Math.min(bhEntity.radius || 30, 120),
           targetRadius: Math.min(bhEntity.radius || 30, 120),
@@ -263,7 +257,8 @@ export function generateInterstellarSceneLogic(
           vy: Math.cos(angle) * orbitRad * orbitSpeed * 1.5,
           mass: Math.min(entity.radius || 20, 120) * Math.min(entity.radius || 20, 120),
           initialMass: Math.min(entity.radius || 20, 120) * Math.min(entity.radius || 20, 120),
-          scale: 0,
+          scale: 1.0,
+          targetScale: 1.0,
           currentRadius: Math.min(entity.radius || 20, 120),
           originalRadius: Math.min(entity.radius || 20, 120),
           targetRadius: Math.min(entity.radius || 20, 120),
@@ -281,10 +276,8 @@ export function generateInterstellarSceneLogic(
 
   const archetypes = [
     "BLACKHOLE_CENTRIC",
-    "BINARY_PLANETS",
-    "NEBULA_CRADLE",
-    "EXOPLANET_CLUSTER",
     "SPIRAL_GALAXY",
+    "STELLAR_PULSAR",
   ];
   const chosenArchetype = archetypes[Math.floor(Math.random() * archetypes.length)] || "BLACKHOLE_CENTRIC";
   archetypeRef.current = chosenArchetype;
@@ -298,12 +291,8 @@ export function generateInterstellarSceneLogic(
 
   if (chosenArchetype === "BLACKHOLE_CENTRIC") {
     sceneData = buildBlackholeCentricScene(width, height, isMobile);
-  } else if (chosenArchetype === "BINARY_PLANETS") {
-    sceneData = buildBinaryPlanetsScene(width, height, isMobile);
-  } else if (chosenArchetype === "NEBULA_CRADLE") {
-    sceneData = buildNebulaCradleScene(width, height, isMobile);
-  } else if (chosenArchetype === "EXOPLANET_CLUSTER") {
-    sceneData = buildExoplanetClusterScene(width, height, isMobile);
+  } else if (chosenArchetype === "STELLAR_PULSAR") {
+    sceneData = buildStellarPulsarScene(width, height, isMobile);
   } else {
     sceneData = buildSpiralGalaxyScene(width, height, isMobile);
   }

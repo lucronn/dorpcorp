@@ -1,10 +1,13 @@
 import React from "react";
 import { CelestialEntity } from "./types";
 import { buildBlackholeCentricScene } from "./scenes/blackhole_centric";
-import { buildBinaryPlanetsScene } from "./scenes/binary_planets";
-import { buildNebulaCradleScene } from "./scenes/nebula_cradle";
-import { buildExoplanetClusterScene } from "./scenes/exoplanet_cluster";
+import { buildStellarPulsarScene } from "./scenes/stellar_pulsar";
 import { buildSpiralGalaxyScene } from "./scenes/spiral_galaxy";
+import { buildBinaryPlanetsScene } from "./scenes/binary_planets";
+import { buildExoplanetClusterScene } from "./scenes/exoplanet_cluster";
+import { buildNebulaCradleScene } from "./scenes/nebula_cradle";
+import { buildKilonovaMergerScene } from "./scenes/kilonova_merger";
+import { buildRelativisticBlazarScene } from "./scenes/relativistic_blazar";
 import { transitionToNewEntities } from "./TransitionManager";
 
 export async function fetchNextGeminiScene(
@@ -108,11 +111,6 @@ export function generateInterstellarScene(
   supernovaY?: number,
   onSequenceGenerated?: (seq: { id: string; name: string; description: string; tags: string[] }) => void
 ): void {
-  if (!isInterstellar && !forceInterstellar) {
-    celestialEntitiesRef.current = [];
-    return;
-  }
-
   let entities: CelestialEntity[] = [];
   const isMobile = width < 768;
   const spawnX = supernovaX !== undefined ? supernovaX : width / 2;
@@ -181,7 +179,8 @@ export function generateInterstellarScene(
           vy: 0,
           mass: Math.min(bhEntity.radius || 30, 120) * Math.min(bhEntity.radius || 30, 120) * 15,
           initialMass: Math.min(bhEntity.radius || 30, 120) * Math.min(bhEntity.radius || 30, 120) * 15,
-          scale: 0,
+          scale: 1.0,
+          targetScale: 1.0,
           currentRadius: Math.min(bhEntity.radius || 30, 120),
           originalRadius: Math.min(bhEntity.radius || 30, 120),
           targetRadius: Math.min(bhEntity.radius || 30, 120),
@@ -214,7 +213,8 @@ export function generateInterstellarScene(
           vy: Math.cos(angle) * orbitRad * orbitSpeed * 1.5,
           mass: Math.min(entity.radius || 20, 120) * Math.min(entity.radius || 20, 120),
           initialMass: Math.min(entity.radius || 20, 120) * Math.min(entity.radius || 20, 120),
-          scale: 0,
+          scale: 1.0,
+          targetScale: 1.0,
           currentRadius: Math.min(entity.radius || 20, 120),
           originalRadius: Math.min(entity.radius || 20, 120),
           targetRadius: Math.min(entity.radius || 20, 120),
@@ -246,16 +246,25 @@ export function generateInterstellarScene(
 
   const archetypes = [
     "BLACKHOLE_CENTRIC",
-    "BINARY_PLANETS",
-    "NEBULA_CRADLE",
-    "EXOPLANET_CLUSTER",
+    "KILONOVA_MERGER",
+    "RELATIVISTIC_BLAZAR",
     "SPIRAL_GALAXY",
+    "STELLAR_PULSAR",
+    "BINARY_PLANETS",
+    "EXOPLANET_CLUSTER",
+    "NEBULA_CRADLE",
   ];
-  // Sequence #1 always defaults to the supermassive BLACKHOLE_CENTRIC
-  const chosenArchetype =
-    !archetypeRef.current
-      ? "BLACKHOLE_CENTRIC"
-      : archetypes[Math.floor(Math.random() * archetypes.length)] || "BLACKHOLE_CENTRIC";
+  // Check if an archetype was explicitly requested by the screensaver shuffle orchestrator or UI
+  let chosenArchetype = "BLACKHOLE_CENTRIC";
+  if ((window as any).__forcedNextArchetype) {
+    chosenArchetype = (window as any).__forcedNextArchetype;
+    (window as any).__forcedNextArchetype = null;
+  } else if (!archetypeRef.current) {
+    chosenArchetype = "BLACKHOLE_CENTRIC";
+  } else {
+    const candidates = archetypes.filter((a) => a !== archetypeRef.current);
+    chosenArchetype = candidates[Math.floor(Math.random() * candidates.length)] || "SPIRAL_GALAXY";
+  }
   archetypeRef.current = chosenArchetype;
 
   let sceneData: {
@@ -267,14 +276,22 @@ export function generateInterstellarScene(
 
   if (chosenArchetype === "BLACKHOLE_CENTRIC") {
     sceneData = buildBlackholeCentricScene(width, height, isMobile);
+  } else if (chosenArchetype === "KILONOVA_MERGER") {
+    sceneData = buildKilonovaMergerScene(width, height, isMobile);
+  } else if (chosenArchetype === "RELATIVISTIC_BLAZAR") {
+    sceneData = buildRelativisticBlazarScene(width, height, isMobile);
+  } else if (chosenArchetype === "SPIRAL_GALAXY") {
+    sceneData = buildSpiralGalaxyScene(width, height, isMobile);
+  } else if (chosenArchetype === "STELLAR_PULSAR") {
+    sceneData = buildStellarPulsarScene(width, height, isMobile);
   } else if (chosenArchetype === "BINARY_PLANETS") {
     sceneData = buildBinaryPlanetsScene(width, height, isMobile);
-  } else if (chosenArchetype === "NEBULA_CRADLE") {
-    sceneData = buildNebulaCradleScene(width, height, isMobile);
   } else if (chosenArchetype === "EXOPLANET_CLUSTER") {
     sceneData = buildExoplanetClusterScene(width, height, isMobile);
+  } else if (chosenArchetype === "NEBULA_CRADLE") {
+    sceneData = buildNebulaCradleScene(width, height, isMobile);
   } else {
-    sceneData = buildSpiralGalaxyScene(width, height, isMobile);
+    sceneData = buildBlackholeCentricScene(width, height, isMobile);
   }
 
   entities = sceneData.entities;

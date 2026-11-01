@@ -1,6 +1,6 @@
 import * as BABYLON from "@babylonjs/core";
 import { CelestialEntity } from "../types";
-import { generateStarTexture, parseColorToRgb } from "../TextureUtils";
+import { generateStarTexture, generateRelativisticJetTexture, parseColorToRgb } from "../TextureUtils";
 
 export function createStarMesh(
   entity: CelestialEntity,
@@ -55,6 +55,39 @@ export function createStarMesh(
 
   starAtmosMesh.material = starAtmosMat;
   starAtmosMesh.parent = starContainer;
+
+  // If this star is a relativistic pulsar / magnetar: add soft collimated synchrotron beams
+  if (entity.secondaryColor === "#00ffd2") {
+    const beamTex = generateRelativisticJetTexture(entity.color, entity.secondaryColor, scene);
+    const beamMat = new BABYLON.StandardMaterial("pulsarBeamMat", scene);
+    beamMat.diffuseTexture = beamTex;
+    beamMat.emissiveTexture = beamTex;
+    beamMat.opacityTexture = beamTex;
+    beamMat.disableLighting = true;
+    beamMat.backFaceCulling = false;
+    beamMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
+
+    const beamLength = entity.radius * 7.5;
+    const beamNorth = BABYLON.MeshBuilder.CreateCylinder(
+      "pulsar_beam_north",
+      { height: beamLength, diameterTop: entity.radius * 0.9, diameterBottom: entity.radius * 0.1, tessellation: 24 },
+      scene
+    );
+    beamNorth.material = beamMat;
+    beamNorth.position.y = beamLength * 0.5 + entity.radius * 0.3;
+    beamNorth.rotation.z = Math.PI * 0.12; // Precessing magnetic tilt
+    beamNorth.parent = starContainer;
+
+    const beamSouth = BABYLON.MeshBuilder.CreateCylinder(
+      "pulsar_beam_south",
+      { height: beamLength, diameterTop: entity.radius * 0.1, diameterBottom: entity.radius * 0.9, tessellation: 24 },
+      scene
+    );
+    beamSouth.material = beamMat;
+    beamSouth.position.y = -(beamLength * 0.5 + entity.radius * 0.3);
+    beamSouth.rotation.z = Math.PI * 0.12;
+    beamSouth.parent = starContainer;
+  }
 
   starContainer.scaling.set(initScale, initScale, initScale);
   return starContainer;

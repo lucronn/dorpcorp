@@ -1,6 +1,8 @@
 import React from "react";
 import * as BABYLON from "@babylonjs/core";
 import { CelestialEntity } from "./types";
+import { SlingshotAimState, SlingshotProbe } from "./SlingshotEngine";
+import { TdeState, triggerTidalDisruptionEvent } from "./TidalDisruptionEngine";
 
 export interface EventManagerContext {
   rendererRef: React.MutableRefObject<BABYLON.Engine | null>;
@@ -14,6 +16,7 @@ export interface EventManagerContext {
   updateHudTexture: (stage: number) => void;
   lastUserActivityRef: React.MutableRefObject<number>;
   isScreensaverActiveRef: React.MutableRefObject<boolean>;
+  screensaverOpacityRef?: React.MutableRefObject<number>;
   inputControllerRef: React.MutableRefObject<any>;
   ripplesRef: React.MutableRefObject<{ x: number; y: number; life: number }[]>;
   celestialEntitiesRef: React.MutableRefObject<CelestialEntity[]>;
@@ -31,6 +34,14 @@ export interface EventManagerContext {
   wormholePostProcessRef: React.MutableRefObject<BABYLON.PostProcess | null>;
   activeSupernovaFxRef: React.MutableRefObject<any>;
   triggerSupernovaTransition?: (x?: number, y?: number) => void;
+  slingshotAimRef?: React.MutableRefObject<SlingshotAimState>;
+  probesRef?: React.MutableRefObject<SlingshotProbe[]>;
+  tdeStateRef?: React.MutableRefObject<TdeState>;
+  triggerTdeFn?: () => void;
+  isSlingshotModeRef?: React.MutableRefObject<boolean>;
+  targetZoomToHorizonRef?: React.MutableRefObject<number>;
+  zoomToHorizonRef?: React.MutableRefObject<number>;
+  shatterIntensityRef?: React.MutableRefObject<number>;
 }
 
 export function isUIElement(target: HTMLElement | null): boolean {
@@ -93,8 +104,99 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
 
   const resetActivity = () => {
     ctx.lastUserActivityRef.current = Date.now();
-    if (ctx.isScreensaverActiveRef.current) {
-      ctx.isScreensaverActiveRef.current = false;
+    ctx.isScreensaverActiveRef.current = false;
+    ctx.screensaverOpacityRef.current = 0.0;
+  };
+
+  let isDragging = false;
+  let draggedEntity: CelestialEntity | null = null;
+  let dragOffsetX = 0;
+  let dragOffsetY = 0;
+  let dragDistance = 0;
+  let aimDistance = 0;
+
+  const getEntityScreenPos = (entity: CelestialEntity): { x: number; y: number; radius: number; inFrustum: boolean } => {
+    const ww = window.innerWidth;
+    const wh = window.innerHeight;
+    const baseRad = entity.radius * (entity.scale ?? 1.0);
+    const scene = ctx.sceneRef.current;
+    const camera = ctx.cameraRef.current;
+    if (!scene || scene.isDisposed || !camera || !ctx.rendererRef.current) {
+      return { x: entity.x, y: entity.y, radius: baseRad, inFrustum: true };
+    }
+    const wx = entity.worldX !== undefined ? entity.worldX : entity.x - ww / 2;
+    const wy = entity.worldY !== undefined ? entity.worldY : -(entity.y - wh / 2);
+    const wz = entity.worldZ !== undefined ? entity.worldZ : (entity.z || 0);
+    const transformMatrix = scene.getTransformMatrix();
+    const globalViewport = camera.viewport.toGlobal(ww, wh);
+
+    const projCenter = BABYLON.Vector3.Project(
+      new BABYLON.Vector3(wx, wy, wz),
+      BABYLON.Matrix.IdentityReadOnly,
+      transformMatrix,
+      globalViewport
+    );
+    if (
+      isNaN(projCenter.x) ||
+      isNaN(projCenter.y) ||
+      isNaN(projCenter.z) ||
+      projCenter.z < 0.0 ||
+      projCenter.z > 1.0
+    ) {
+      return { x: entity.x, y: entity.y, radius: baseRad, inFrustum: false };
+    }
+
+    const projEdgeX = BABYLON.Vector3.Project(
+      new BABYLON.Vector3(wx + baseRad, wy, wz),
+      BABYLON.Matrix.IdentityReadOnly,
+      transformMatrix,
+      globalViewport
+    );
+    const projEdgeY = BABYLON.Vector3.Project(
+      new BABYLON.Vector3(wx, wy + baseRad, wz),
+      BABYLON.Matrix.IdentityReadOnly,
+      transformMatrix,
+      globalViewport
+    );
+    const distX = Math.hypot(projEdgeX.x - projCenter.x, projEdgeX.y - projCenter.y);
+    const distY = Math.hypot(projEdgeY.x - projCenter.x, projEdgeY.y - projCenter.y);
+    const projRad = Math.max(isNaN(distX) ? baseRad : distX, isNaN(distY) ? baseRad : distY, 12);
+
+    return {
+      x: projCenter.x,
+      y: projCenter.y,
+      radius: projRad,
+      inFrustum: true,
+    };
+  };
+
+  const handleMouseDown = (e: MouseEvent) => {
+    if (isUIElement(e.target as HTMLElement)) return;
+    const clickX = e.clientX;
+    const clickY = e.clientY;
+
+    let nearest: CelestialEntity | null = null;
+    let minD = 180;
+    ctx.celestialEntitiesRef.current.forEach((entity) => {
+      if (entity.isDestroyed || entity.isOutgoing) return;
+      const proj = getEntityScreenPos(entity);
+      if (!proj.inFrustum) return;
+      const d = Math.hypot(proj.x - clickX, proj.y - clickY);
+      const grabRadius = Math.max(110, proj.radius * 2.5);
+      if (d < grabRadius && d < minD) {
+        minD = d;
+        nearest = entity;
+      }
+    });
+
+    if (nearest) {
+      isDragging = true;
+      draggedEntity = nearest;
+      dragOffsetX = (nearest as CelestialEntity).x - clickX;
+      dragOffsetY = (nearest as CelestialEntity).y - clickY;
+      dragDistance = 0;
+      document.body.style.cursor = "grabbing";
+      if (ctx.audio?.pingInteraction) ctx.audio.pingInteraction();
     }
   };
 
@@ -103,24 +205,34 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
     ctx.mouseRef.current.y = e.clientY;
     ctx.mouseRef.current.lastMoved = Date.now();
 
-    const currentW = window.innerWidth;
-    const currentH = window.innerHeight;
-
-    const normX = (e.clientX - currentW / 2) / (currentW / 2 || 1);
-    const normY = -(e.clientY - currentH / 2) / (currentH / 2 || 1);
-
-    const inputs = ctx.inputControllerRef.current;
-    if (!inputs.gyroActive) {
-      inputs.targetCameraParallaxX = normX * 85.0;
-      inputs.targetCameraParallaxY = normY * 85.0;
-      inputs.targetCameraPitch = normY * 0.22;
-      inputs.targetCameraYaw = normX * 0.22;
-    } else {
-      inputs.targetCameraParallaxX = normX * 45.0;
-      inputs.targetCameraParallaxY = normY * 45.0;
+    if (isDragging && draggedEntity) {
+      const prevX = draggedEntity.x;
+      const prevY = draggedEntity.y;
+      draggedEntity.x = e.clientX + dragOffsetX;
+      draggedEntity.y = e.clientY + dragOffsetY;
+      draggedEntity.vx = (draggedEntity.x - prevX) * 0.25;
+      draggedEntity.vy = (draggedEntity.y - prevY) * 0.25;
+      dragDistance += Math.hypot(draggedEntity.x - prevX, draggedEntity.y - prevY);
+      resetActivity();
+      return;
     }
 
     resetActivity();
+  };
+
+  const handleMouseUp = (_e: MouseEvent) => {
+    if (isDragging && draggedEntity) {
+      document.body.style.cursor = "default";
+      if (dragDistance > 20) {
+        // Gravitational wave shockwave on slingshot release
+        ctx.ripplesRef.current.push({ x: draggedEntity.x, y: draggedEntity.y, life: 1.0 });
+        ctx.audio.playRippleShockwave();
+        draggedEntity.vx = (draggedEntity.vx || 0) * 1.5;
+        draggedEntity.vy = (draggedEntity.vy || 0) * 1.5;
+      }
+      isDragging = false;
+      draggedEntity = null;
+    }
   };
 
   const handleDeviceOrientation = (e: DeviceOrientationEvent) => {
@@ -156,22 +268,31 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
       return;
     }
 
-    requestGyroPermission();
+    if (dragDistance > 15 || aimDistance > 14) {
+      // Was a drag or slingshot launch, do not treat as click
+      aimDistance = 0;
+      return;
+    }
 
-    ctx.ripplesRef.current.push({ x: e.clientX, y: e.clientY, life: 1.0 });
+    requestGyroPermission();
 
     const currentW = window.innerWidth;
     const currentH = window.innerHeight;
-    const clickX = e.clientX;
-    const clickY = e.clientY;
+    const clickX = typeof e.clientX === "number" && !isNaN(e.clientX) ? e.clientX : currentW / 2;
+    const clickY = typeof e.clientY === "number" && !isNaN(e.clientY) ? e.clientY : currentH / 2;
+
+    ctx.ripplesRef.current.push({ x: clickX, y: clickY, life: 1.0 });
 
     let nearestEntity: CelestialEntity | null = null;
-    let minDistance = 160;
+    let minDistance = 180;
 
     ctx.celestialEntitiesRef.current.forEach((entity) => {
-      if (entity.isDestroyed) return;
-      const dist = Math.sqrt((entity.x - clickX) * (entity.x - clickX) + (entity.y - clickY) * (entity.y - clickY));
-      if (dist < minDistance) {
+      if (entity.isDestroyed || entity.isOutgoing || isNaN(entity.x) || isNaN(entity.y)) return;
+      const proj = getEntityScreenPos(entity);
+      if (!proj.inFrustum) return;
+      const dist = Math.hypot(proj.x - clickX, proj.y - clickY);
+      const hitThreshold = Math.max(minDistance, proj.radius * 2.2);
+      if (dist < hitThreshold && dist < minDistance) {
         minDistance = dist;
         nearestEntity = entity;
       }
@@ -179,17 +300,30 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
 
     const inputs = ctx.inputControllerRef.current;
     if (nearestEntity) {
-      const wx = (nearestEntity as CelestialEntity).x - currentW / 2;
-      const wy = -((nearestEntity as CelestialEntity).y - currentH / 2);
-      const wz = (nearestEntity as CelestialEntity).z || 0;
+      const ent = nearestEntity as CelestialEntity;
+      const wx = ent.worldX !== undefined ? ent.worldX : (isNaN(ent.x) ? 0 : ent.x - currentW / 2);
+      const wy = ent.worldY !== undefined ? ent.worldY : (isNaN(ent.y) ? 0 : -(ent.y - currentH / 2));
+      const wz = ent.worldZ !== undefined ? ent.worldZ : (isNaN(ent.z || 0) ? 0 : (ent.z || 0));
 
       inputs.targetLock = {
         x: wx,
         y: wy,
         z: wz,
         active: true,
-        entityId: (nearestEntity as CelestialEntity).id || "unknown"
+        entityId: ent.id || "unknown"
       };
+
+      if ((window as any).__onSelectedEntityChange) {
+        (window as any).__onSelectedEntityChange(nearestEntity);
+      }
+
+      // Singularity pulse acoustic shockwave
+      ctx.ripplesRef.current.push({
+        x: isNaN(ent.x) ? currentW / 2 : ent.x,
+        y: isNaN(ent.y) ? currentH / 2 : ent.y,
+        life: 1.0
+      });
+      ctx.audio.playRippleShockwave();
     } else {
       inputs.targetLock = {
         x: 0,
@@ -198,32 +332,26 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
         active: false,
         entityId: null
       };
-    }
 
-    if (ctx.triggerSupernovaTransition) {
-      ctx.triggerSupernovaTransition(e.clientX, e.clientY);
-    } else if (!ctx.supernovaRef.current) {
-      ctx.isInterstellarRef.current = true;
-      ctx.celestialEntitiesRef.current.forEach((entity) => {
-        entity.isDestroyed = true;
-      });
-
-      ctx.cameraShakeRef.current = 12.0;
-
-      ctx.supernovaRef.current = {
-        time: Date.now(),
-        exploded: true,
-        isCalmShift: true,
-        x: e.clientX,
-        y: e.clientY,
-      };
-      console.log("[DEBUG] Click triggered supernova at x:", ctx.supernovaRef.current.x, "y:", ctx.supernovaRef.current.y);
-      ctx.audio.playSupernova();
+      if ((window as any).__onSelectedEntityChange) {
+        (window as any).__onSelectedEntityChange(null);
+      }
       ctx.audio.playRippleShockwave();
-      ctx.fetchNextGeminiScene();
     }
+
     resetActivity();
   };
+
+  const handleDoubleClick = (e: MouseEvent) => {
+    if (isUIElement(e.target as HTMLElement)) return;
+    // On mobile devices, do not detonate the scene on accidental double-tap.
+    if (window.innerWidth < 768) return;
+    if (ctx.triggerSupernovaTransition) {
+      ctx.triggerSupernovaTransition(e.clientX, e.clientY);
+    }
+  };
+
+  let lastTouchStartTime = 0;
 
   const handleTouchStart = (e: TouchEvent) => {
     if (e.touches && e.touches[0]) {
@@ -231,55 +359,153 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
       if (isUIElement(target)) {
         return;
       }
+      lastTouchStartTime = performance.now();
       const touch = e.touches[0];
-      const simulatedClick = {
-        clientX: touch.clientX,
-        clientY: touch.clientY,
-        target: target,
-      } as unknown as MouseEvent;
-      handleClick(simulatedClick);
+      const clickX = touch.clientX;
+      const clickY = touch.clientY;
+
+      let nearest: CelestialEntity | null = null;
+      let minD = 180;
+      ctx.celestialEntitiesRef.current.forEach((entity) => {
+        if (entity.isDestroyed || entity.isOutgoing) return;
+        const proj = getEntityScreenPos(entity);
+        if (!proj.inFrustum) return;
+        const d = Math.hypot(proj.x - clickX, proj.y - clickY);
+        const grabRadius = Math.max(110, proj.radius * 2.5);
+        if (d < grabRadius && d < minD) {
+          minD = d;
+          nearest = entity;
+        }
+      });
+
+      if (nearest) {
+        isDragging = true;
+        draggedEntity = nearest;
+        dragOffsetX = (nearest as CelestialEntity).x - clickX;
+        dragOffsetY = (nearest as CelestialEntity).y - clickY;
+        dragDistance = 0;
+        if (ctx.audio?.pingInteraction) ctx.audio.pingInteraction();
+      }
+      // Note: Do NOT simulate a click here; the browser fires a standard click on touchend/tap
+    }
+  };
+
+  const handleTouchMove = (e: TouchEvent) => {
+    if (isDragging && draggedEntity && e.touches && e.touches[0]) {
+      const touch = e.touches[0];
+      const prevX = draggedEntity.x;
+      const prevY = draggedEntity.y;
+      draggedEntity.x = touch.clientX + dragOffsetX;
+      draggedEntity.y = touch.clientY + dragOffsetY;
+      draggedEntity.vx = (draggedEntity.x - prevX) * 0.25;
+      draggedEntity.vy = (draggedEntity.y - prevY) * 0.25;
+      dragDistance += Math.hypot(draggedEntity.x - prevX, draggedEntity.y - prevY);
+      resetActivity();
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (isDragging && draggedEntity) {
+      if (dragDistance > 20) {
+        ctx.ripplesRef.current.push({ x: draggedEntity.x, y: draggedEntity.y, life: 1.0 });
+        ctx.audio.playRippleShockwave();
+        draggedEntity.vx = (draggedEntity.vx || 0) * 1.5;
+        draggedEntity.vy = (draggedEntity.vy || 0) * 1.5;
+      }
+      isDragging = false;
+      draggedEntity = null;
     }
   };
 
   const handleScrollPhysics = () => {
     const currentScrollY =
-      window.scrollY || document.documentElement.scrollTop;
+      window.scrollY || document.documentElement.scrollTop || 0;
     const delta = currentScrollY - ctx.lastScrollYRef.current;
     ctx.scrollVelocityRef.current += delta * 0.08;
     ctx.lastScrollYRef.current = currentScrollY;
 
-    const maxScroll = (document.documentElement.scrollHeight - window.innerHeight) || 1200;
+    const maxScroll = Math.max(1, (document.documentElement.scrollHeight - window.innerHeight));
     const inputs = ctx.inputControllerRef.current;
-    inputs.targetScrollTimeline = currentScrollY / maxScroll;
-    inputs.targetCameraZDepthOffset = (currentScrollY / maxScroll) * -600.0;
+    if (inputs) {
+      inputs.targetScrollTimeline = Math.max(0, Math.min(1, currentScrollY / maxScroll));
+      inputs.targetCameraZDepthOffset = (currentScrollY / maxScroll) * -600.0;
+    }
 
     resetActivity();
   };
 
+  const handleKeyDown = (e: KeyboardEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || (target as any).isContentEditable)) {
+      return;
+    }
+
+    if (e.key === "t" || e.key === "T") {
+      // Hotkey: Launch rogue star into Roche limit for Tidal Disruption Event (TDE)
+      if (ctx.triggerTdeFn) {
+        ctx.triggerTdeFn();
+      } else if (ctx.tdeStateRef) {
+        triggerTidalDisruptionEvent(
+          ctx.tdeStateRef.current,
+          ctx.celestialEntitiesRef.current,
+          window.innerWidth,
+          window.innerHeight
+        );
+      }
+    } else if (e.key === "w" || e.key === "W") {
+      // Hotkey: Engage Einstein-Rosen Wormhole Transit to a new cosmic system
+      if (ctx.startWormholeTransit) {
+        ctx.startWormholeTransit();
+      }
+    } else if (e.key === "n" || e.key === "N") {
+      // Hotkey: Trigger Supernova Core Collapse & Rebirth
+      if (ctx.triggerSupernovaTransition) {
+        ctx.triggerSupernovaTransition(window.innerWidth / 2, window.innerHeight / 2);
+      }
+    }
+  };
+
+  const handleWheel = (e: WheelEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (target && isUIElement(target)) return;
+
+    // Detect if black hole exists in celestial entities for relativistic horizon zoom
+    const bh = ctx.celestialEntitiesRef.current.find(
+      (ent) => !ent.isDestroyed && !ent.isOutgoing && ent.type === "blackhole"
+    );
+
+    if (bh) {
+      const currentTarget =
+        ctx.targetZoomToHorizonRef?.current ?? (window as any).__targetHorizonZoom ?? 0.0;
+
+      const zoomStep = -e.deltaY * 0.0016;
+      const nextZoom = Math.max(0.0, Math.min(1.05, currentTarget + zoomStep));
+
+      if (ctx.targetZoomToHorizonRef) {
+        ctx.targetZoomToHorizonRef.current = nextZoom;
+      }
+      (window as any).__targetHorizonZoom = nextZoom;
+      resetActivity();
+    }
+  };
+
   window.addEventListener("resize", handleResize);
+  window.addEventListener("mousedown", handleMouseDown);
   window.addEventListener("mousemove", handleMouseMove);
+  window.addEventListener("mouseup", handleMouseUp);
   window.addEventListener("click", handleClick);
+  window.addEventListener("dblclick", handleDoubleClick);
+  window.addEventListener("wheel", handleWheel, { passive: false });
   window.addEventListener("touchstart", handleTouchStart, { passive: true });
+  window.addEventListener("touchmove", handleTouchMove, { passive: true });
+  window.addEventListener("touchend", handleTouchEnd, { passive: true });
   window.addEventListener("scroll", handleScrollPhysics, { passive: true });
+  window.addEventListener("keydown", handleKeyDown);
 
   const DOC = window.DeviceOrientationEvent as any;
   if (!DOC || typeof DOC.requestPermission !== "function") {
     window.addEventListener("deviceorientation", handleDeviceOrientation);
   }
-
-  const triggerPlanetaryFlyby = (targetNode: any) => {
-    const camera = ctx.cameraRef.current;
-    if (!camera || ctx.isTransitActiveRef.current) return;
-    ctx.isTransitActiveRef.current = true;
-    const targetPos = targetNode.getAbsolutePosition().clone();
-    const offset = new BABYLON.Vector3(250, 150, 350);
-    const flyToPos = targetPos.add(offset);
-
-    BABYLON.Animation.CreateAndStartAnimation("camFly", camera, "position", 60, 120, camera.position, flyToPos, 0, new BABYLON.CubicEase(), () => {
-      ctx.isTransitActiveRef.current = false;
-    });
-    BABYLON.Animation.CreateAndStartAnimation("camTarget", camera, "target", 60, 120, camera.getTarget(), targetPos, 0, new BABYLON.CubicEase());
-  };
 
   let pointerObserver: BABYLON.Observer<BABYLON.PointerInfo> | null = null;
 
@@ -293,28 +519,66 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
         }
         const pickResult = pointerInfo.pickInfo;
         if (pickResult && pickResult.hit && pickResult.pickedMesh) {
-          const meshName = pickResult.pickedMesh.name;
-          const parentNode = pickResult.pickedMesh.parent;
-          if (meshName !== "hudPlane") {
-            if (parentNode && (parentNode.name === "planet_group" || parentNode.name === "bh_group" || parentNode.name === "nebula_group" || parentNode.name === "galaxy_group" || parentNode.name === "star_group")) {
-              triggerPlanetaryFlyby(parentNode);
-              return;
+          const meshName = pickResult.pickedMesh.name || "";
+          if (meshName && meshName !== "hudPlane") {
+            let matchedEntity: CelestialEntity | undefined;
+            let cursorNode: BABYLON.Node | null = pickResult.pickedMesh;
+            while (cursorNode) {
+              if (cursorNode.metadata?.entityRef && !cursorNode.metadata.entityRef.isDestroyed && !cursorNode.metadata.entityRef.isOutgoing) {
+                matchedEntity = cursorNode.metadata.entityRef;
+                break;
+              }
+              cursorNode = cursorNode.parent;
             }
-            if (meshName.startsWith("planet_") || meshName === "ring_mesh" || meshName === "atmosphere_glow" || meshName.startsWith("event_horizon_") || meshName.startsWith("star_")) {
-              triggerPlanetaryFlyby(pickResult.pickedMesh);
-              return;
+
+            if (!matchedEntity) {
+              const parentNode = pickResult.pickedMesh.parent;
+              let targetType: string | null = null;
+              if (parentNode && typeof parentNode.name === "string") {
+                if (parentNode.name === "bh_group") targetType = "blackhole";
+                else if (parentNode.name === "planet_group") targetType = "planet";
+                else if (parentNode.name === "star_group") targetType = "star";
+                else if (parentNode.name === "nebula_group") targetType = "nebula";
+                else if (parentNode.name === "galaxy_group") targetType = "galaxy";
+              }
+              if (!targetType) {
+                if (meshName.startsWith("event_horizon_") || meshName.startsWith("bh_")) targetType = "blackhole";
+                else if (meshName.startsWith("planet_") || meshName === "ring_mesh" || meshName === "atmosphere_glow") targetType = "planet";
+                else if (meshName.startsWith("star_")) targetType = "star";
+                else if (meshName.startsWith("nebula_")) targetType = "nebula";
+                else if (meshName.startsWith("gal_")) targetType = "galaxy";
+              }
+              if (targetType) {
+                matchedEntity = ctx.celestialEntitiesRef.current.find(
+                  (e) => !e.isDestroyed && !e.isOutgoing && e.type === targetType
+                );
+              }
             }
-          }
-        }
-        if (!ctx.isInterstellarRef.current) {
-          const scene = ctx.sceneRef.current;
-          const camera = ctx.cameraRef.current;
-          if (scene && camera) {
-            const ray = scene.createPickingRay(scene.pointerX, scene.pointerY, BABYLON.Matrix.Identity(), camera);
-            const targetPoint = ray.origin.add(ray.direction.scale(1500));
-            ctx.startWormholeTransit(targetPoint, ray.direction);
-          } else {
-            ctx.startWormholeTransit();
+
+            if (matchedEntity) {
+              const inputs = ctx.inputControllerRef.current;
+              const curW = window.innerWidth;
+              const curH = window.innerHeight;
+              const wx = matchedEntity.worldX !== undefined ? matchedEntity.worldX : (isNaN(matchedEntity.x) ? 0 : matchedEntity.x - curW / 2);
+              const wy = matchedEntity.worldY !== undefined ? matchedEntity.worldY : (isNaN(matchedEntity.y) ? 0 : -(matchedEntity.y - curH / 2));
+              const wz = matchedEntity.worldZ !== undefined ? matchedEntity.worldZ : (isNaN(matchedEntity.z || 0) ? 0 : (matchedEntity.z || 0));
+              inputs.targetLock = {
+                x: wx,
+                y: wy,
+                z: wz,
+                active: true,
+                entityId: matchedEntity.id || "unknown",
+              };
+              if ((window as any).__onSelectedEntityChange) {
+                (window as any).__onSelectedEntityChange(matchedEntity);
+              }
+              ctx.ripplesRef.current.push({
+                x: isNaN(matchedEntity.x) ? curW / 2 : matchedEntity.x,
+                y: isNaN(matchedEntity.y) ? curH / 2 : matchedEntity.y,
+                life: 1.0,
+              });
+              ctx.audio.playRippleShockwave();
+            }
           }
         }
       }
@@ -323,11 +587,18 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
 
   const cleanup = () => {
     window.removeEventListener("resize", handleResize);
+    window.removeEventListener("mousedown", handleMouseDown);
     window.removeEventListener("mousemove", handleMouseMove);
+    window.removeEventListener("mouseup", handleMouseUp);
     window.removeEventListener("click", handleClick);
+    window.removeEventListener("dblclick", handleDoubleClick);
+    window.removeEventListener("wheel", handleWheel);
     window.removeEventListener("touchstart", handleTouchStart);
+    window.removeEventListener("touchmove", handleTouchMove);
+    window.removeEventListener("touchend", handleTouchEnd);
     window.removeEventListener("scroll", handleScrollPhysics);
     window.removeEventListener("deviceorientation", handleDeviceOrientation);
+    window.removeEventListener("keydown", handleKeyDown);
     delete (window as any).activateSequence;
 
     if (pointerObserver && ctx.sceneRef.current) {

@@ -7,6 +7,7 @@ export interface CelestialMeshInstance {
   id: string;
   mesh: BABYLON.TransformNode;
   entityRef: CelestialEntity;
+  hawkingSystem?: any;
 }
 
 export interface CelestialEntity {
@@ -64,7 +65,9 @@ export interface CelestialEntity {
   glowIntensity?: number;
   mergePulse?: number;
 
-  // Smooth Morphing Transitions
+  // Smooth Morphing Transitions & Choreography
+  isOutgoing?: boolean;
+  baseOrbitRadius?: number;
   startX?: number;
   startY?: number;
   startZ?: number;
@@ -73,6 +76,11 @@ export interface CelestialEntity {
   targetX?: number;
   targetY?: number;
   targetZ?: number;
+
+  // Synchronized 3D World Coordinates (including parallax & gravity depth)
+  worldX?: number;
+  worldY?: number;
+  worldZ?: number;
 }
 
 export interface ParticleFilters {
@@ -84,6 +92,8 @@ export interface ParticleFilters {
 }
 
 import { CosmicTransitionStateMachine, TransitionStateInfo } from "./TransitionManager";
+
+export type CinematicCameraMode = 'orbit' | 'horizon' | 'deep' | 'chase' | 'free';
 
 export interface ParticleCanvasProps {
   stage: number;
@@ -102,4 +112,14 @@ export interface ParticleCanvasProps {
   objectParticleSpeed?: number;
   onTransitionStateChange?: (info: TransitionStateInfo) => void;
   transitionStateMachineRef?: MutableRefObject<CosmicTransitionStateMachine | null>;
+  isCinematicMode?: boolean;
+  cinematicCameraMode?: CinematicCameraMode;
+  cinematicSpeedMultiplier?: number;
+  anamorphicFlaresEnabled?: boolean;
+  dofEnabled?: boolean;
+  onSelectedEntityChange?: (entity: CelestialEntity | null) => void;
+  onTdeStateChange?: (info: { isActive: boolean; stage: string; status: string }) => void;
+  onRelativisticMetricsChange?: (metrics: { g00: number; z: number; timeDilation: number; proximity: number } | null) => void;
+  isSlingshotMode?: boolean;
+  onToggleSlingshotMode?: () => void;
 }

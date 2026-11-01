@@ -15,8 +15,8 @@ export function spawnSupernovaFX(
   worldPos: BABYLON.Vector3
 ): SupernovaFXInstance {
   const startTime = Date.now();
-  const implosionDurationMs = 2800; 
-  const explosionDurationMs = 6500; 
+  const implosionDurationMs = 2600;
+  const explosionDurationMs = 6800;
   const totalDurationMs = implosionDurationMs + explosionDurationMs;
   
   let isDisposed = false;
@@ -56,7 +56,13 @@ export function spawnSupernovaFX(
     godrays.decay = 0.96;
     godrays.weight = 0.98;
     godrays.density = 0.96;
-    disposables.push(godrays);
+    disposables.push({
+      dispose: () => {
+        try {
+          godrays?.dispose(camera);
+        } catch (_) {}
+      }
+    });
   }
 
   // 4. 3D Spherical Shockwave Bubble (Custom Fresnel Shader)
@@ -106,22 +112,23 @@ export function spawnSupernovaFX(
   shockwave.material = swMat;
   disposables.push(shockwave, swMat);
 
-  // 5. High Density GPUParticleSystems
+  // 5. High Density GPUParticleSystems (Core-Collapse Shock Breakout, 56Ni Decay & H-alpha / [O III] Ejecta)
+  // (Janka 2012, "Explosion Mechanisms of Core-Collapse Supernovae", arXiv:1206.2503)
   const sparkTex = createCircleTexture(scene);
-  const cloudTex = createCircularGlowTexture("#ff0088", scene);
+  const cloudTex = createCircularGlowTexture("#ff6b35", scene);
   disposables.push(sparkTex, cloudTex);
 
-  const createParticleSystem = (name: string, capacity: number, texture: BABYLON.Texture) => {
+  const createParticleSystem = (name: number | string, capacity: number, texture: BABYLON.Texture) => {
     const ps = BABYLON.GPUParticleSystem.IsSupported 
-      ? new BABYLON.GPUParticleSystem(name, { capacity }, scene)
-      : new BABYLON.ParticleSystem(name, Math.min(capacity, 15000), scene);
+      ? new BABYLON.GPUParticleSystem(String(name), { capacity }, scene)
+      : new BABYLON.ParticleSystem(String(name), Math.min(capacity, 15000), scene);
     ps.particleTexture = texture;
     ps.emitter = worldPos.clone();
     disposables.push(ps);
     return ps;
   };
 
-  // 5a. Massive spherical burst
+  // 5a. Neutrino-Driven Shock Breakout & Fast Ejecta Envelope (UV/Blue-White -> [O III] Teal -> Fe/Si Amber)
   const psBurst = createParticleSystem("sn_burst", 250000, sparkTex);
   const burstEmitter = psBurst.createSphereEmitter(0.1, 1.0);
   psBurst.particleEmitterType = burstEmitter;
@@ -131,13 +138,14 @@ export function spawnSupernovaFX(
   psBurst.maxSize = 1.5;
   psBurst.minEmitPower = 80;
   psBurst.maxEmitPower = 350;
-  psBurst.addColorGradient(0, new BABYLON.Color4(1, 1, 1, 1));
-  psBurst.addColorGradient(0.2, new BABYLON.Color4(0, 1, 1, 0.8));
-  psBurst.addColorGradient(1, new BABYLON.Color4(0.2, 0, 1, 0));
+  psBurst.addColorGradient(0, new BABYLON.Color4(1.0, 0.99, 0.95, 1.0)); // Shock breakout thermal flash (T ~ 3e5 K)
+  psBurst.addColorGradient(0.22, new BABYLON.Color4(0.45, 0.85, 1.0, 0.82)); // Doubly ionized [O III] / He II shell
+  psBurst.addColorGradient(0.65, new BABYLON.Color4(1.0, 0.58, 0.22, 0.45)); // 56Ni -> 56Co radioactive decay glow
+  psBurst.addColorGradient(1, new BABYLON.Color4(0.75, 0.18, 0.08, 0));
   psBurst.blendMode = BABYLON.ParticleSystem.BLENDMODE_ONEONE;
   psBurst.manualEmitCount = 250000;
 
-  // 5b. Toroidal Gas Ring (Equatorial)
+  // 5b. Equatorial Circumstellar Medium (CSM) & Balmer H-alpha Shock Ring
   const psRingEq = createParticleSystem("sn_ring_eq", 100000, cloudTex);
   const ringEqEmitter = psRingEq.createCylinderEmitter(2.0, 0.2, 0.0, 1.0);
   psRingEq.particleEmitterType = ringEqEmitter;
@@ -147,13 +155,13 @@ export function spawnSupernovaFX(
   psRingEq.maxSize = 8.0;
   psRingEq.minEmitPower = 30;
   psRingEq.maxEmitPower = 100;
-  psRingEq.addColorGradient(0, new BABYLON.Color4(1, 1, 1, 0.8));
-  psRingEq.addColorGradient(0.3, new BABYLON.Color4(1, 0.2, 0.6, 0.6));
-  psRingEq.addColorGradient(1, new BABYLON.Color4(0.5, 0, 1, 0));
+  psRingEq.addColorGradient(0, new BABYLON.Color4(1.0, 0.96, 0.85, 0.85));
+  psRingEq.addColorGradient(0.35, new BABYLON.Color4(0.98, 0.45, 0.20, 0.62)); // Balmer H-alpha & [N II] shocked CSM
+  psRingEq.addColorGradient(1, new BABYLON.Color4(0.55, 0.12, 0.05, 0));
   psRingEq.blendMode = BABYLON.ParticleSystem.BLENDMODE_ONEONE;
   psRingEq.manualEmitCount = 100000;
   
-  // 5c. Toroidal Gas Ring (Polar)
+  // 5c. Nonradial Standing Accretion Shock Instability (SASI) Bipolar Lobe Plumes
   const psRingPolar = createParticleSystem("sn_ring_polar", 80000, cloudTex);
   const ringPolarEmitter = psRingPolar.createCylinderEmitter(1.5, 0.2, 0.0, 1.0);
   psRingPolar.particleEmitterType = ringPolarEmitter;
@@ -172,9 +180,9 @@ export function spawnSupernovaFX(
   psRingPolar.maxSize = 6.0;
   psRingPolar.minEmitPower = 25;
   psRingPolar.maxEmitPower = 85;
-  psRingPolar.addColorGradient(0, new BABYLON.Color4(1, 0.8, 0.2, 0.8));
-  psRingPolar.addColorGradient(0.4, new BABYLON.Color4(1, 0.1, 0.5, 0.5));
-  psRingPolar.addColorGradient(1, new BABYLON.Color4(0.2, 0, 0.5, 0));
+  psRingPolar.addColorGradient(0, new BABYLON.Color4(1.0, 0.88, 0.45, 0.8)); // 56Ni + 44Ti nucleosynthesis plume
+  psRingPolar.addColorGradient(0.45, new BABYLON.Color4(0.95, 0.36, 0.16, 0.5));
+  psRingPolar.addColorGradient(1, new BABYLON.Color4(0.35, 0.08, 0.04, 0));
   psRingPolar.blendMode = BABYLON.ParticleSystem.BLENDMODE_ONEONE;
   psRingPolar.manualEmitCount = 80000;
 
@@ -278,23 +286,26 @@ export function spawnSupernovaFX(
         godrays.decay = 0.96815 - (detProgress * 0.05); 
       }
       
-      const coreScale = Math.max(0.01, 20.0 * intensityCurve);
+      // Persistent Proto-Neutron Star / Magnetar Remnant Core + Sedov-Taylor Blast Wave (R ~ t^(2/5))
+      const coreScale = Math.max(1.25, 20.0 * intensityCurve);
       coreMesh.scaling.setAll(coreScale);
 
       if (detProgress < 0.2) {
         coreMat.emissiveColor = new BABYLON.Color3(1.0, 1.0, 1.0);
-        swMat.setColor3("color", new BABYLON.Color3(1.0, 1.0, 1.0));
+        swMat.setColor3("color", new BABYLON.Color3(1.0, 0.98, 0.92));
       } else if (detProgress < 0.5) {
         const t = (detProgress - 0.2) / 0.3;
-        coreMat.emissiveColor = new BABYLON.Color3(1.0, 1.0 - t * 0.4, 1.0 - t);
-        swMat.setColor3("color", new BABYLON.Color3(1.0 - t * 0.4, 0.8 - t * 0.3, 1.0 - t * 0.5));
+        coreMat.emissiveColor = new BABYLON.Color3(1.0, 0.95 - t * 0.2, 1.0 - t * 0.15);
+        swMat.setColor3("color", new BABYLON.Color3(1.0 - t * 0.25, 0.82 - t * 0.22, 0.95 - t * 0.45));
       } else {
         const t = (detProgress - 0.5) / 0.5;
-        coreMat.emissiveColor = new BABYLON.Color3(1.0 - t * 0.8, 0.6 - t * 0.6, 0.0);
-        swMat.setColor3("color", new BABYLON.Color3(0.6 - t * 0.4, 0.5 - t * 0.5, 0.5 - t * 0.5));
+        // Cooling thermal proto-neutron star X-ray/UV surface glow (T_surf ~ 2 x 10^6 K)
+        coreMat.emissiveColor = new BABYLON.Color3(0.65, 0.88, 1.0);
+        swMat.setColor3("color", new BABYLON.Color3(0.75 * (1.0 - t), 0.45 * (1.0 - t), 0.25 * (1.0 - t)));
       }
 
-      const swScale = Math.pow(detProgress, 0.45) * 450.0;
+      // Sedov-Taylor Adiabatic Blast-Wave Expansion: R_shock(t) ~ (E_SN * t^2 / rho_ISM)^(1/5) ~ t^0.4
+      const swScale = Math.pow(detProgress, 0.40) * 450.0;
       shockwave.scaling.setAll(swScale);
       
       const swAlpha = Math.max(0, Math.pow(1.0 - detProgress, 1.8) * 0.85);

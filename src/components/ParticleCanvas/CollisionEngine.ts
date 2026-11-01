@@ -20,13 +20,15 @@ export type SpawnParticleFn = (
 ) => void;
 
 /**
- * Resolves elastic/inelastic 3D physics collisions between two celestial bodies.
- * Enforces Conservation of Momentum & Energy and resolves positional overlaps.
+ * Resolves deeply inelastic 3D hydrodynamic giant-impact collisions between two celestial bodies.
+ * Planetary and stellar collisions at $v_{\text{imp}} \ge v_{\text{esc}}$ dissipate ~80%+ of normal kinetic energy
+ * into shock heating, mantle vaporization, and ejecta debris ($e_{\text{rest}} \approx 0.18$) rather than
+ * elastic billiard-ball bouncing, with 3D volumetric mass scaling ($M = \frac{4}{3}\pi\rho R^3 \propto R^3$).
  */
 export function resolveCelestialCollision(
   e1: CelestialEntity,
   e2: CelestialEntity,
-  restitution: number = 0.75
+  restitution: number = 0.18
 ): CollisionResult | null {
   const dx = e2.x - e1.x;
   const dy = e2.y - e1.y;
@@ -45,9 +47,9 @@ export function resolveCelestialCollision(
   const ny = dy / dist;
   const nz = dz / dist;
 
-  // Approximate relative masses via radius cubics
-  const m1 = e1.mass || e1.radius * e1.radius * 2;
-  const m2 = e2.mass || e2.radius * e2.radius * 2;
+  // 3D volumetric mass scaling: M = (4/3) * pi * rho * R^3
+  const m1 = e1.mass || Math.max(10, Math.pow(e1.radius, 3) * 0.04);
+  const m2 = e2.mass || Math.max(10, Math.pow(e2.radius, 3) * 0.04);
 
   // Retrieve velocities
   const v1x = e1.vx || 0;
@@ -130,6 +132,15 @@ export function resolveCelestialCollision(
 
   const kineticEnergyDissipated = Math.max(0, keBefore - keAfter);
 
+  // Play deep lightning strike collision sound
+  try {
+    if (audio && typeof audio.playDeepLightningStrikeCollision === "function") {
+      const relVelocity = Math.abs(vn);
+      const intensity = Math.min(2.0, 0.65 + relVelocity * 0.15 + (kineticEnergyDissipated > 40 ? 0.4 : 0));
+      audio.playDeepLightningStrikeCollision(intensity, nx * 0.5);
+    }
+  } catch (_) {}
+
   return {
     kineticEnergyDissipated,
     contactPointX: e1.x + nx * e1.radius,
@@ -139,17 +150,31 @@ export function resolveCelestialCollision(
 }
 
 /**
- * Accretion and swallowing of a victim entity by a black hole.
+ * Relativistic horizon capture of a victim entity by a black hole.
+ * Enforces linear Schwarzschild radius growth ($r_s = \frac{2GM}{c^2} \propto M$)
+ * and Hawking's Area Theorem ($\Delta A = \frac{16\pi G^2}{c^4}\Delta(M^2) \ge 0$),
+ * accounting for radiative and gravitational-wave efficiency ($\eta_{\text{rad}} \approx 0.08$).
  */
 export function swallowEntity(bh: CelestialEntity, victim: CelestialEntity): void {
   victim.isSwallowing = true;
   victim.destroyedBy = "blackhole";
-  const newMass = (bh.mass || 100) + (victim.mass || 50);
+  const oldMass = Math.max(100, bh.mass || Math.pow(bh.radius, 3) * 0.08);
+  const victimMass = victim.mass || Math.max(25, Math.pow(victim.radius, 3) * 0.03);
+  const radiativeEfficiency = 0.08; // ~8% radiated via ISCO accretion & ringdown GWs
+  const newMass = oldMass + victimMass * (1.0 - radiativeEfficiency);
   bh.mass = newMass;
 
-  // Black hole target radius swells from ingested mass
-  const targetRadius = Math.min(bh.radius * 1.5, Math.sqrt(newMass / 15));
+  // Linear Schwarzschild scaling: r_s = 2GM/c^2 \propto M (damped within visual viewport bounds)
+  const linearMassRatio = newMass / oldMass;
+  const targetRadius = Math.min(bh.radius * 1.65, bh.radius * Math.min(1.32, linearMassRatio));
   bh.targetRadius = targetRadius;
+
+  // Deep thunder roll of event horizon mass-energy absorption
+  try {
+    if (audio && typeof audio.playDeepThunderRoll === "function") {
+      audio.playDeepThunderRoll(3.2, 1.35, 0.0);
+    }
+  } catch (_) {}
 }
 
 /**
@@ -246,7 +271,8 @@ export function spawnCollisionFlare(
   flareMesh.position.set(x, y, z);
 
   const mat = new BABYLON.StandardMaterial("flareMat", scene);
-  mat.emissiveColor = BABYLON.Color3.FromHexString(colorHex.startsWith("#") ? colorHex : "#ffaa44");
+  const safeHex = (typeof colorHex === "string" && colorHex.startsWith("#")) ? colorHex : "#ffaa44";
+  mat.emissiveColor = BABYLON.Color3.FromHexString(safeHex);
   mat.disableLighting = true;
   mat.alpha = 0.95;
   mat.alphaMode = BABYLON.Engine.ALPHA_ADD;

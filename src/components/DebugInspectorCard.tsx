@@ -52,20 +52,31 @@ export const DebugInspectorCard: React.FC<DebugInspectorCardProps> = ({
   if (!showDebug) return null;
 
   const toggleFilter = (key: keyof ParticleFilters) => {
-    setParticleFilters((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
+    setParticleFilters((prev) => {
+      const currentVal = prev[key] !== false;
+      const updated = {
+        ...prev,
+        [key]: !currentVal,
+      };
+      try {
+        localStorage.setItem("cosmic_particle_filters", JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
   };
 
   const setAllFilters = (value: boolean) => {
-    setParticleFilters({
+    const updated = {
       ambient: value,
       celestial: value,
       bridges: value,
       tails: value,
       typography: value,
-    });
+    };
+    try {
+      localStorage.setItem("cosmic_particle_filters", JSON.stringify(updated));
+    } catch {}
+    setParticleFilters(updated);
   };
 
   const activeFilterCount = Object.values(particleFilters).filter(Boolean).length;

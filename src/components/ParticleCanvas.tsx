@@ -4,7 +4,6 @@ import { audio } from "../utils/audio";
 import { Particle } from "../types";
 import { drawStageLayoutTemplate } from "./ParticleCanvas/ParticleUtils";
 import { CelestialEntity, ParticleCanvasProps, ParticleFilters } from "./ParticleCanvas/types";
-import { DebugObjectOverlay } from "./DebugObjectOverlay";
 import {
   resolveCelestialCollision,
   swallowEntity as _swallowEntity,
@@ -21,6 +20,8 @@ import {
   transitionToNewEntities as _transitionToNewEntities,
   mapParticlesToInterstellar as _mapParticlesToInterstellar,
   mapParticlesToStage as _mapParticlesToStage,
+  updateTypographyStage as _updateTypographyStage,
+  disperseTypographyParticles as _disperseTypographyParticles,
   startWormholeTransit as _startWormholeTransit,
   triggerCalmCosmicShift as _triggerCalmCosmicShift,
   CosmicTransitionStateMachine,
@@ -38,6 +39,9 @@ import { buildParticleSystem } from "./ParticleCanvas/ParticleSystemBuilder";
 import { setupParticleCanvasEvents } from "./ParticleCanvas/ParticleCanvasEvents";
 import { updateCelestial3DMeshes as _updateCelestial3DMeshes } from "./ParticleCanvas/CelestialMeshSynchronizer";
 import { initializeScene } from "./ParticleCanvas/SceneSetup";
+import { SlingshotAimState, SlingshotProbe } from "./ParticleCanvas/SlingshotEngine";
+import { TdeState, createInitialTdeState, triggerTidalDisruptionEvent } from "./ParticleCanvas/TidalDisruptionEngine";
+import { TidalDisruptionFXInstance } from "./ParticleCanvas/TidalDisruptionFX";
 
 export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   stage,
@@ -51,8 +55,87 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   objectParticleSpeed = 0.15,
   onTransitionStateChange,
   transitionStateMachineRef,
+  isCinematicMode = false,
+  cinematicCameraMode = 'orbit',
+  cinematicSpeedMultiplier = 1.0,
+  anamorphicFlaresEnabled = true,
+  dofEnabled = true,
+  onSelectedEntityChange,
+  onTdeStateChange,
+  isSlingshotMode = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Slingshot Probe and Tidal Disruption Event (TDE) Physics State
+  const slingshotAimRef = useRef<SlingshotAimState>({
+    isAiming: false,
+    originX: 0,
+    originY: 0,
+    currentX: 0,
+    currentY: 0,
+    trajectoryPoints: [],
+  });
+  const probesRef = useRef<SlingshotProbe[]>([]);
+  const tdeStateRef = useRef<TdeState>(createInitialTdeState());
+  const activeTdeFxRef = useRef<TidalDisruptionFXInstance | null>(null);
+  const onTdeStateChangeRef = useRef(onTdeStateChange);
+  useEffect(() => {
+    onTdeStateChangeRef.current = onTdeStateChange;
+  }, [onTdeStateChange]);
+
+  const triggerTDE = () => {
+    const success = triggerTidalDisruptionEvent(
+      tdeStateRef.current,
+      celestialEntitiesRef.current,
+      window.innerWidth,
+      window.innerHeight
+    );
+    if (success && onTdeStateChangeRef.current) {
+      onTdeStateChangeRef.current({
+        isActive: true,
+        stage: tdeStateRef.current.stage,
+        status: tdeStateRef.current.statusMessage,
+      });
+    }
+    return success;
+  };
+
+  useEffect(() => {
+    (window as any).triggerTDE = triggerTDE;
+  }, []);
+
+  const isCinematicModeRef = useRef<boolean>(isCinematicMode);
+  useEffect(() => {
+    isCinematicModeRef.current = isCinematicMode;
+    (window as any).__cinematicMode = isCinematicMode;
+  }, [isCinematicMode]);
+
+  const cinematicCameraModeRef = useRef<'orbit' | 'horizon' | 'deep' | 'chase' | 'free'>(cinematicCameraMode);
+  useEffect(() => {
+    cinematicCameraModeRef.current = cinematicCameraMode;
+    (window as any).__cinematicCameraMode = cinematicCameraMode;
+  }, [cinematicCameraMode]);
+
+  const cinematicSpeedMultiplierRef = useRef<number>(cinematicSpeedMultiplier);
+  useEffect(() => {
+    cinematicSpeedMultiplierRef.current = cinematicSpeedMultiplier;
+    (window as any).__cinematicSpeedMultiplier = cinematicSpeedMultiplier;
+    audio.setTimeDilation(cinematicSpeedMultiplier);
+  }, [cinematicSpeedMultiplier]);
+
+  useEffect(() => {
+    (window as any).__anamorphicFlare = anamorphicFlaresEnabled;
+  }, [anamorphicFlaresEnabled]);
+
+  const dofEnabledRef = useRef<boolean>(dofEnabled);
+  useEffect(() => {
+    dofEnabledRef.current = dofEnabled;
+    (window as any).__dofEnabled = dofEnabled;
+  }, [dofEnabled]);
+
+  useEffect(() => {
+    (window as any).__onSelectedEntityChange = onSelectedEntityChange;
+  }, [onSelectedEntityChange]);
 
   const textParticleSpeedRef = useRef<number>(textParticleSpeed);
   useEffect(() => {
@@ -71,7 +154,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
   const particleFiltersRef = useRef<ParticleFilters>(
     particleFilters || {
-      ambient: false,
+      ambient: true,
       celestial: true,
       bridges: true,
       tails: true,
@@ -81,7 +164,13 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
   useEffect(() => {
     if (particleFilters) {
-      particleFiltersRef.current = particleFilters;
+      particleFiltersRef.current = {
+        ambient: particleFilters.ambient !== false,
+        celestial: particleFilters.celestial !== false,
+        bridges: particleFilters.bridges !== false,
+        tails: particleFilters.tails !== false,
+        typography: particleFilters.typography !== false,
+      };
     }
   }, [particleFilters]);
 
@@ -101,6 +190,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     { id: string; mesh: BABYLON.TransformNode | BABYLON.Mesh; entityRef: CelestialEntity }[]
   >([]);
   const lensingPostProcessRef = useRef<BABYLON.PostProcess | null>(null);
+  const dofPostProcessRef = useRef<BABYLON.PostProcess | null>(null);
+  const shatterPostProcessRef = useRef<BABYLON.PostProcess | null>(null);
+  const targetZoomToHorizonRef = useRef<number>(0.0);
+  const zoomToHorizonRef = useRef<number>(0.0);
+  const shatterIntensityRef = useRef<number>(0.0);
   const wormholePostProcessRef = useRef<BABYLON.PostProcess | null>(null);
   const wormholeIntensityRef = useRef<number>(0.0);
   const wormholeTimeRef = useRef<number>(0.0);
@@ -179,6 +273,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     Array<{ mesh: BABYLON.Mesh; life: number; maxLife: number; initialRadius: number }>
   >([]);
   const mappingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const inspiralIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scrollVelocityRef = useRef<number>(0);
   const lastScrollYRef = useRef<number>(
     window.scrollY || document.documentElement.scrollTop
@@ -268,14 +363,22 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       entityTransitionStartTimeRef
     );
 
-  const mapParticlesToInterstellar = (width: number, height: number) => {
+  const mapParticlesToInterstellar = (
+    width: number,
+    height: number,
+    triggerBurst = false,
+    skipTextUpdate = false
+  ) => {
     _mapParticlesToInterstellar(
       width,
       height,
       celestialEntitiesRef,
       archetypeRef,
       particlesRef,
-      tailStartIndexRef
+      tailStartIndexRef,
+      stageRef.current,
+      triggerBurst,
+      skipTextUpdate
     );
   };
 
@@ -304,16 +407,120 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     return unsubscribe;
   }, [sm, onTransitionStateChange, transitionStateMachineRef]);
 
+  const triggerSceneClimax = () => {
+    const ww = window.innerWidth;
+    const wh = window.innerHeight;
+    (window as any).__lastClimaxTime = Date.now();
+
+    const activeEntities = celestialEntitiesRef.current.filter(
+      (e) => !e.isDestroyed && !e.isOutgoing
+    );
+    const primary =
+      activeEntities.find(
+        (e) =>
+          e.type === "blackhole" ||
+          e.type === "gargantua" ||
+          e.type === "quasar" ||
+          e.type === "neutron_star" ||
+          e.type === "magnetar" ||
+          e.type === "star"
+      ) || activeEntities[0];
+
+    const epicenterX = primary ? primary.x : ww / 2;
+    const epicenterY = primary ? primary.y : wh / 2;
+    const epicenterZ = primary ? primary.z || 0 : 0;
+    const climaxColor = primary?.color || "#a5f3fc";
+
+    cameraShakeRef.current = Math.max(cameraShakeRef.current, 11.0);
+    if (audio.playRippleShockwave) audio.playRippleShockwave();
+    if (audio.playDeepThunderRoll) audio.playDeepThunderRoll(3.4, 0.48);
+
+    // Launch 3 staggered concentric shockwave ripples across the cosmos
+    ripplesRef.current.push({ x: epicenterX, y: epicenterY, life: 1.0 });
+    const rTimer1 = setTimeout(() => {
+      ripplesRef.current.push({ x: epicenterX, y: epicenterY, life: 0.95 });
+    }, 420);
+    const rTimer2 = setTimeout(() => {
+      ripplesRef.current.push({ x: epicenterX, y: epicenterY, life: 0.88 });
+    }, 900);
+    mappingTimersRef.current.push(rTimer1, rTimer2);
+
+    // Inject rotational + radial momentum surge into foreground celestial particles
+    const pool = particlesRef.current;
+    const limit =
+      tailStartIndexRef.current !== -1 ? tailStartIndexRef.current : pool.length;
+    for (let i = 0; i < limit; i++) {
+      const p = pool[i];
+      if (!p || p.isProjectText || p.isCosmicAmbient || p.interstellarType === "background_galaxy") {
+        continue;
+      }
+      const dx = p.x - epicenterX;
+      const dy = p.y - epicenterY;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 12;
+      const invDist = 1 / dist;
+      const radialBoost = Math.min(9.5, 420 / (dist * 0.18 + 30));
+      const tangBoost = radialBoost * 0.85;
+      p.vx += (dx * invDist * radialBoost + -dy * invDist * tangBoost) * 0.65;
+      p.vy += (dy * invDist * radialBoost + dx * invDist * tangBoost) * 0.65;
+      p.vz += (Math.random() - 0.5) * 6.0;
+    }
+
+    // Emit relativistic coronal / polar spark burst from the climax epicenter (screen coordinates expected by spawnTailParticle)
+    const spawnFn = spawnTailParticleRef.current;
+    if (spawnFn) {
+      for (let s = 0; s < 64; s++) {
+        const angle = (s / 64) * Math.PI * 2 + (Math.random() - 0.5) * 0.15;
+        const speed = 7 + Math.random() * 18;
+        spawnFn(
+          epicenterX + Math.cos(angle) * 14,
+          epicenterY + Math.sin(angle) * 14,
+          epicenterZ + (Math.random() - 0.5) * 24,
+          Math.cos(angle) * speed,
+          Math.sin(angle) * speed,
+          s % 3 === 0 ? "#ffffff" : climaxColor,
+          0.016 + Math.random() * 0.018
+        );
+      }
+    }
+  };
+
   const triggerSupernovaTransition = (x?: number, y?: number) => {
+    if (inspiralIntervalRef.current) {
+      clearInterval(inspiralIntervalRef.current);
+      inspiralIntervalRef.current = null;
+    }
     const posX = x ?? window.innerWidth / 2;
     const posY = y ?? window.innerHeight / 2;
+    const worldPos = new BABYLON.Vector3(
+      posX - window.innerWidth / 2,
+      -(posY - window.innerHeight / 2),
+      0
+    );
 
     sm.executeBlackHoleToSupernovaTransition({
       x: posX,
       y: posY,
       onImplode: () => {
-        cameraShakeRef.current = 14.0;
+        (window as any).__lastClimaxTime = Date.now();
+        cameraShakeRef.current = 12.0;
         audio.playSupernova();
+
+        // Begin core-collapse implosion phase (0 - 2600ms)
+        supernovaRef.current = {
+          time: Date.now(),
+          exploded: false,
+          isCalmShift: false,
+          x: posX,
+          y: posY,
+          worldPos,
+        };
+
+        if (sceneRef.current) {
+          if (activeSupernovaFxRef.current) {
+            activeSupernovaFxRef.current.dispose();
+          }
+          activeSupernovaFxRef.current = spawnSupernovaFX(sceneRef.current, worldPos);
+        }
       },
       onDetonate: () => {
         isInterstellarRef.current = true;
@@ -321,37 +528,39 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
           entity.isDestroyed = true;
         });
 
-        supernovaRef.current = {
-          time: Date.now(),
-          exploded: true,
-          isCalmShift: true,
-          x: posX,
-          y: posY,
-        };
-
-        if (sceneRef.current) {
-          const worldPos = new BABYLON.Vector3(
-            posX - window.innerWidth / 2,
-            -(posY - window.innerHeight / 2),
-            0
-          );
-          if (activeSupernovaFxRef.current) {
-            activeSupernovaFxRef.current.dispose();
-          }
-          activeSupernovaFxRef.current = spawnSupernovaFX(sceneRef.current, worldPos);
+        if (supernovaRef.current) {
+          supernovaRef.current.exploded = true;
+          supernovaRef.current.isCalmShift = false;
+        } else {
+          supernovaRef.current = {
+            time: Date.now() - 2600,
+            exploded: true,
+            isCalmShift: false,
+            x: posX,
+            y: posY,
+            worldPos,
+          };
         }
+
+        cameraShakeRef.current = 24.0;
+        ripplesRef.current.push({ x: posX, y: posY, life: 1.0 });
+        const detRippleTimer = setTimeout(() => {
+          ripplesRef.current.push({ x: posX, y: posY, life: 0.92 });
+        }, 360);
+        mappingTimersRef.current.push(detRippleTimer);
 
         audio.playRippleShockwave();
         fetchNextGeminiScene();
       },
       onRebirth: () => {
+        (window as any).__lastClimaxTime = 0;
         if (cameraRef.current) {
           transitionStartTimeRef.current = Date.now();
           transitionActiveRef.current = true;
           transitionStartPosRef.current = cameraRef.current.position.clone();
         }
         generateInterstellarScene(window.innerWidth, window.innerHeight, true, posX, posY);
-        mapParticlesToInterstellar(window.innerWidth, window.innerHeight);
+        mapParticlesToInterstellar(window.innerWidth, window.innerHeight, true);
       },
       onComplete: () => {
         if (animationComplete) animationComplete();
@@ -361,6 +570,163 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
   const triggerCalmCosmicShift = () => {
     triggerSupernovaTransition(window.innerWidth / 2, window.innerHeight / 2);
+  };
+
+  const triggerKilonova = () => {
+    isInterstellarRef.current = true;
+    (window as any).__forcedNextArchetype = "KILONOVA_MERGER";
+    (window as any).__lastClimaxTime = Date.now();
+    audio.playGravitationalWaveChirp();
+    cameraShakeRef.current = 10.0;
+
+    if (inspiralIntervalRef.current) {
+      clearInterval(inspiralIntervalRef.current);
+      inspiralIntervalRef.current = null;
+    }
+
+    // 3.2-second accelerating binary inspiral buildup before kilonova detonation
+    let inspiralTicks = 0;
+    inspiralIntervalRef.current = setInterval(() => {
+      inspiralTicks++;
+      cameraShakeRef.current = Math.min(22.0, 8.0 + inspiralTicks * 1.15);
+      celestialEntitiesRef.current.forEach((ent) => {
+        if (!ent.isDestroyed && !ent.isOutgoing && ent.orbitRadius && ent.orbitRadius > 14) {
+          ent.orbitRadius *= 0.92;
+          ent.orbitSpeed = (ent.orbitSpeed || 0.012) * 1.06;
+        }
+      });
+      if (inspiralTicks >= 12 && inspiralIntervalRef.current) {
+        clearInterval(inspiralIntervalRef.current);
+        inspiralIntervalRef.current = null;
+      }
+    }, 250);
+
+    const kilonovaTimer = setTimeout(() => {
+      if (inspiralIntervalRef.current) {
+        clearInterval(inspiralIntervalRef.current);
+        inspiralIntervalRef.current = null;
+      }
+      triggerSupernovaTransition(window.innerWidth / 2, window.innerHeight / 2);
+    }, 3200);
+    mappingTimersRef.current.push(kilonovaTimer);
+  };
+
+  const floatAwayToScene = (targetArchetype: string, targetStage: number) => {
+    const ww = window.innerWidth;
+    const wh = window.innerHeight;
+
+    // Clear any pending typography coalescence or kilonova timers from rapid scene switches
+    mappingTimersRef.current.forEach(clearTimeout);
+    mappingTimersRef.current = [];
+    if (inspiralIntervalRef.current) {
+      clearInterval(inspiralIntervalRef.current);
+      inspiralIntervalRef.current = null;
+    }
+
+    // Cancel any active supernova/kilonova state machine or TDE so they do not detonate into the incoming scene
+    if (sm.getInfo().isTransitioning) {
+      sm.cancel();
+    }
+    if (activeSupernovaFxRef.current) {
+      activeSupernovaFxRef.current.dispose();
+      activeSupernovaFxRef.current = null;
+    }
+    supernovaRef.current = null;
+
+    if (tdeStateRef.current.isActive) {
+      tdeStateRef.current = createInitialTdeState();
+      if (activeTdeFxRef.current) {
+        activeTdeFxRef.current.dispose();
+        activeTdeFxRef.current = null;
+      }
+      if (onTdeStateChangeRef.current) {
+        onTdeStateChangeRef.current({
+          isActive: false,
+          stage: "IDLE",
+          status: "Singularity Quiescent",
+        });
+      }
+    }
+
+    // Reset climax timestamp so the incoming scene begins in Act I (CALM_GENESIS)
+    (window as any).__lastClimaxTime = 0;
+
+    // Synchronize stageRef immediately so the React stage state update at 3200ms
+    // does not interrupt the 7800ms C^2 quintic camera arc or double-fire typography bursts
+    stageRef.current = targetStage;
+    lastStageChangeRef.current = Date.now();
+
+    // 1. Generate randomized 3D drift direction for this unique voyage
+    const driftAngle = Math.random() * Math.PI * 2;
+    const driftPitch = 0.2 + Math.random() * 0.35;
+    const driftDir = {
+      x: Math.cos(driftAngle) * Math.cos(driftPitch),
+      y: Math.sin(driftPitch),
+      z: Math.sin(driftAngle) * Math.cos(driftPitch),
+    };
+
+    // 2. Play organic deep thunder / interstellar space cruise acoustic
+    audio.playDeepThunderRoll(6.5, 0.52);
+
+    // 3. Disperse current typography into the cosmic slipstream with wave stagger
+    _disperseTypographyParticles(particlesRef, driftDir);
+
+    // 4. Set camera transition active from its current position
+    if (cameraRef.current) {
+      transitionStartTimeRef.current = Date.now();
+      transitionActiveRef.current = true;
+      transitionStartPosRef.current = cameraRef.current.position.clone();
+    }
+
+    // 5. Spawn incoming celestial entities along the drift vector & immediately map
+    // the 70% celestial particle pool to the new scene while keeping the 30% text pool dispersed
+    isInterstellarRef.current = true;
+    (window as any).__forcedNextArchetype = targetArchetype;
+    (window as any).__voyageDriftDir = driftDir;
+
+    generateInterstellarScene(ww, wh, true);
+    mapParticlesToInterstellar(ww, wh, false, true);
+
+    // 6. As the new discovery glides into focus (at 3200ms into the 7800ms voyage), coalesce typography
+    const coalesceTimer = setTimeout(() => {
+      _updateTypographyStage(
+        targetStage,
+        true,
+        particlesRef,
+        window.innerWidth,
+        window.innerHeight
+      );
+    }, 3200);
+    mappingTimersRef.current.push(coalesceTimer);
+  };
+
+  const switchToScene = (
+    archetype: string,
+    transitionType: "wormhole" | "supernova" | "morph" | "float" = "float",
+    targetStage?: number
+  ) => {
+    const assignedStage = targetStage !== undefined ? targetStage : stageRef.current;
+    if (transitionType === "float") {
+      floatAwayToScene(archetype, assignedStage);
+      return;
+    }
+    isInterstellarRef.current = true;
+    (window as any).__forcedNextArchetype = archetype;
+    if (transitionType === "wormhole") {
+      startWormholeTransit();
+    } else if (transitionType === "supernova") {
+      triggerSupernovaTransition(window.innerWidth / 2, window.innerHeight / 2);
+    } else {
+      const ww = window.innerWidth;
+      const wh = window.innerHeight;
+      generateInterstellarScene(ww, wh, true);
+      mapParticlesToInterstellar(ww, wh, true);
+      if (cameraRef.current) {
+        transitionStartTimeRef.current = Date.now();
+        transitionActiveRef.current = true;
+        transitionStartPosRef.current = cameraRef.current.position.clone();
+      }
+    }
   };
 
   const startWormholeTransit = async (
@@ -386,6 +752,10 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         generateInterstellarScene,
         mapParticlesToInterstellar,
         animationComplete,
+        transitionStartTimeRef,
+        transitionActiveRef,
+        transitionStartPosRef,
+        audio,
       },
       targetPos,
       viewDir
@@ -432,23 +802,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   isInterstellarRef.current = isInterstellar;
 
   useEffect(() => {
-    if (isInterstellar) {
-      const ww = window.innerWidth;
-      const wh = window.innerHeight;
-      generateInterstellarScene(ww, wh, true);
-      mapParticlesToInterstellar(ww, wh);
-    } else {
-      celestialMeshInstancesRef.current.forEach((inst) => {
-        inst.mesh.getChildMeshes(false).forEach((m) => {
-          if (m.material) m.material.dispose();
-          m.dispose();
-        });
-        inst.mesh.dispose();
-      });
-      celestialMeshInstancesRef.current = [];
-      celestialEntitiesRef.current = [];
-      mapParticlesToStage(stageRef.current, true);
-    }
+    if (!sceneRef.current) return;
+    const ww = window.innerWidth;
+    const wh = window.innerHeight;
+    generateInterstellarScene(ww, wh, true);
+    mapParticlesToInterstellar(ww, wh, true);
   }, [isInterstellar]);
 
   useEffect(() => {
@@ -456,25 +814,22 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     stageRef.current = stage;
     lastStageChangeRef.current = Date.now();
 
-    if (prevStage !== stage && cameraRef.current) {
-      transitionStartTimeRef.current = Date.now();
-      transitionActiveRef.current = true;
-      transitionStartPosRef.current = cameraRef.current.position.clone();
+    if (prevStage !== stage) {
+      if (cameraRef.current) {
+        transitionStartTimeRef.current = Date.now();
+        transitionActiveRef.current = true;
+        transitionStartPosRef.current = cameraRef.current.position.clone();
+      }
+
+      mappingTimersRef.current.forEach(clearTimeout);
+      mappingTimersRef.current = [];
+
+      // Smoothly morph particle typography targets when stage is changed directly
+      _updateTypographyStage(stage, true, particlesRef, window.innerWidth, window.innerHeight);
     }
 
-    mappingTimersRef.current.forEach(clearTimeout);
-    mappingTimersRef.current = [];
-
-    const isProjectToProject =
-      stage >= 2 && stage <= 5 && prevStage >= 2 && prevStage <= 5;
-
-    if (!isInterstellar) {
-      mapParticlesToStage(stage, !isProjectToProject);
-    } else {
-      mapParticlesToInterstellar(window.innerWidth, window.innerHeight);
-    }
     updateHudTexture(stage, hudPlaneRef.current, hudTextureRef.current);
-  }, [stage, isInterstellar]);
+  }, [stage]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -501,8 +856,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     // Postprocessing Composer setup for cinematic Bloom, ACES Tone Mapping, Chromatic Aberration, and Grain
     const pipeline = new BABYLON.DefaultRenderingPipeline("pipeline", true, scene, [camera]);
     pipeline.bloomEnabled = true;
-    pipeline.bloomThreshold = 0.82;
-    pipeline.bloomWeight = 0.12;
+    pipeline.bloomThreshold = 0.88;
+    pipeline.bloomWeight = 0.08;
     pipeline.bloomKernel = 64;
     pipeline.bloomScale = 0.5;
 
@@ -513,11 +868,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       pipeline.chromaticAberration.radialIntensity = 0.5;
     }
 
-    // Subtle cosmic film grain
-    pipeline.grainEnabled = true;
+    // Film grain disabled to remove background noise
+    pipeline.grainEnabled = false;
     if (pipeline.grain) {
-      pipeline.grain.intensity = 4.5;
-      pipeline.grain.animated = true;
+      pipeline.grain.intensity = 0.0;
+      pipeline.grain.animated = false;
     }
 
     // Deep space cinematic ACES tone mapping and vignette
@@ -593,6 +948,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
     const hudPlane = BABYLON.MeshBuilder.CreatePlane("hudPlane", { width: ww, height: wh }, scene);
     hudPlane.material = hudMaterial;
+    hudPlane.isPickable = false;
 
     const planeZ = -60;
     const scaleFactor = (cameraZRef.current + planeZ) / cameraZRef.current;
@@ -716,24 +1072,40 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       }
     };
 
-    if (isInterstellarRef.current) {
-      generateInterstellarScene(ww, wh, true);
-      mapParticlesToInterstellar(ww, wh);
-    } else {
-      celestialEntitiesRef.current = [];
-      fetchNextGeminiScene();
-      mapParticlesToStage(stageRef.current, false);
-    }
+    generateInterstellarScene(ww, wh, true);
+    mapParticlesToInterstellar(ww, wh, false);
 
     const spawnTailParticle = (
       x: number,
       y: number,
-      z: number,
-      vx: number,
-      vy: number,
-      color: string,
-      decayRate?: number
+      zOrColor?: number | string,
+      vxOrZ?: number,
+      vyOrVx?: number,
+      colorOrVy?: string | number,
+      decayRateOrColor?: number | string
     ) => {
+      let z = 0;
+      let vx = 0;
+      let vy = 0;
+      let color = "#ffffff";
+      let decayRate = 0.04 + Math.random() * 0.05;
+
+      if (typeof zOrColor === "string") {
+        color = zOrColor;
+        vx = typeof vxOrZ === "number" ? vxOrZ : 0;
+        vy = typeof vyOrVx === "number" ? vyOrVx : 0;
+      } else {
+        z = typeof zOrColor === "number" ? zOrColor : 0;
+        vx = typeof vxOrZ === "number" ? vxOrZ : 0;
+        vy = typeof vyOrVx === "number" ? vyOrVx : 0;
+        if (typeof colorOrVy === "string") {
+          color = colorOrVy;
+          if (typeof decayRateOrColor === "number") decayRate = decayRateOrColor;
+        } else if (typeof decayRateOrColor === "string") {
+          color = decayRateOrColor;
+        }
+      }
+
       const activeTailStartIndex =
         tailStartIndexRef.current !== -1 ? tailStartIndexRef.current : tailStartIndex;
       if (tailCount === 0 || activeTailStartIndex === -1) return;
@@ -749,14 +1121,15 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         tailP.vx = vx;
         tailP.vy = vy;
         tailP.vz = (Math.random() - 0.5) * 2;
-        tailP.color = color;
-        tailP.baseColor = color;
-        if (color.startsWith("#") && color.length >= 7) {
-          tailP.r = parseInt(color.slice(1, 3), 16);
-          tailP.g = parseInt(color.slice(3, 5), 16);
-          tailP.b = parseInt(color.slice(5, 7), 16);
-        } else if (color.startsWith("rgb")) {
-          const matches = color.match(/\d+/g);
+        const safeColor = (typeof color === "string" && color) ? color : "#ffffff";
+        tailP.color = safeColor;
+        tailP.baseColor = safeColor;
+        if (safeColor.startsWith("#") && safeColor.length >= 7) {
+          tailP.r = parseInt(safeColor.slice(1, 3), 16) || 255;
+          tailP.g = parseInt(safeColor.slice(3, 5), 16) || 255;
+          tailP.b = parseInt(safeColor.slice(5, 7), 16) || 255;
+        } else if (safeColor.startsWith("rgb")) {
+          const matches = safeColor.match(/\d+/g);
           if (matches) {
             tailP.r = parseInt(matches[0] || "255", 10);
             tailP.g = parseInt(matches[1] || "255", 10);
@@ -786,6 +1159,13 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         composerRef,
         pointsMaterialRef,
         lensingPostProcessRef,
+        dofPostProcessRef,
+        shatterPostProcessRef,
+        zoomToHorizonRef,
+        targetZoomToHorizonRef,
+        shatterIntensityRef,
+        cameraZRef,
+        dofEnabledRef,
         celestialEntitiesRef,
         supernovaRef,
         activeSupernovaFxRef,
@@ -828,6 +1208,14 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         fovRef,
         animationComplete,
         audio,
+        isCinematicModeRef,
+        cinematicCameraModeRef,
+        cinematicSpeedMultiplierRef,
+        slingshotAimRef,
+        probesRef,
+        tdeStateRef,
+        activeTdeFxRef,
+        onTdeStateChange: (info) => onTdeStateChangeRef.current?.(info),
       });
     };
 
@@ -847,6 +1235,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       updateHudTexture: (s: number) => updateHudTexture(s, hudPlaneRef.current, hudTextureRef.current),
       lastUserActivityRef,
       isScreensaverActiveRef,
+      screensaverOpacityRef,
       inputControllerRef,
       ripplesRef,
       celestialEntitiesRef,
@@ -864,27 +1253,112 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       wormholePostProcessRef,
       activeSupernovaFxRef,
       triggerSupernovaTransition,
+      slingshotAimRef,
+      probesRef,
+      tdeStateRef,
+      triggerTdeFn: triggerTDE,
+      targetZoomToHorizonRef,
+      zoomToHorizonRef,
+      shatterIntensityRef,
     });
+
+    (window as any).triggerTDE = triggerTDE;
+    (window as any).triggerKilonova = triggerKilonova;
+    (window as any).switchToScene = switchToScene;
+    (window as any).floatAwayToScene = floatAwayToScene;
+
+    (window as any).__cosmicCanvas = {
+      triggerTDE,
+      triggerKilonova,
+      triggerSceneClimax,
+      switchToScene,
+      floatAwayToScene,
+      triggerSupernovaTransition: () => triggerSupernovaTransition(window.innerWidth / 2, window.innerHeight / 2),
+      startWormholeTransit: () => startWormholeTransit(),
+      generateInterstellarScene: (force?: boolean) => {
+        const ww = window.innerWidth;
+        const wh = window.innerHeight;
+        generateInterstellarScene(ww, wh, force ?? true);
+        mapParticlesToInterstellar(ww, wh);
+      },
+      nextScene: () => {
+        if (Math.random() > 0.5) {
+          triggerSupernovaTransition(window.innerWidth / 2, window.innerHeight / 2);
+        } else {
+          startWormholeTransit();
+        }
+      },
+      getCurrentArchetype: () => archetypeRef.current,
+      getEntities: () => celestialEntitiesRef.current,
+      launchProbe: () => {
+        const ww = window.innerWidth;
+        const wh = window.innerHeight;
+        audio.playDeepThunderRoll(2.6, 0.45);
+        ripplesRef.current.push({ x: ww / 2, y: wh / 2, life: 0.85 });
+      },
+      triggerPulsarShockwave: () => {
+        triggerSceneClimax();
+      },
+      cycleTargetLock: () => {
+        const activeEntities = celestialEntitiesRef.current.filter(
+          (e) => !e.isDestroyed && !e.isOutgoing && e.type !== "nebula"
+        );
+        if (activeEntities.length === 0) return null;
+        const inputs = inputControllerRef.current;
+        const curId = inputs.targetLock?.active ? inputs.targetLock.entityId : null;
+        const curIdx = curId ? activeEntities.findIndex((e) => e.id === curId) : -1;
+        const nextIdx = curIdx + 1;
+        if (nextIdx >= activeEntities.length) {
+          inputs.targetLock = { x: 0, y: 0, z: 0, active: false, entityId: null };
+          if ((window as any).__onSelectedEntityChange) {
+            (window as any).__onSelectedEntityChange(null);
+          }
+          return null;
+        }
+        const nextEnt = activeEntities[nextIdx]!;
+        const curW = window.innerWidth;
+        const curH = window.innerHeight;
+        inputs.targetLock = {
+          x: nextEnt.worldX !== undefined ? nextEnt.worldX : nextEnt.x - curW / 2,
+          y: nextEnt.worldY !== undefined ? nextEnt.worldY : -(nextEnt.y - curH / 2),
+          z: nextEnt.worldZ !== undefined ? nextEnt.worldZ : (nextEnt.z || 0),
+          active: true,
+          entityId: nextEnt.id || "unknown",
+        };
+        if ((window as any).__onSelectedEntityChange) {
+          (window as any).__onSelectedEntityChange(nextEnt);
+        }
+        if (audio.pingInteraction) audio.pingInteraction();
+        return nextEnt;
+      },
+      clearTargetLock: () => {
+        inputControllerRef.current.targetLock = { x: 0, y: 0, z: 0, active: false, entityId: null };
+        if ((window as any).__onSelectedEntityChange) {
+          (window as any).__onSelectedEntityChange(null);
+        }
+      }
+    };
 
     return () => {
       cleanupEvents();
+      mappingTimersRef.current.forEach(clearTimeout);
+      mappingTimersRef.current = [];
+      if (inspiralIntervalRef.current) {
+        clearInterval(inspiralIntervalRef.current);
+        inspiralIntervalRef.current = null;
+      }
+      sm.cancel();
+      activeTdeFxRef.current?.dispose();
+      dofPostProcessRef.current?.dispose();
+      shatterPostProcessRef.current?.dispose();
       delete (window as any).activateSequence;
+      delete (window as any).__cosmicCanvas;
     };
   }, []);
 
   return (
     <div className="relative w-full h-full">
       <canvas ref={canvasRef} className="block w-full h-full" id="canvas-babylon" />
-      <DebugObjectOverlay
-        celestialEntitiesRef={celestialEntitiesRef}
-        sceneRef={sceneRef}
-        cameraRef={cameraRef}
-        rendererRef={rendererRef}
-        showDebug={!!showDebug}
-        stage={stage}
-        supernovaRef={supernovaRef}
-        activeWormholeRef={activeWormholeRef}
-      />
     </div>
   );
 };

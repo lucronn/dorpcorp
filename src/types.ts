@@ -16,12 +16,13 @@ export interface Particle {
   size: number;
   isCosmicAmbient?: boolean;
   driftSpeed?: number;
-  interstellarType?: "blackhole" | "planet" | "nebula" | "star" | "bridge" | "background_galaxy";
+  interstellarType?: "blackhole" | "planet" | "nebula" | "star" | "bridge" | "background_galaxy" | "galaxy" | "pulsar_ring" | "pulsar_jet";
   interstellarEntityIndex?: number;
   interstellarEntity?: any;
   orbitRadius?: number;
   orbitAngle?: number;
   orbitSpeed?: number;
+  galaxyZOffset?: number;
   isPlanetRing?: boolean;
   bridgeStartEntityIndex?: number;
   bridgeStartEntity?: any;
@@ -44,6 +45,9 @@ export interface Particle {
   r?: number;
   g?: number;
   b?: number;
+  targetR?: number;
+  targetG?: number;
+  targetB?: number;
   tunnelLife?: number;
 }
 
@@ -52,6 +56,7 @@ export interface Project {
   category: string;
   description: string;
   tags: string[];
+  metrics?: string[];
   icon: any;
 }
 
@@ -61,23 +66,26 @@ export const projects: Project[] = [
     category: "WHO I AM",
     description:
       "Ten years of engineering experience. Full-stack systems, agentic pipelines, and the evaluations that keep AI models honest.",
-    tags: ["AI Engineering", "Production AI", "LLM Optimization"],
+    tags: ["AI Engineering", "Production AI", "LLM Optimization", "Distributed Systems"],
+    metrics: ["10+ YRS ENGINEERING", "FULL-STACK & ML INFRA"],
     icon: Database,
   },
   {
     title: "Architecting Autonomy",
     category: "WHAT I BUILD",
     description:
-      "Autonomous agentic systems and large-scale RAG pipelines. Built to reason, plan, and execute reliably.",
-    tags: ["Agentic Workflows", "LangChain", "VectorDBs"],
+      "Autonomous agentic systems and large-scale RAG pipelines. Built to reason, plan, and execute reliably across complex toolchains.",
+    tags: ["Agentic Workflows", "LangChain", "VectorDBs", "Tool-Use Orchestration"],
+    metrics: ["MULTI-AGENT PIPELINES", "HIGH-RECALL HYBRID RAG"],
     icon: Zap,
   },
   {
     title: "Frontier Model Alignment",
     category: "HOW I TEST",
     description:
-      "RLHF evaluation, red-teaming, and hallucination analysis on frontier models, including Claude Code and Fable.",
-    tags: ["RLHF", "Red-Teaming", "Evaluations"],
+      "RLHF evaluation, adversarial red-teaming, and hallucination analysis on frontier models, including Claude Code and Fable.",
+    tags: ["RLHF", "Red-Teaming", "Evaluations", "Benchmark Design"],
+    metrics: ["FRONTIER RED-TEAMING", "ADVERSARIAL EVAL SUITES"],
     icon: Layers,
   },
   {
@@ -85,7 +93,8 @@ export const projects: Project[] = [
     category: "MY EXPERTISE",
     description:
       "Not only code. Domain expertise in CAD, civil and structural engineering, and fluid dynamics. Messy real-world data, turned into high-fidelity training corpuses.",
-    tags: ["OpenFOAM", "OpenSEES", "SMEs"],
+    tags: ["OpenFOAM", "OpenSEES", "SMEs", "Physics-Informed AI"],
+    metrics: ["CFD & FEA SIMULATION", "DOMAIN CORPUS SYNTHESIS"],
     icon: Globe,
   },
 ];

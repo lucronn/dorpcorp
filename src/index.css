@@ -12,10 +12,15 @@
   --color-slate-800: #1e293b;
 }
 
-body {
+html, body, #root {
   background-color: var(--color-slate-950);
   color: #fff;
-  overflow-x: hidden;
+  overflow: hidden;
+  height: 100%;
+  width: 100%;
+  position: fixed;
+  inset: 0;
+  touch-action: none;
   -webkit-font-smoothing: antialiased;
 }
 

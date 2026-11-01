@@ -10,6 +10,8 @@ import {
 } from "./CelestialMeshBuilder";
 import { createCircularGlowTexture } from "./TextureUtils";
 import { createNeutronStarBirthEvent } from "./scenes/neutronstarbirth";
+import { createHawkingRadiationSystem } from "./HawkingRadiationEngine";
+import { quinticEaseInOut, computeSceneChoreography } from "./PhysicsUtils";
 
 export function getSpacetimeFabricDistortion(
   wx: number,
@@ -32,7 +34,7 @@ export function getSpacetimeFabricDistortion(
   let gravityZ = 0;
 
   celestialEntitiesRef.current.forEach((entity) => {
-    if (entity.isDestroyed) return;
+    if (entity.isDestroyed || entity.isOutgoing) return;
     const ex = entity.x - ww / 2;
     const ey = -(entity.y - wh / 2);
 
@@ -44,7 +46,8 @@ export function getSpacetimeFabricDistortion(
     if (dist < range) {
       const intensity = (range - dist) / range;
       const pullDepth = entity.type === "blackhole" ? 180 : 45;
-      gravityZ += Math.pow(intensity, 1.8) * pullDepth * (0.2 + disturbance * 0.8);
+      const entityScale = Math.max(0, Math.min(1, entity.scale ?? 1));
+      gravityZ += Math.pow(intensity, 1.8) * pullDepth * entityScale * (0.2 + disturbance * 0.8);
     }
   });
 
@@ -109,13 +112,19 @@ export function updateCelestial3DMeshes(
     const entities = celestialEntitiesRef.current;
 
     let meshTransitionT = 0;
+    let rawTransitionT = 0;
     let isMeshTransitioning = false;
     if (entityTransitionActiveRef.current) {
-      const duration = 2400;
+      const duration = 7800;
       const elapsed = Date.now() - entityTransitionStartTimeRef.current;
       if (elapsed >= duration) {
         entityTransitionActiveRef.current = false;
         entities.forEach((cur) => {
+          if (cur.isOutgoing) {
+            cur.isDestroyed = true;
+            cur.scale = 0;
+            return;
+          }
           if (cur.targetX !== undefined) cur.x = cur.targetX;
           if (cur.targetY !== undefined) cur.y = cur.targetY;
           if (cur.targetZ !== undefined) cur.z = cur.targetZ;
@@ -123,24 +132,27 @@ export function updateCelestial3DMeshes(
           if (cur.targetScale !== undefined) cur.scale = cur.targetScale;
           if (cur.centerX !== undefined && cur.centerY !== undefined && cur.x !== undefined && cur.y !== undefined) {
             cur.orbitAngle = Math.atan2(cur.y - cur.centerY, cur.x - cur.centerX);
-            cur.orbitRadius = Math.hypot(cur.x - cur.centerX, cur.y - cur.centerY);
+            cur.orbitRadius = cur.baseOrbitRadius ?? Math.hypot(cur.x - cur.centerX, cur.y - cur.centerY);
           }
         });
-        celestialEntitiesRef.current = entities.filter((e) => !e.isDestroyed && (e.scale ?? 0) > 0.01);
+        celestialEntitiesRef.current = entities.filter((e) => !e.isDestroyed && !e.isOutgoing && (e.scale ?? 0) > 0.01);
       } else {
         isMeshTransitioning = true;
-        const rawT = elapsed / duration;
-        meshTransitionT = rawT < 0.5 ? 4 * rawT * rawT * rawT : 1 - Math.pow(-2 * rawT + 2, 3) / 2;
+        rawTransitionT = Math.max(0, Math.min(1, elapsed / duration));
+        meshTransitionT = quinticEaseInOut(rawTransitionT);
       }
     }
 
     if (isMeshTransitioning) {
-      entities.forEach((cur) => {
+      const arcEnvelope = Math.sin(rawTransitionT * Math.PI);
+      entities.forEach((cur, idx) => {
+        if (cur.isDestroyed) return;
+        const sign = idx % 2 === 0 ? 1 : -1;
         if (cur.startX !== undefined && cur.targetX !== undefined) {
-          cur.x = (1 - meshTransitionT) * cur.startX + meshTransitionT * cur.targetX;
+          cur.x = (1 - meshTransitionT) * cur.startX + meshTransitionT * cur.targetX + arcEnvelope * sign * 65;
         }
         if (cur.startY !== undefined && cur.targetY !== undefined) {
-          cur.y = (1 - meshTransitionT) * cur.startY + meshTransitionT * cur.targetY;
+          cur.y = (1 - meshTransitionT) * cur.startY + meshTransitionT * cur.targetY + arcEnvelope * -sign * 42;
         }
         if (cur.startZ !== undefined && cur.targetZ !== undefined) {
           cur.z = (1 - meshTransitionT) * cur.startZ + meshTransitionT * cur.targetZ;
@@ -149,67 +161,66 @@ export function updateCelestial3DMeshes(
           cur.radius = (1 - meshTransitionT) * cur.startRadius + meshTransitionT * cur.targetRadius;
         }
         if (cur.startScale !== undefined && cur.targetScale !== undefined) {
-          cur.scale = (1 - meshTransitionT) * cur.startScale + meshTransitionT * cur.targetScale;
+          cur.scale = Math.max(0.001, (1 - meshTransitionT) * cur.startScale + meshTransitionT * cur.targetScale);
         }
       });
     }
 
     const sceneAge = (Date.now() - interstellarSceneGeneratedTimeRef.current) / 1000;
+    const lastClimaxTime = (window as any).__lastClimaxTime || 0;
+    const climaxElapsedSec = lastClimaxTime > 0 ? (Date.now() - lastClimaxTime) / 1000 : null;
+    const transitionElapsedSec = entityTransitionActiveRef.current
+      ? (Date.now() - entityTransitionStartTimeRef.current) / 1000
+      : null;
+    const choreography = computeSceneChoreography(sceneAge, climaxElapsedSec, transitionElapsedSec);
+    const objSpeedMult = (objectParticleSpeedRef.current ?? 0.15) / 0.15;
+
     const musicAmp = audio.getMusicAmplitude ? audio.getMusicAmplitude() : 0;
     const musicBands = audio.getFrequencyBands ? audio.getFrequencyBands() : { bass: 0, mid: 0, treble: 0 };
 
-    if (isInterstellarRef.current && sceneAge > 240.0 && !supernovaRef.current) {
+    if (isInterstellarRef.current && sceneAge > 240.0 && !supernovaRef.current && !(window as any).__screensaverManaged) {
       triggerCalmCosmicShift();
     }
 
-    // Autonomous Cosmic Evolution Engine
-    const aliveEntities = entities.filter((e) => !e.isDestroyed);
-    if (aliveEntities.length < 5 && Math.random() < 0.008) {
-      const angle = Math.random() * Math.PI * 2;
-      const r = (ww < 768 ? 160 : 320) + Math.random() * 220;
-      const pRadius = 14 + Math.random() * 14;
-      const orbitSpeed = 0.0025 + Math.random() * 0.0025;
-      const newPlanet: CelestialEntity = {
-        type: "planet",
-        x: ww / 2 + Math.cos(angle) * r,
-        y: wh / 2 + Math.sin(angle) * r,
-        radius: pRadius,
-        color: ["#4deeea", "#ffd778", "#ff5e62", "#a124f5", "#00ffbe"][Math.floor(Math.random() * 5)] || "#4deeea",
-        secondaryColor: "#ffffff",
-        hasRings: Math.random() > 0.4,
-        ringColor: "rgba(255, 255, 255, 0.45)",
-        orbitRadius: r,
-        orbitAngle: angle,
-        orbitSpeed: orbitSpeed,
-        centerX: ww / 2,
-        centerY: wh / 2,
-        vx: -Math.sin(angle) * r * orbitSpeed * 1.3,
-        vy: Math.cos(angle) * r * orbitSpeed * 1.3,
-        mass: pRadius * pRadius,
-        scale: 0.05,
-        currentRadius: pRadius,
-        originalRadius: pRadius,
-        targetRadius: pRadius,
-        isPhysicsEnabled: true,
-        isDestroyed: false,
-      };
-      entities.push(newPlanet);
-      createDustSplash(newPlanet.x, newPlanet.y, newPlanet.color, 120);
-      if (audio.playStageSwell) audio.playStageSwell(1);
-
-      registerAndSaveSequence(
-        "Stellar Nucleus Birth",
-        "Stardust accretion has crossed a critical mass point. A young planet is birthed into decaying orbit, pulled by the master gravitational field.",
-        ["★ STAR NURSERY", "☄ CORE CONCRETION", "★ INWARD SPIRAL"],
-        entities
-      );
-    }
-
-    // Continuous Gravity Drift
+    // Active Orbital Evolution, Binary Inspiral Tightening & Continuous Gravity Drift
     entities.forEach((entity) => {
-      if (entity.isDestroyed || entity.type === "blackhole") return;
+      if (entity.isDestroyed || entity.isOutgoing) return;
 
-      const bh = entities.find((e) => e && !e.isDestroyed && e.type === "blackhole");
+      if (!isMeshTransitioning) {
+        if (
+          entity.orbitRadius !== undefined &&
+          entity.orbitSpeed !== undefined &&
+          entity.centerX !== undefined &&
+          entity.centerY !== undefined &&
+          !entity.isSwallowing
+        ) {
+          entity.baseOrbitRadius = entity.baseOrbitRadius ?? entity.orbitRadius;
+          const speedScale = choreography.velocityMultiplier * objSpeedMult;
+          entity.orbitAngle = (entity.orbitAngle ?? 0) + entity.orbitSpeed * speedScale;
+
+          // Binary systems and compact clusters gradually tighten their orbits as scene tension rises
+          const isCompactBinary = entity.baseOrbitRadius < 220;
+          const compactionFactor = isCompactBinary
+            ? Math.max(0.45, 1.0 - choreography.tension * 0.26 - choreography.climaxPulse * 0.18)
+            : Math.max(0.75, 1.0 - choreography.tension * 0.08);
+          entity.orbitRadius = entity.baseOrbitRadius * compactionFactor;
+
+          const tiltY = isCompactBinary ? 0.72 : 0.82;
+          entity.x = entity.centerX + Math.cos(entity.orbitAngle) * entity.orbitRadius;
+          entity.y = entity.centerY + Math.sin(entity.orbitAngle) * entity.orbitRadius * tiltY;
+        } else if (entity.isPhysicsEnabled && !entity.isSwallowing) {
+          entity.x += entity.vx || 0;
+          entity.y += entity.vy || 0;
+          entity.z = (entity.z || 0) + (entity.vz || 0);
+          entity.vx = (entity.vx || 0) * 0.988;
+          entity.vy = (entity.vy || 0) * 0.988;
+          entity.vz = (entity.vz || 0) * 0.988;
+        }
+      }
+
+      if (entity.type === "blackhole") return;
+
+      const bh = entities.find((e) => e && !e.isDestroyed && !e.isOutgoing && e.type === "blackhole");
       if (!bh) return;
 
       const dx = bh.x - entity.x;
@@ -217,14 +228,16 @@ export function updateCelestial3DMeshes(
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
       if (entity.isSwallowing) {
-        const spiralPull = 0.15;
+        const spiralPull = 0.15 * choreography.gravityMultiplier;
         entity.vx = (entity.vx || 0) + (dx / dist) * spiralPull;
         entity.vy = (entity.vy || 0) + (dy / dist) * spiralPull;
+        entity.x += (entity.vx || 0) * 0.18;
+        entity.y += (entity.vy || 0) * 0.18;
         if (dist < bh.radius * 1.5) {
           entity.isDestroyed = true;
         }
-      } else {
-        const dragPull = 0.0008;
+      } else if (entity.orbitRadius === undefined) {
+        const dragPull = 0.0008 * choreography.gravityMultiplier;
         entity.vx = (entity.vx || 0) + (dx / dist) * dragPull;
         entity.vy = (entity.vy || 0) + (dy / dist) * dragPull;
       }
@@ -234,7 +247,7 @@ export function updateCelestial3DMeshes(
     const now = Date.now();
     if (now - lastAutonomousEventTimeRef.current > 45000) {
       lastAutonomousEventTimeRef.current = now;
-      const nonBhEntities = entities.filter((e) => !e.isDestroyed && e.type !== "blackhole");
+      const nonBhEntities = entities.filter((e) => !e.isDestroyed && !e.isOutgoing && e.type !== "blackhole");
       const eventChoice = Math.floor(Math.random() * 4);
 
       if (eventChoice === 0 && nonBhEntities.length >= 2) {
@@ -268,9 +281,9 @@ export function updateCelestial3DMeshes(
           if (audio.playStageSwell) audio.playStageSwell(1);
 
           registerAndSaveSequence(
-            "Wormhole Bridge Activated",
-            "A localized quantum bridge has bent spacetime between two orbits. Hot stellar plasma particles funnel instantly through the dimensional throat.",
-            ["🕳 ER BRIDGE", "☄ SPATIAL WARP", "★ BENT METRIC"],
+            "Roche-Lobe Overflow (L1 Stream)",
+            "Differential tidal gravity has pulled the donor body's outer envelope across the Inner Lagrangian Point (L1), funneling a ballistic stream of ionized gas into the companion's Roche lobe.",
+            ["🪐 ROCHE OVERFLOW", "⚡ L1 MASS STREAM", "★ EQUIPOTENTIAL"],
             entities
           );
         }
@@ -281,82 +294,6 @@ export function updateCelestial3DMeshes(
           eventRes.systemName,
           eventRes.systemDesc,
           eventRes.systemTags,
-          entities
-        );
-      } else if (eventChoice === 2) {
-        const angle = Math.random() * Math.PI * 2;
-        const r1 = ww < 768 ? 120 : 220;
-        const child1: CelestialEntity = {
-          type: "planet",
-          x: ww / 2 + Math.cos(angle) * r1,
-          y: wh / 2 + Math.sin(angle) * r1,
-          radius: 17,
-          color: "#4deeea",
-          vx: -Math.cos(angle) * 0.6,
-          vy: -Math.sin(angle) * 0.6,
-          mass: 289,
-          scale: 0.05,
-          currentRadius: 17,
-          originalRadius: 17,
-          targetRadius: 17,
-          isPhysicsEnabled: true,
-          isDestroyed: false,
-        };
-        const child2: CelestialEntity = {
-          type: "planet",
-          x: ww / 2 - Math.cos(angle) * r1,
-          y: wh / 2 - Math.sin(angle) * r1,
-          radius: 15,
-          color: "#ff5e62",
-          vx: Math.cos(angle) * 0.6,
-          vy: Math.sin(angle) * 0.6,
-          mass: 225,
-          scale: 0.05,
-          currentRadius: 15,
-          originalRadius: 15,
-          targetRadius: 15,
-          isPhysicsEnabled: true,
-          isDestroyed: false,
-        };
-        entities.push(child1, child2);
-        createDustSplash(child1.x, child1.y, child1.color, 90);
-        createDustSplash(child2.x, child2.y, child2.color, 90);
-        if (audio.playStageSwell) audio.playStageSwell(2);
-
-        registerAndSaveSequence(
-          "Gravitational Coalescence",
-          "Twin protoplanetary bodies are pulled onto a head-on collision course. High electromagnetic resistance compresses spacetime before contact.",
-          ["☄ TWIN CORES", "☄ VECTOR COLLISION", "★ REPULSION"],
-          entities
-        );
-      } else if (eventChoice === 3) {
-        const angle = Math.random() * Math.PI * 2;
-        const r1 = (ww < 768 ? 160 : 280) + Math.random() * 100;
-        const newNebula: CelestialEntity = {
-          type: "nebula",
-          x: ww / 2 + Math.cos(angle) * r1,
-          y: wh / 2 + Math.sin(angle) * r1,
-          radius: 60 + Math.random() * 40,
-          color: ["#ff007f", "#a124f5", "#00f0ff"][Math.floor(Math.random() * 3)] || "#ff007f",
-          secondaryColor: "#1a0033",
-          vx: -Math.sin(angle) * 0.4,
-          vy: Math.cos(angle) * 0.4,
-          mass: 400,
-          scale: 0.05,
-          currentRadius: 80,
-          originalRadius: 80,
-          targetRadius: 80,
-          isPhysicsEnabled: true,
-          isDestroyed: false,
-        };
-        entities.push(newNebula);
-        createDustSplash(newNebula.x, newNebula.y, newNebula.color, 150);
-        if (audio.playStageSwell) audio.playStageSwell(2);
-
-        registerAndSaveSequence(
-          "Stelliferous Condensation",
-          "An interstellar gas cloud is cooling and condensing, creating a vibrant nebula of ionized cosmic plasma.",
-          ["★ IONIZED GAS", "☄ NEBULA DRIVEN", "★ STAR NURSERY"],
           entities
         );
       }
@@ -372,11 +309,11 @@ export function updateCelestial3DMeshes(
     // Handle collisions & swallowing
     for (let i = 0; i < entities.length; i++) {
       const e1 = entities[i];
-      if (!e1 || e1.isDestroyed) continue;
+      if (!e1 || e1.isDestroyed || e1.isOutgoing) continue;
 
       for (let j = i + 1; j < entities.length; j++) {
         const e2 = entities[j];
-        if (!e2 || e2.isDestroyed) continue;
+        if (!e2 || e2.isDestroyed || e2.isOutgoing) continue;
 
         if ((e1.scale ?? 0) < 0.9 || (e2.scale ?? 0) < 0.9) continue;
 
@@ -435,6 +372,9 @@ export function updateCelestial3DMeshes(
           }
           m.dispose();
         });
+        if (inst.hawkingSystem && typeof inst.hawkingSystem.dispose === "function") {
+          inst.hawkingSystem.dispose();
+        }
         inst.mesh.dispose();
       } else {
         nextMeshInstances.push(inst);
@@ -450,26 +390,29 @@ export function updateCelestial3DMeshes(
       const wx = entity.x - ww / 2;
       const wy = -(entity.y - wh / 2);
 
-      entity.scale = entity.scale ?? 0;
+      entity.scale = entity.scale !== undefined && entity.scale > 0 ? entity.scale : 1.0;
       entity.currentRadius = entity.currentRadius ?? entity.radius;
       entity.originalRadius = entity.originalRadius ?? entity.radius;
       const initScale = entity.scale * (entity.currentRadius / entity.originalRadius);
 
       let createdMeshNode: BABYLON.TransformNode | null = null;
+      let hawkingSystem: any = undefined;
 
       if (entity.type === "blackhole") {
         createdMeshNode = createBlackholeMesh(entity, wx, wy, initScale, scene);
-      } else if (entity.type === "planet") {
-        createdMeshNode = createPlanetMesh(entity, wx, wy, initScale, scene);
-      } else if (entity.type === "nebula") {
-        createdMeshNode = createNebulaMesh(entity, wx, wy, initScale, scene);
+        hawkingSystem = createHawkingRadiationSystem(createdMeshNode, entity, scene);
       } else if (entity.type === "galaxy") {
         createdMeshNode = createGalaxyMesh(entity, wx, wy, initScale, scene);
       } else if (entity.type === "star") {
         createdMeshNode = createStarMesh(entity, wx, wy, initScale, scene);
+      } else if (entity.type === "planet") {
+        createdMeshNode = createPlanetMesh(entity, wx, wy, initScale, scene);
+      } else if (entity.type === "nebula") {
+        createdMeshNode = createNebulaMesh(entity, wx, wy, initScale, scene);
       }
 
       if (createdMeshNode) {
+        createdMeshNode.metadata = { entityId, entityRef: entity };
         if (celestialGroupRef.current) {
           createdMeshNode.parent = celestialGroupRef.current;
         }
@@ -477,6 +420,7 @@ export function updateCelestial3DMeshes(
           id: entityId,
           mesh: createdMeshNode,
           entityRef: entity,
+          hawkingSystem,
         });
       }
     });
@@ -487,7 +431,12 @@ export function updateCelestial3DMeshes(
       const wx = entity.x - ww / 2;
       const wy = -(entity.y - wh / 2);
 
-      entity.scale = entity.scale ?? 1.0;
+      if (!isMeshTransitioning && !entity.isDestroyed && !entity.isOutgoing) {
+        if (entity.scale === undefined || entity.scale < 1.0) {
+          entity.scale = Math.min(1.0, (entity.scale || 0) + 0.035);
+        }
+      }
+      entity.scale = entity.scale !== undefined ? Math.max(0.001, entity.scale) : 1.0;
       entity.currentRadius = entity.currentRadius ?? entity.radius;
       entity.originalRadius = entity.originalRadius ?? entity.radius;
 
@@ -506,7 +455,7 @@ export function updateCelestial3DMeshes(
       let blackholeDist = 100000;
       let nearestBh: CelestialEntity | null = null;
       celestialEntitiesRef.current.forEach((other) => {
-        if (other.type === "blackhole" && !other.isDestroyed && other !== entity) {
+        if (other.type === "blackhole" && !other.isDestroyed && !other.isOutgoing && other !== entity) {
           const odx = other.x - entity.x;
           const ody = other.y - entity.y;
           const odist = Math.sqrt(odx * odx + ody * ody);
@@ -517,7 +466,7 @@ export function updateCelestial3DMeshes(
         }
       });
 
-      if (nearestBh && entity.type !== "blackhole" && entity.type !== "nebula" && !entity.isDestroyed) {
+      if (nearestBh && entity.type !== "blackhole" && entity.type !== "nebula" && !entity.isDestroyed && !entity.isOutgoing) {
         const bh = nearestBh as CelestialEntity;
         const horizonZone = bh.radius * 4.2;
         if (blackholeDist < horizonZone) {
@@ -583,87 +532,157 @@ export function updateCelestial3DMeshes(
 
       inst.mesh.scaling.set(finalScaleX, finalScaleY, finalScaleZ);
 
-      if (entity.type !== "nebula") {
+      if (entity.type === "blackhole") {
+        // Update subtle shimmering Hawking Radiation / MAD Corona particle effect based purely on 3D camera proximity & scene tension
+        if (inst.hawkingSystem && typeof inst.hawkingSystem.update === "function") {
+          const isCinematic = (window as any).__cinematicMode === true;
+          let camProximity = choreography.tension * 0.35 + choreography.climaxPulse * 0.45;
+          if (cameraRef.current) {
+            const camDist = BABYLON.Vector3.Distance(
+              cameraRef.current.position,
+              new BABYLON.Vector3(wx, wy, entity.z || 0)
+            );
+            camProximity = Math.min(1.0, Math.max(camProximity, 1.0 - (camDist - entity.radius) / (entity.radius * 4.2)));
+          }
+          inst.hawkingSystem.update(camProximity, isCinematic, 16.666);
+        }
+
+        // Smooth natural gyroscopic precession scaling with rising tension
+        const precAmp = 1.0 + choreography.tension * 0.35;
+        const basePrecessionX = Math.sin(now * 0.0007) * 0.12 * precAmp;
+        const basePrecessionY = Math.cos(now * 0.0005) * 0.14 * precAmp;
+
+        inst.mesh.rotation.x = basePrecessionX;
+        inst.mesh.rotation.y = basePrecessionY;
+        inst.mesh.rotation.z = Math.sin(now * 0.0003) * 0.08 * precAmp;
+
+        inst.mesh.position.set(wx, wy, entity.z || 0);
+        entity.worldX = inst.mesh.position.x;
+        entity.worldY = inst.mesh.position.y;
+        entity.worldZ = inst.mesh.position.z;
+
+        // Relativistic polar jet particle emissions scaling with choreography emission & velocity
+        const jetProb = Math.min(0.95, 0.35 * choreography.emissionMultiplier);
+        if (!entity.isOutgoing && spawnTailParticleRef.current && Math.random() < jetProb) {
+          const jetSpeed = (6.0 + Math.random() * 7.5) * choreography.velocityMultiplier;
+          // North nozzle
+          spawnTailParticleRef.current(
+            entity.x + (Math.random() - 0.5) * entity.radius * 0.15,
+            entity.y - entity.radius * 0.6,
+            (Math.random() - 0.5) * 8,
+            (Math.random() - 0.5) * 1.5,
+            -jetSpeed,
+            Math.random() > 0.4 ? "#ffffff" : (entity.secondaryColor || "#ffd778"),
+            0.036
+          );
+          // South nozzle
+          spawnTailParticleRef.current(
+            entity.x + (Math.random() - 0.5) * entity.radius * 0.15,
+            entity.y + entity.radius * 0.6,
+            (Math.random() - 0.5) * 8,
+            (Math.random() - 0.5) * 1.5,
+            jetSpeed,
+            Math.random() > 0.4 ? "#a5f3fc" : (entity.color || "#ff6600"),
+            0.036
+          );
+        }
+      } else if (entity.type !== "nebula") {
         let meshZ = entity.z || 0;
         let meshGravityZ = 0;
         celestialEntitiesRef.current.forEach((other) => {
-          if (other.isDestroyed || other === entity) return;
+          if (other.isDestroyed || other.isOutgoing || other === entity) return;
           const odx = other.x - entity.x;
           const ody = other.y - entity.y;
           const odist = Math.sqrt(odx * odx + ody * ody) || 1;
           const range = other.radius * (other.type === "blackhole" ? 3.5 : 2.0);
           if (odist < range) {
             const intensity = (range - odist) / range;
-            const pullDepth = other.type === "blackhole" ? 180 : 45;
+            const pullDepth = (other.type === "blackhole" ? 180 : 45) * choreography.gravityMultiplier;
             meshGravityZ += Math.pow(intensity, 1.8) * pullDepth;
           }
         });
         meshZ += meshGravityZ;
 
-        const mouseNormX = (mouseRef.current.x - ww / 2) / (ww / 2 || 1);
-        const mouseNormY = (mouseRef.current.y - wh / 2) / (wh / 2 || 1);
-        const parallaxFactor = 0.15;
-        const parallaxX = mouseNormX * meshZ * parallaxFactor;
-        const parallaxY = mouseNormY * meshZ * parallaxFactor;
-
-        inst.mesh.position.set(wx + parallaxX, wy + parallaxY, meshZ);
+        inst.mesh.position.set(wx, wy, meshZ);
+        entity.worldX = inst.mesh.position.x;
+        entity.worldY = inst.mesh.position.y;
+        entity.worldZ = inst.mesh.position.z;
       } else {
         inst.mesh.position.set(wx, wy, -30);
+        entity.worldX = inst.mesh.position.x;
+        entity.worldY = inst.mesh.position.y;
+        entity.worldZ = inst.mesh.position.z;
         if (cameraRef.current) {
           inst.mesh.rotation.copyFrom(cameraRef.current.rotation);
         }
       }
 
-      const isPulse = isShockwaveActiveRef.current;
-      const objSpeedMult = (objectParticleSpeedRef.current ?? 0.15) / 0.15;
+      const isPulse = isShockwaveActiveRef.current || choreography.climaxPulse > 0.25;
+      const effectiveSpeedMult = objSpeedMult * choreography.velocityMultiplier;
+      const climaxBoost = choreography.climaxPulse * 0.22 + choreography.tension * 0.06;
       inst.mesh.getChildMeshes().forEach((child) => {
         if (child.name === "planet_sphere" || child.name === "star_core" || child.name === "galaxy_core") {
-          const spinBase = (child.name === "star_core" ? 0.008 : 0.0042) * objSpeedMult;
-          child.rotation.y += spinBase + (musicBands.mid * 0.02 + musicBands.treble * 0.01) * objSpeedMult;
+          const spinBase = (child.name === "star_core" ? 0.008 : 0.0042) * effectiveSpeedMult;
+          child.rotation.y += spinBase + (musicBands.mid * 0.02 + musicBands.treble * 0.01) * effectiveSpeedMult;
         } else if (child.name === "planet_clouds_inner") {
-          child.rotation.y += (0.0055 + musicBands.mid * 0.01) * objSpeedMult;
-          child.rotation.x += 0.0002 * objSpeedMult;
+          child.rotation.y += (0.0055 + musicBands.mid * 0.01) * effectiveSpeedMult;
+          child.rotation.x += 0.0002 * effectiveSpeedMult;
         } else if (child.name === "planet_clouds_outer") {
-          child.rotation.y -= (0.0035 + musicBands.treble * 0.01) * objSpeedMult;
-          child.rotation.z += 0.0003 * objSpeedMult;
+          child.rotation.y -= (0.0035 + musicBands.treble * 0.01) * effectiveSpeedMult;
+          child.rotation.z += 0.0003 * effectiveSpeedMult;
         } else if (child.name === "planet_aurora_north" || child.name === "planet_aurora_south") {
-          child.rotation.z += 0.008 * objSpeedMult;
+          child.rotation.z += 0.008 * effectiveSpeedMult;
         } else if (child.name === "planet_shield") {
-          child.rotation.y += 0.002 * objSpeedMult;
-          child.rotation.x += 0.001 * objSpeedMult;
-          const shieldPulse = 1.0 + Math.sin(now * 0.003) * 0.025 + musicAmp * 0.04;
+          child.rotation.y += 0.002 * effectiveSpeedMult;
+          child.rotation.x += 0.001 * effectiveSpeedMult;
+          const shieldPulse = 1.0 + Math.sin(now * 0.003) * 0.025 + musicAmp * 0.04 + climaxBoost * 0.15;
           child.scaling.set(shieldPulse, shieldPulse, shieldPulse);
         } else if (child.name.indexOf("galaxy_ellipsoid_bg") !== -1) {
-          child.rotation.z -= (0.0016 + (isPulse ? 0.012 : 0) + musicBands.bass * 0.006) * objSpeedMult;
+          child.rotation.z -= (0.0016 + (isPulse ? 0.012 : 0) + musicBands.bass * 0.006) * effectiveSpeedMult;
         } else if (child.name.indexOf("galaxy_ellipsoid") !== -1) {
-          child.rotation.z += (0.0024 + (isPulse ? 0.016 : 0) + musicBands.mid * 0.008) * objSpeedMult;
+          child.rotation.z += (0.0024 + (isPulse ? 0.016 : 0) + musicBands.mid * 0.008) * effectiveSpeedMult;
         } else if (child.name.indexOf("accretion_layer_1") !== -1) {
-          child.rotation.z += (0.007 + musicBands.bass * 0.005) * objSpeedMult;
-          const pulse = 1.0 + Math.sin(Date.now() * 0.001) * 0.012 + musicAmp * 0.02;
+          child.rotation.z += (0.012 + musicBands.bass * 0.01) * effectiveSpeedMult;
+          const pulse = 1.0 + Math.sin(Date.now() * 0.002) * 0.015 + musicAmp * 0.035 + climaxBoost * 0.25;
           child.scaling.set(pulse, pulse, pulse);
         } else if (child.name.indexOf("accretion_layer_2") !== -1) {
-          child.rotation.z -= (0.011 + musicBands.mid * 0.005) * objSpeedMult;
-          const pulse = 1.0 + Math.cos(Date.now() * 0.0008) * 0.01 + musicAmp * 0.015;
+          child.rotation.z -= (0.008 + musicBands.mid * 0.006) * effectiveSpeedMult;
+          const pulse = 1.0 + Math.cos(Date.now() * 0.0015) * 0.018 + musicAmp * 0.025 + climaxBoost * 0.2;
           child.scaling.set(pulse, pulse, pulse);
         } else if (child.name.indexOf("gravitational_lensing") !== -1) {
-          child.rotation.z += (0.003 + musicBands.bass * 0.003) * objSpeedMult;
-          const pulse = 1.0 + Math.sin(Date.now() * 0.0006) * 0.015 + musicAmp * 0.02;
+          child.rotation.z += (0.003 + musicBands.bass * 0.003) * effectiveSpeedMult;
+          const pulse = 1.0 + Math.sin(Date.now() * 0.001) * 0.015 + musicAmp * 0.025 + climaxBoost * 0.18;
           child.scaling.set(pulse, pulse, pulse);
+        } else if (child.name.indexOf("bh_photon_ring") !== -1) {
+          child.rotation.z += (0.025 + musicBands.treble * 0.015) * effectiveSpeedMult;
+          const pulse = 1.0 + Math.sin(Date.now() * 0.004) * 0.03 + musicBands.treble * 0.06 + climaxBoost * 0.35;
+          child.scaling.set(pulse, pulse, pulse);
+        } else if (child.name.indexOf("bh_jet_north") !== -1 || child.name.indexOf("bh_jet_south") !== -1) {
+          child.rotation.y += (0.02 + musicAmp * 0.03) * effectiveSpeedMult;
+          const jetPulse = 1.0 + Math.sin(Date.now() * 0.006) * 0.08 + musicAmp * 0.35 + climaxBoost * 0.45;
+          child.scaling.set(jetPulse, 1.0 + musicAmp * 0.45 + climaxBoost * 0.6, jetPulse);
+        } else if (child.name.indexOf("bh_jet_pinch") !== -1) {
+          const pinchWave = 1.0 + Math.sin(Date.now() * 0.008 + child.position.y * 0.04) * 0.16 + climaxBoost * 0.25;
+          child.scaling.set(pinchWave, pinchWave, pinchWave);
+        } else if (child.name.indexOf("bh_ergosphere") !== -1) {
+          child.rotation.z += 0.015 * effectiveSpeedMult;
+          const ergoPulse = 1.0 + Math.sin(Date.now() * 0.003) * 0.05 + musicBands.bass * 0.07 + climaxBoost * 0.3;
+          child.scaling.set(ergoPulse, ergoPulse, ergoPulse);
         } else if (child.name.indexOf("nebula_sphere_1") !== -1) {
-          child.rotation.y += (0.0008 + musicBands.mid * 0.003) * objSpeedMult;
-          child.rotation.x += (0.0004 + musicBands.mid * 0.002) * objSpeedMult;
+          child.rotation.y += (0.0008 + musicBands.mid * 0.003) * effectiveSpeedMult;
+          child.rotation.x += (0.0004 + musicBands.mid * 0.002) * effectiveSpeedMult;
         } else if (child.name.indexOf("nebula_sphere_2") !== -1) {
-          child.rotation.y -= (0.0006 + musicBands.mid * 0.002) * objSpeedMult;
-          child.rotation.z += (0.0005 + musicBands.mid * 0.001) * objSpeedMult;
+          child.rotation.y -= (0.0006 + musicBands.mid * 0.002) * effectiveSpeedMult;
+          child.rotation.z += (0.0005 + musicBands.mid * 0.001) * effectiveSpeedMult;
         } else {
-          child.rotation.z += (0.003 + musicBands.mid * 0.005) * objSpeedMult;
+          child.rotation.z += (0.003 + musicBands.mid * 0.005) * effectiveSpeedMult;
         }
       });
     });
 
-    let targetGroupOpacity = isInterstellarRef.current ? 1.0 : 0.32;
+    let targetGroupOpacity = isInterstellarRef.current ? 1.0 : 0.95;
     if (stageRef.current === 0 && !isInterstellarRef.current) {
-      targetGroupOpacity = 0.45 + screensaverOpacityRef.current * 0.55;
+      targetGroupOpacity = 0.95;
     } else {
       const stageChangeElapsed = Date.now() - lastStageChangeRef.current;
       if (!isInterstellarRef.current) {
@@ -672,7 +691,7 @@ export function updateCelestial3DMeshes(
             targetGroupOpacity = 0.0;
           } else {
             const fadeProgress = (stageChangeElapsed - 3000) / 1000;
-            targetGroupOpacity = 0.32 * fadeProgress;
+            targetGroupOpacity = 0.95 * fadeProgress;
           }
         }
       }
@@ -682,9 +701,13 @@ export function updateCelestial3DMeshes(
       celestialGroupRef.current.getChildMeshes(false).forEach((child) => {
         if (child.material && child.material instanceof BABYLON.StandardMaterial) {
           const mat = child.material;
-          if (child.name.startsWith("event_horizon_")) {
+          if (child.name === "event_horizon_core_3d") {
             mat.needDepthBufferWrite = true;
             mat.alpha = 1.0;
+            return;
+          }
+          if (child.name.indexOf("bh_jet") !== -1 || child.name.indexOf("bh_photon") !== -1) {
+            mat.alpha = Math.min(1.0, 0.92 + musicAmp * 0.25);
             return;
           }
 
