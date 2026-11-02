@@ -335,7 +335,7 @@ export async function startWormholeTransit(
           }
         });
 
-        // Cut inside the throat; keep the remap covered through the camera handoff.
+        // Queue the next system; the pan director remaps after this transit releases the camera.
         if (progress >= 0.82 && !hasSpawnedNewSystem) {
           hasSpawnedNewSystem = true;
           const ww = window.innerWidth;

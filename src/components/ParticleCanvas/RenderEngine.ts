@@ -99,8 +99,8 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
 
   const now = Date.now();
   const reducedMotion = ctx.remeshCover.reducedMotion;
-  if (ctx.remeshCover.covered) {
-    // The new camera pose is installed under the cut, before any reveal.
+  if (ctx.remeshCover.phase !== "idle") {
+    // Install the destination pose behind the foreground moon before returning.
     ctx.transitionActiveRef.current = false;
     ctx.transitionStartPosRef.current = null;
     ctx.cameraShakeRef.current = 0;
@@ -726,7 +726,7 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
         const sTargetY = isNaN(finalTargetY) ? 0 : finalTargetY;
         const sTargetZ = isNaN(finalTargetZ) ? -cameraZ : finalTargetZ;
 
-        const cameraBlend = ctx.remeshCover.covered ? 1 : 0.032;
+        const cameraBlend = (ctx.remeshCover.covered || ctx.remeshCover.phase === "returning") ? 1 : 0.032;
         camera.position.x += (sTargetX - camera.position.x) * cameraBlend + shakeX;
         camera.position.y += (sTargetY - camera.position.y) * cameraBlend + shakeY;
         camera.position.z += (sTargetZ - camera.position.z) * cameraBlend + shakeZ;
@@ -752,7 +752,7 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
             lockZ
           )
         );
-        camera.rotation.z += (0 - camera.rotation.z) * (ctx.remeshCover.covered ? 1 : 0.06);
+        camera.rotation.z += (0 - camera.rotation.z) * ((ctx.remeshCover.covered || ctx.remeshCover.phase === "returning") ? 1 : 0.06);
       }
 
       // Subtle optical focal breathing during deep-space transitions and climax

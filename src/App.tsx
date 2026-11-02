@@ -152,7 +152,7 @@ export default function App() {
       (window as any).__cosmicCanvas.switchToScene(targetArch, 'morph', targetStage);
     }
 
-    // The canvas now cuts immediately; keep the HUD on the same selected stage.
+    // Keep the HUD selection immediate while the camera pans to the destination.
     setStage(targetStage);
     setVoyageCycle((c) => c + 1);
     audio.playStageSwell(targetStage);

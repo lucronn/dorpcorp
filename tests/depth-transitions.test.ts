@@ -51,26 +51,36 @@ function assertVolume(points: number[][], minDet = 0.00015) {
 }
 
 for (const reduced of [false, true]) {
-  test(`cover holds during reassignment, dispersion and settling (reduced motion ${reduced})`, () => {
-    const writes: number[] = [];
-    const cover = new RemeshCover(opacity => writes.push(opacity));
+  test(`remaps wait for a rendered pan/veil and two formed frames (reduced motion ${reduced})`, () => {
+    const cover = new RemeshCover();
     cover.reducedMotion = reduced;
     const particles = [particle()];
-    cover.begin(0);
-    assert.equal(writes.at(-1), 1, "cover is synchronous before target changes");
-    particles[0].targetX = 999;
-    cover.afterRender(false, 9000);
-    assert.equal(cover.opacity, 1, "elapsed time cannot reveal a remapping scene");
-    cover.remapped(particles);
-    cover.afterRender(false, 15000);
-    assert.equal(cover.opacity, 1, "unsettled particles remain fully occluded");
+    let writes = 0;
+    cover.request("particles", () => {
+      assert(cover.isCovered(!reduced), "target writes must occur behind the moon or veil");
+      particles[0].targetX = 999;
+      cover.remapped(particles);
+      writes++;
+    });
+    cover.advance(0);
+    cover.advance(9000);
+    assert(cover.panProgress < 0.2, "a stalled tab cannot skip the departure");
+    assert.equal(writes, 0);
+    cover.flush(true);
+    assert.equal(writes, 0, "coverage must actually render before remapping");
+    cover.afterRender(true, !reduced);
+    cover.flush(!reduced);
+    assert.equal(writes, 1);
+    assert.equal(cover.opacity, reduced ? 1 : 0, "normal motion never needs a black overlay");
+    cover.afterRender(false, !reduced);
+    cover.advance(15000);
+    assert.equal(cover.phase, "settling", "elapsed time cannot reveal pending work");
     settleRemappedParticle(particles[0]);
-    cover.afterRender(true, 16000);
-    assert.equal(cover.phase, "settling", "one frame is insufficient");
-    cover.afterRender(true, 16016);
-    assert.equal(cover.phase, "revealing");
-    assert.equal(cover.opacity, 1);
-    cover.afterRender(true, 16200);
+    cover.afterRender(true, !reduced);
+    assert.equal(cover.phase, "settling", "one formed frame is insufficient");
+    cover.afterRender(true, !reduced);
+    assert.equal(cover.phase, "returning");
+    for (let now = 15016; now < 16000; now += 16) cover.advance(now);
     assert.equal(cover.phase, "idle");
     assert.equal(cover.opacity, 0);
     assert.equal(particles[0].vx, 0);
@@ -78,20 +88,49 @@ for (const reduced of [false, true]) {
   });
 }
 
-test("rapid remap restarts cover; a stalled/backgrounded frame never unmasks pending work", () => {
+test("coverage loss, rapid navigation and reversed return cannot expose pending work", () => {
   const cover = new RemeshCover();
   const particles = [particle()];
-  cover.begin(0); cover.remapped(particles);
-  cover.afterRender(true, 120); cover.afterRender(true, 136); cover.afterRender(true, 200);
-  assert(cover.opacity < 1);
-  cover.begin(210); cover.remapped(particles);
-  cover.afterRender(false, 60000);
-  assert.equal(cover.opacity, 1);
-  cover.afterRender(true, 60016);
-  assert.equal(cover.phase, "settling");
+  let selected = "old";
+  cover.request("scene", () => { selected = "stale"; });
+  cover.cancelPending();
+  cover.request("scene", () => { selected = "latest"; cover.remapped(particles); });
+  cover.afterRender(true, true);
+  cover.flush(false);
+  assert.equal(selected, "old", "resize/camera coverage must be revalidated before mutations");
+  cover.flush(true);
+  assert.equal(selected, "latest");
+  cover.afterRender(true, false);
+  cover.afterRender(true, true);
+  assert.equal(cover.phase, "settling", "coverage loss resets formed-frame count");
+  cover.afterRender(true, true);
+  assert.equal(cover.phase, "returning");
+  cover.request("scene", () => cover.remapped(particles));
+  cover.advance(60000);
+  cover.afterRender(false, false);
+  cover.flush(false);
+  assert.equal(cover.phase, "panning");
+  assert.equal(cover.pendingJobs, 1);
 });
 
-test("new entities are already full size at their final XYZ under the cut", () => {
+test("reduced motion can be enabled during a pan without a long hold", () => {
+  const cover = new RemeshCover();
+  cover.request("scene", () => {});
+  cover.advance(0);
+  cover.advance(32);
+  cover.reducedMotion = true;
+  cover.advance(48);
+  assert.equal(cover.mode, "veil");
+  assert.equal(cover.opacity, 1);
+  cover.afterRender(true, false);
+  cover.flush(false);
+  cover.afterRender(true, false);
+  cover.afterRender(true, false);
+  cover.advance(108);
+  assert.equal(cover.phase, "idle");
+});
+
+test("new entities are already full size at their final XYZ behind occlusion", () => {
   const current: CelestialEntity[] = [{ type: "planet", x: 0, y: 0, radius: 20, color: "#fff", isOutgoing: true }];
   const active = { current: true }, started = { current: 100 };
   transitionToNewEntities(current, [{ type: "galaxy", x: 50, y: 80, z: 120, radius: 40, scale: 0.02, color: "#fff" }], 0, 0, active, started);
@@ -118,14 +157,16 @@ for (const [archetype, build, types] of layouts) {
         const particles = Array.from({ length: 6000 }, particle);
         mapParticlesToInterstellar(width, 800, { current: entities }, { current: archetype }, { current: particles }, { current: -1 }, -1);
         const cover = new RemeshCover();
-        cover.begin(0); cover.remapped(particles);
+        cover.request("particles", () => cover.remapped(particles));
+        cover.afterRender(true, true); cover.flush(true);
         const ctx = context(entities);
         ctx.currentW = width;
         // Even at speed zero the hidden remap must finish, including typography.
         ctx.objectParticleSpeed = 0;
         const positions = step(particles, ctx);
         assert(particles.every(p => !p.needsRemesh));
-        assert.equal(cover.opacity, 1);
+        assert(cover.covered);
+        assert.equal(cover.opacity, 0);
         for (let i = 0; i < particles.length; i++) {
           assert(Math.abs(positions[i * 3 + 1] + particles[i].targetY - 400) < 0.001);
         }
@@ -156,4 +197,30 @@ test("miniature spiral and elliptical background galaxies occupy 3D volume", () 
     });
     assertVolume(particles.map(p => [p.targetX, p.targetY, p.targetZ!]));
   }
+});
+
+test("resize work maps after replacement entities and coverage loss fails closed", () => {
+  const cover = new RemeshCover();
+  const order: string[] = [];
+  cover.request("particles", () => order.push("particles"));
+  cover.request("entities", () => order.push("entities"));
+  cover.afterRender(true, true);
+  cover.flush(true);
+  assert.deepEqual(order, ["entities", "particles"]);
+  cover.protect(false);
+  assert.equal(cover.mode, "veil");
+  assert.equal(cover.opacity, 1);
+});
+
+test("superseding a departure with an FX request can finish the canceled pan", () => {
+  const cover = new RemeshCover();
+  cover.request("entities", () => assert.fail("superseded work must not run"));
+  cover.cancelPending();
+  cover.afterRender(true, true);
+  cover.flush(true);
+  cover.afterRender(true, true);
+  cover.afterRender(true, true);
+  cover.advance(0);
+  cover.advance(64);
+  assert.equal(cover.phase, "idle");
 });

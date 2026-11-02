@@ -34,6 +34,7 @@ import {
 import { updateHudTexture } from "./ParticleCanvas/HUDManager";
 import { simulateParticles } from "./ParticleCanvas/ParticleSimulationEngine";
 import { RemeshCover } from "./ParticleCanvas/RemeshCover";
+import { RemeshPanAway } from "./ParticleCanvas/RemeshPanAway";
 import { executeRenderFrame } from "./ParticleCanvas/RenderEngine";
 import { buildParticleSystem } from "./ParticleCanvas/ParticleSystemBuilder";
 import { setupParticleCanvasEvents } from "./ParticleCanvas/ParticleCanvasEvents";
@@ -77,6 +78,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     });
   }
   const remeshCover = remeshCoverRef.current;
+  const pendingEffectRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -353,8 +355,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     supernovaX?: number,
     supernovaY?: number
   ) => {
-    remeshCover.begin();
-    _generateInterstellarScene(
+    remeshCover.request("entities", () => _generateInterstellarScene(
       width,
       height,
       isInterstellarRef.current,
@@ -369,7 +370,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       supernovaX,
       supernovaY,
       onSequenceGenerated
-    );
+    ), !archetypeRef.current);
   };
 
   const transitionToNewEntities = (
@@ -392,31 +393,33 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     triggerBurst = false,
     skipTextUpdate = false
   ) => {
-    remeshCover.begin();
-    _mapParticlesToInterstellar(
-      width,
-      height,
-      celestialEntitiesRef,
-      archetypeRef,
-      particlesRef,
-      tailStartIndexRef,
-      stageRef.current,
-      triggerBurst,
-      skipTextUpdate
-    );
-    remeshCover.remapped(particlesRef.current);
+    remeshCover.request("particles", () => {
+      _mapParticlesToInterstellar(
+        width,
+        height,
+        celestialEntitiesRef,
+        archetypeRef,
+        particlesRef,
+        tailStartIndexRef,
+        stageRef.current,
+        triggerBurst,
+        skipTextUpdate
+      );
+      remeshCover.remapped(particlesRef.current);
+    }, !archetypeRef.current);
   };
 
   const mapParticlesToStage = (targetStage: number, triggerBurst: boolean) => {
-    remeshCover.begin();
-    _mapParticlesToStage(
-      targetStage,
-      triggerBurst,
-      stageTargetsRef,
-      particlesRef,
-      tailStartIndexRef
-    );
-    remeshCover.remapped(particlesRef.current);
+    remeshCover.request("particles", () => {
+      _mapParticlesToStage(
+        targetStage,
+        triggerBurst,
+        stageTargetsRef,
+        particlesRef,
+        tailStartIndexRef
+      );
+      remeshCover.remapped(particlesRef.current);
+    }, !archetypeRef.current);
   };
 
   const internalTransitionSMRef = useRef<CosmicTransitionStateMachine>(new CosmicTransitionStateMachine());
@@ -512,6 +515,10 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   };
 
   const triggerSupernovaTransition = (x?: number, y?: number) => {
+    if (remeshCover.phase !== "idle") {
+      pendingEffectRef.current = () => triggerSupernovaTransition(x, y);
+      return;
+    }
     if (inspiralIntervalRef.current) {
       clearInterval(inspiralIntervalRef.current);
       inspiralIntervalRef.current = null;
@@ -696,7 +703,9 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     // Reset climax timestamp so the incoming scene begins in Act I (CALM_GENESIS)
     (window as any).__lastClimaxTime = 0;
 
-    // Cut to a fully formed shot; typography and celestial targets share one remap.
+    // Queue one hidden remap for both typography and the celestial composition.
+    remeshCover.cancelPending();
+    pendingEffectRef.current = null;
     stageRef.current = targetStage;
     lastStageChangeRef.current = Date.now();
     audio.playDeepThunderRoll(0.8, 0.3);
@@ -713,6 +722,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     targetStage?: number
   ) => {
     const assignedStage = targetStage !== undefined ? targetStage : stageRef.current;
+    remeshCover.cancelPending();
+    pendingEffectRef.current = null;
     cancelTransitRef.current?.();
     isTransitActiveRef.current = false;
     transitStartTimeRef.current = 0;
@@ -756,6 +767,10 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     targetPos?: BABYLON.Vector3,
     viewDir?: BABYLON.Vector3
   ) => {
+    if (remeshCover.phase !== "idle") {
+      pendingEffectRef.current = () => { void startWormholeTransit(targetPos, viewDir); };
+      return;
+    }
     if (remeshCover.reducedMotion) {
       generateInterstellarScene(window.innerWidth, window.innerHeight, true);
       mapParticlesToInterstellar(window.innerWidth, window.innerHeight);
@@ -854,9 +869,10 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       mappingTimersRef.current.forEach(clearTimeout);
       mappingTimersRef.current = [];
 
-      remeshCover.begin();
-      _updateTypographyStage(stage, false, particlesRef, window.innerWidth, window.innerHeight);
-      remeshCover.remapped(particlesRef.current);
+      remeshCover.request("typography", () => {
+        _updateTypographyStage(stage, false, particlesRef, window.innerWidth, window.innerHeight);
+        remeshCover.remapped(particlesRef.current);
+      }, !archetypeRef.current);
     }
 
     updateHudTexture(stage, hudPlaneRef.current, hudTextureRef.current);
@@ -883,6 +899,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       cameraZRef.current
     );
     const engine = rendererRef.current!;
+    const panAway = new RemeshPanAway(scene, camera);
 
     // Postprocessing Composer setup for cinematic Bloom, ACES Tone Mapping, Chromatic Aberration, and Grain
     const pipeline = new BABYLON.DefaultRenderingPipeline("pipeline", true, scene, [camera]);
@@ -1252,12 +1269,27 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     };
 
     engine.runRenderLoop(() => {
+      panAway.restore();
       render();
+      remeshCover.advance(performance.now(), !isTransitActiveRef.current);
+      if (!isTransitActiveRef.current) {
+        panAway.apply(remeshCover, celestialEntitiesRef.current, window.innerWidth, window.innerHeight);
+        const occluded = panAway.coverage().occluded;
+        remeshCover.protect(occluded);
+        remeshCover.flush(occluded);
+      }
       scene.render();
       if (remeshCover.phase !== "idle") {
         remeshCover.afterRender(
-          !isTransitActiveRef.current && !particlesRef.current.some(p => p.needsRemesh) && scene.isReady()
+          !isTransitActiveRef.current && !particlesRef.current.some(p => p.needsRemesh) && scene.isReady(),
+          panAway.coverage().occluded
         );
+      }
+      // FX camera owners wait for an in-flight remap/return, including rapid input.
+      if (remeshCover.phase === "idle" && pendingEffectRef.current) {
+        const effect = pendingEffectRef.current;
+        pendingEffectRef.current = null;
+        effect();
       }
     });
 
@@ -1331,6 +1363,11 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       getTransitionCover: () => ({
         phase: remeshCover.phase,
         opacity: remeshCover.opacity,
+        mode: remeshCover.mode,
+        panProgress: remeshCover.panProgress,
+        pendingJobs: remeshCover.pendingJobs,
+        revision: remeshCover.revision,
+        ...panAway.diagnostics(),
         pendingParticles: particlesRef.current.filter(p => p.needsRemesh).length,
         reducedMotion: remeshCover.reducedMotion,
         transitActive: isTransitActiveRef.current,
@@ -1389,6 +1426,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
 
     return () => {
       cancelTransitRef.current?.();
+      pendingEffectRef.current = null;
+      panAway.dispose();
       cleanupEvents();
       mappingTimersRef.current.forEach(clearTimeout);
       mappingTimersRef.current = [];
@@ -1409,7 +1448,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     <div className="relative w-full h-full">
       <canvas ref={canvasRef} className="block w-full h-full" id="canvas-babylon" />
       <div ref={coverElementRef} data-transition-cover data-phase="idle" aria-hidden="true"
-        style={{ position: "absolute", inset: 0, background: "#000", opacity: 0, pointerEvents: "none" }} />
+        style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 70% 30%, #243549, #101923)", opacity: 0, pointerEvents: "none" }} />
     </div>
   );
 };
