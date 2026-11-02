@@ -1,35 +1,33 @@
 import type { Particle } from "./types";
 
 export type CoverPhase = "idle" | "panning" | "remapping" | "settling" | "returning";
-export type CoverMode = "pan" | "veil";
+export type CoverMode = "pan" | "cut";
 
-/** Render-driven handoff: no target writes until an occluded frame has been presented. */
+/** Render-driven handoff. "Covered" means outside the camera frustum, never opacity. */
 export class RemeshCover {
   phase: CoverPhase = "idle";
   mode: CoverMode = "pan";
-  opacity = 0;
+  readonly opacity = 0; // Kept for the existing debug API; there is no cover surface.
   panProgress = 0;
   reducedMotion = false;
   revision = 0;
+  departure = 0;
   private lastFrame: number | null = null;
   private formedFrames = 0;
   private renderedCovered = false;
   private jobs = new Map<string, () => void>();
 
-  constructor(private paint: (opacity: number, phase: CoverPhase) => void = () => {}) {}
-
   request(key: string, mutate: () => void, startup = false) {
     this.jobs.set(key, mutate);
-    if (this.phase === "idle") {
-      this.mode = this.reducedMotion || startup ? "veil" : "pan";
+    if (this.phase === "idle" || this.phase === "returning") {
+      this.mode = this.reducedMotion || startup ? "cut" : "pan";
       this.panProgress = 0;
       this.lastFrame = null;
+      this.departure++;
     }
     this.phase = "panning";
     this.formedFrames = 0;
     this.renderedCovered = false;
-    this.opacity = this.mode === "veil" ? 1 : 0;
-    this.paint(this.opacity, this.phase);
   }
 
   /** A newer navigation supersedes queued work, including delayed FX rebirths. */
@@ -44,22 +42,19 @@ export class RemeshCover {
     if (this.phase === "idle" || !canPan) return;
     // Honor a live preference change without finishing a large camera movement.
     if (this.reducedMotion && this.mode === "pan") {
-      this.mode = "veil";
-      this.opacity = 1;
+      this.mode = "cut";
       this.renderedCovered = false;
     }
-    if (this.phase === "panning") this.panProgress = Math.min(1, this.panProgress + dt / 420);
+    if (this.phase === "panning") this.panProgress = this.mode === "cut" ? 1 : Math.min(1, this.panProgress + dt / 420);
     if (this.phase === "returning") {
-      if (this.mode === "veil") this.opacity = Math.max(0, this.opacity - dt / 60);
-      else this.panProgress = Math.max(0, this.panProgress - dt / 520);
-      if (this.mode === "veil" ? this.opacity === 0 : this.panProgress === 0) this.phase = "idle";
+      this.panProgress = Math.max(0, this.panProgress - dt / (this.mode === "cut" ? 100 : 520));
+      if (this.panProgress === 0) this.phase = "idle";
     }
-    this.paint(this.opacity, this.phase);
   }
 
-  isCovered(occluded: boolean) { return this.opacity === 1 || occluded; }
+  isCovered(outOfFrustum: boolean) { return outOfFrustum; }
 
-  /** Called before drawing, after the camera/occluder pose is installed. */
+  /** Called before drawing, after the off-frustum camera pose is installed. */
   flush(occluded: boolean) {
     if (this.phase !== "panning" || !this.renderedCovered || !this.isCovered(occluded)) return;
     this.phase = "remapping";
@@ -73,16 +68,6 @@ export class RemeshCover {
     this.revision++;
     this.phase = "settling";
     this.formedFrames = 0;
-    this.paint(this.opacity, this.phase);
-  }
-
-  /** Fail closed if a resize/context change invalidates the occluder mid-remap. */
-  protect(occluded: boolean) {
-    if (this.covered && !this.isCovered(occluded)) {
-      this.mode = "veil";
-      this.opacity = 1;
-      this.paint(this.opacity, this.phase);
-    }
   }
 
   remapped(particles: Particle[]) {
@@ -99,7 +84,6 @@ export class RemeshCover {
       this.formedFrames = formed && this.renderedCovered ? this.formedFrames + 1 : 0;
       if (this.formedFrames >= 2 && this.jobs.size === 0) this.phase = "returning";
     }
-    this.paint(this.opacity, this.phase);
   }
 }
 

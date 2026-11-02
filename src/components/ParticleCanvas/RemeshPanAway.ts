@@ -1,137 +1,136 @@
 import * as BABYLON from "@babylonjs/core";
 import type { RemeshCover } from "./RemeshCover";
-import type { CelestialEntity } from "./types";
+import type { CelestialEntity, Particle } from "./types";
+import { DeepSpaceField } from "./DeepSpaceField";
 
 const ease = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
-type Pose = { position: BABYLON.Vector3; rotation: BABYLON.Vector3; fov: number };
+type Pose = { position: BABYLON.Vector3; rotation: BABYLON.Quaternion; fov: number };
 
-/** A persistent foreground moon, independent of the field whose targets are replaced. */
+/** Pan/dolly off the composition, hold on space, then return to a formed scene.
+ * No occluder is drawn. The entire mutable volume must be behind the near plane. */
 export class RemeshPanAway {
-  readonly moon: BABYLON.Mesh;
-  private material: BABYLON.ShaderMaterial;
+  readonly stars: DeepSpaceField;
   private base: Pose | null = null;
-  private revision = -1;
+  private source: Pose | null = null;
+  private away: Pose | null = null;
+  private presented: Pose | null = null;
+  private departure = -1;
   private side = 1;
-  private angle = 0;
-  private radius = 0;
-  private distance = 80;
-  private source = "foreground moon";
+  private holding = false;
+  private corners: BABYLON.Vector3[] = [];
 
   constructor(private scene: BABYLON.Scene, private camera: BABYLON.TargetCamera) {
-    this.moon = BABYLON.MeshBuilder.CreateSphere("remesh-foreground-moon", { diameter: 2, segments: 64 }, scene);
-    this.moon.isPickable = false;
-    // This dedicated foreground group cannot be pierced by transparent particle draws.
-    this.moon.renderingGroupId = 3;
-    scene.setRenderingAutoClearDepthStencil(3, true, true, true);
-    this.material = new BABYLON.ShaderMaterial("remesh-moon-surface", scene, {
-      vertexSource: `precision highp float;
-        attribute vec3 position; attribute vec3 normal;
-        uniform mat4 worldViewProjection;
-        varying vec3 vSurface; varying vec3 vNormal;
-        void main() { vSurface = position; vNormal = normal;
-          gl_Position = worldViewProjection * vec4(position, 1.0); }`,
-      fragmentSource: `precision highp float;
-        varying vec3 vSurface; varying vec3 vNormal; uniform vec3 tint;
-        void main() {
-          vec3 n = normalize(vNormal);
-          float ridges = sin(vSurface.x * 37.0 + sin(vSurface.y * 19.0) * 3.0)
-            * sin(vSurface.z * 31.0 + vSurface.y * 11.0);
-          float fine = sin(vSurface.x * 163.0) * sin(vSurface.y * 117.0) * sin(vSurface.z * 139.0);
-          float light = 0.30 + 0.55 * max(0.0, dot(n, normalize(vec3(-0.6, 0.7, -0.5))));
-          vec3 rock = tint * (light + ridges * 0.045 + fine * 0.018);
-          gl_FragColor = vec4(rock, 1.0);
-        }`,
-    }, { attributes: ["position", "normal"], uniforms: ["worldViewProjection", "tint"] });
-    this.material.setColor3("tint", new BABYLON.Color3(0.22, 0.30, 0.40));
-    this.moon.material = this.material;
-    this.moon.setEnabled(false);
+    this.stars = new DeepSpaceField(scene);
   }
 
   private snapshot(): Pose {
-    return { position: this.camera.position.clone(), rotation: this.camera.rotation.clone(), fov: this.camera.fov };
+    return { position: this.camera.position.clone(),
+      rotation: BABYLON.Quaternion.FromEulerVector(this.camera.rotation), fov: this.camera.fov };
   }
 
-  /** Restore the director's unpanned pose before its next simulation/camera update. */
-  restore() {
-    if (!this.base) return;
-    this.camera.position.copyFrom(this.base.position);
-    this.camera.rotation.copyFrom(this.base.rotation);
-    this.camera.fov = this.base.fov;
+  private install(pose: Pose) {
+    this.camera.position.copyFrom(pose.position);
+    this.camera.rotation.copyFrom(pose.rotation.toEulerAngles());
+    this.camera.fov = pose.fov;
+    this.camera.getViewMatrix(true);
   }
 
-  apply(cover: RemeshCover, entities: CelestialEntity[], width: number, height: number) {
-    if (cover.phase === "idle" || cover.mode === "veil") {
-      this.moon.setEnabled(false);
-      this.base = null;
+  /** Give the scene director its unpanned pose before simulation. */
+  restore() { if (this.base) this.install(this.base); }
+
+  /** Bound the actual uploaded particles and meshes, including trails and glows.
+   * Ambient stars are independent of remapping and deliberately stay in view. */
+  private measure(particles: Particle[], positions: Float32Array, colors: Float32Array) {
+    const min = new BABYLON.Vector3(Infinity, Infinity, Infinity);
+    const max = new BABYLON.Vector3(-Infinity, -Infinity, -Infinity);
+    const include = (x: number, y: number, z: number) => {
+      if (!Number.isFinite(x + y + z)) return;
+      min.x = Math.min(min.x, x); min.y = Math.min(min.y, y); min.z = Math.min(min.z, z);
+      max.x = Math.max(max.x, x); max.y = Math.max(max.y, y); max.z = Math.max(max.z, z);
+    };
+    particles.forEach((p, i) => {
+      if (!p.isCosmicAmbient && colors[i * 4 + 3] > 0 && (!p.isTail || p.life > 0)) {
+        include(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+      }
+    });
+    for (const mesh of this.scene.meshes) {
+      if (mesh === this.stars.mesh || mesh.name === "pointsMesh" || !mesh.isEnabled() ||
+          !mesh.isVisible || mesh.visibility === 0 || !mesh.getTotalVertices()) continue;
+      mesh.computeWorldMatrix(true);
+      const box = mesh.getBoundingInfo().boundingBox;
+      include(box.minimumWorld.x, box.minimumWorld.y, box.minimumWorld.z);
+      include(box.maximumWorld.x, box.maximumWorld.y, box.maximumWorld.z);
+    }
+    if (!Number.isFinite(min.x)) { min.setAll(-1); max.setAll(1); }
+    this.corners = [];
+    for (const x of [min.x, max.x]) for (const y of [min.y, max.y]) for (const z of [min.z, max.z]) {
+      this.corners.push(new BABYLON.Vector3(x, y, z));
+    }
+  }
+
+  apply(cover: RemeshCover, entities: CelestialEntity[], width: number, height: number,
+    particles: Particle[], positions: Float32Array, colors: Float32Array) {
+    if (cover.phase === "idle") {
+      this.base = this.source = this.away = null;
+      this.holding = false;
+      this.stars.follow(this.camera);
       return;
     }
-    if (!this.base) {
-      this.base = this.snapshot();
-      // Favor the side of the nearest dense neighbor. The independent moon stays
-      // intact when that neighbor and all of its particle targets are replaced.
-      const neighbor = entities.filter(e => !e.isDestroyed && !e.isOutgoing &&
-        ["planet", "star", "blackhole", "neutron_star"].includes(e.type))
-        .sort((a, b) => this.distanceTo(a, width, height) - this.distanceTo(b, width, height))[0];
+    this.measure(particles, positions, colors);
+    this.holding = cover.panProgress === 1;
+    const desired = this.snapshot();
+    if (!this.source || this.departure !== cover.departure) {
+      // Reversing a return starts at the last presented pose, without a camera jump.
+      this.source = this.base && this.presented ? this.presented : desired;
+      const neighbor = entities.find(e => !e.isDestroyed && !e.isOutgoing &&
+        ["planet", "star", "blackhole", "neutron_star"].includes(e.type));
       if (neighbor) {
         const world = new BABYLON.Vector3(neighbor.worldX ?? neighbor.x - width / 2,
           neighbor.worldY ?? height / 2 - neighbor.y, neighbor.worldZ ?? neighbor.z ?? 0);
-        this.side = BABYLON.Vector3.TransformCoordinates(world, this.camera.getViewMatrix(true)).x < 0 ? -1 : 1;
-        this.source = `${neighbor.type} companion moon`;
-      } else { this.side = 1; this.source = "foreground moon"; }
-      this.revision = cover.revision;
+        const right = BABYLON.Vector3.Right().applyRotationQuaternion(this.source.rotation);
+        this.side = BABYLON.Vector3.Dot(world.subtract(this.source.position), right) < 0 ? -1 : 1;
+      }
+      this.away = { position: this.source.position.clone(), fov: this.source.fov,
+        rotation: this.source.rotation.multiply(BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, this.side * 1.48)) };
+      this.departure = cover.departure;
     }
-    if (cover.covered && this.revision !== cover.revision) {
-      // The director installed the destination pose under full occlusion. Move
-      // the moon with that hidden handoff, preserving its screen-space surface.
-      this.base = this.snapshot();
-      this.revision = cover.revision;
+    this.base = desired;
+    const away = this.away!;
+    const direction = BABYLON.Vector3.Forward().applyRotationQuaternion(away.rotation);
+    // Moving only along the sight line preserves the starfield composition during
+    // the source/destination handoff. Recheck every frame, including after resize.
+    const furthest = Math.max(...this.corners.map(c => BABYLON.Vector3.Dot(c.subtract(away.position), direction)));
+    if (furthest > -96) away.position.addInPlace(direction.scale(furthest + 96));
+
+    if (cover.mode === "cut" && cover.phase === "returning") {
+      // Reduced motion: direct match cut plus a sub-degree settle, no whip or FOV punch.
+      this.install({ ...desired, rotation: desired.rotation.multiply(
+        BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, this.side * 0.012 * cover.panProgress)) });
+    } else {
+      const home = cover.phase === "returning" ? desired : this.source;
+      const t = cover.mode === "cut" ? 1 : ease(cover.panProgress);
+      this.install({ position: BABYLON.Vector3.Lerp(home.position, away.position, t),
+        rotation: BABYLON.Quaternion.Slerp(home.rotation, away.rotation, t),
+        fov: home.fov + (away.fov - home.fov) * t });
     }
-    this.restore();
-    const aspect = this.scene.getEngine().getAspectRatio(this.camera);
-    const halfY = this.base.fov / 2;
-    const halfX = Math.atan(Math.tan(halfY) * aspect);
-    const halfDiagonal = Math.atan(Math.tan(halfY) * Math.hypot(1, aspect));
-    const angularRadius = Math.min(1.52, halfDiagonal + 0.10);
-    this.radius = this.distance * Math.sin(angularRadius);
-    this.angle = halfX + angularRadius + 0.08;
-    const orientation = BABYLON.Quaternion.FromEulerVector(this.base.rotation);
-    const away = orientation.multiply(BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, this.side * this.angle));
-    const direction = BABYLON.Vector3.Forward().applyRotationQuaternion(away);
-    this.moon.position.copyFrom(this.base.position.add(direction.scale(this.distance)));
-    this.moon.rotationQuaternion = away;
-    this.moon.scaling.setAll(this.radius);
-    this.moon.setEnabled(true);
-    const rotation = orientation.multiply(BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, this.side * this.angle * ease(cover.panProgress)));
-    this.camera.rotation.copyFrom(rotation.toEulerAngles());
-    this.camera.minZ = 0.5;
-    this.camera.getViewMatrix(true);
-    this.moon.computeWorldMatrix(true);
+    this.stars.follow(this.camera);
+    this.presented = this.snapshot();
   }
 
-  private distanceTo(entity: CelestialEntity, width: number, height: number) {
-    return BABYLON.Vector3.DistanceSquared(this.camera.position, new BABYLON.Vector3(
-      entity.worldX ?? entity.x - width / 2, entity.worldY ?? height / 2 - entity.y, entity.worldZ ?? entity.z ?? 0));
-  }
-
-  /** Conservative angular containment of the entire frustum, including corners. */
+  /** Conservative camera-space separation, independent of aspect ratio and FOV.
+   * Near-plane exclusion also prevents large point sprites leaking at the edges. */
   coverage() {
-    if (!this.moon.isEnabled() || !this.base) return { occluded: false, margin: -Math.PI, ready: false };
-    const toMoon = this.moon.position.subtract(this.camera.position);
-    const distance = toMoon.length();
-    const forward = this.camera.getForwardRay().direction;
-    const offset = Math.acos(BABYLON.Scalar.Clamp(BABYLON.Vector3.Dot(forward, toMoon.scale(1 / distance)), -1, 1));
-    const aspect = this.scene.getEngine().getAspectRatio(this.camera);
-    const diagonal = Math.atan(Math.tan(this.camera.fov / 2) * Math.hypot(1, aspect));
-    // Inset for sphere tessellation, postprocessing sampling, and floating point error.
-    const margin = Math.asin(this.radius / distance) - offset - diagonal - 0.025;
-    const ready = this.moon.isReady(true) && this.material.isReady(this.moon);
-    return { occluded: ready && margin > 0 && distance - this.radius > this.camera.minZ, margin, ready };
+    const view = this.camera.getViewMatrix(true);
+    const maxDepth = Math.max(...this.corners.map(c => BABYLON.Vector3.TransformCoordinates(c, view).z));
+    const margin = this.camera.minZ - maxDepth - 16;
+    const ready = this.stars.ready;
+    return { occluded: !!this.base && this.holding && ready && margin > 0, margin, ready };
   }
 
   diagnostics() {
-    return { ...this.coverage(), panAngle: this.angle, panSource: this.source,
-      occluderEnabled: this.moon.isEnabled(), cameraYaw: this.camera.rotation.y };
+    return { ...this.coverage(), panSource: "open starfield", cameraYaw: this.camera.rotation.y,
+      starfieldEnabled: this.stars.mesh.isEnabled(), occluderEnabled: false };
   }
 
-  dispose() { this.moon.dispose(); this.material.dispose(); }
+  dispose() { this.stars.dispose(); }
 }

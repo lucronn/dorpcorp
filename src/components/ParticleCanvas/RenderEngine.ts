@@ -100,7 +100,7 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
   const now = Date.now();
   const reducedMotion = ctx.remeshCover.reducedMotion;
   if (ctx.remeshCover.phase !== "idle") {
-    // Install the destination pose behind the foreground moon before returning.
+    // Install the destination pose while the camera looks away into space.
     ctx.transitionActiveRef.current = false;
     ctx.transitionStartPosRef.current = null;
     ctx.cameraShakeRef.current = 0;

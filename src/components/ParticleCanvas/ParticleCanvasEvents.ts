@@ -5,6 +5,7 @@ import { SlingshotAimState, SlingshotProbe } from "./SlingshotEngine";
 import { TdeState, triggerTidalDisruptionEvent } from "./TidalDisruptionEngine";
 
 export interface EventManagerContext {
+  requestResize: () => void;
   rendererRef: React.MutableRefObject<BABYLON.Engine | null>;
   hudPlaneRef: React.MutableRefObject<BABYLON.Mesh | null>;
   cameraRef: React.MutableRefObject<BABYLON.TargetCamera | null>;
@@ -71,9 +72,8 @@ export function setupParticleCanvasEvents(ctx: EventManagerContext) {
     const ww = window.innerWidth;
     const wh = window.innerHeight;
 
-    if (ctx.rendererRef.current) {
-      ctx.rendererRef.current.resize();
-    }
+    // Resizing clears the drawing buffer. Commit it with the next scene render.
+    ctx.requestResize();
 
     if (ctx.hudPlaneRef.current && ctx.cameraRef.current) {
       const planeZ = -60;

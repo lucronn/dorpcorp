@@ -11,7 +11,7 @@ import {
 
 export { _startWormholeTransit as startWormholeTransit, updateTypographyStage, disperseTypographyParticles };
 
-/** Replace entities at their final coordinates under ParticleCanvas's remesh cover. */
+/** Replace entities at their final coordinates while outside ParticleCanvas's view frustum. */
 export function transitionToNewEntities(
   currentEntities: CelestialEntity[],
   newEntities: CelestialEntity[],

@@ -66,17 +66,8 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   isSlingshotMode = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const coverElementRef = useRef<HTMLDivElement>(null);
   const remeshCoverRef = useRef<RemeshCover | null>(null);
-  if (!remeshCoverRef.current) {
-    remeshCoverRef.current = new RemeshCover((opacity, phase) => {
-      const el = coverElementRef.current;
-      if (el) {
-        el.style.opacity = String(opacity);
-        el.dataset.phase = phase;
-      }
-    });
-  }
+  if (!remeshCoverRef.current) remeshCoverRef.current = new RemeshCover();
   const remeshCover = remeshCoverRef.current;
   const pendingEffectRef = useRef<(() => void) | null>(null);
 
@@ -946,6 +937,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       blurKernelSize: 32,
     });
     glowLayer.intensity = 0.35;
+    glowLayer.addExcludedMesh(panAway.stars.mesh);
     glowLayerRef.current = glowLayer;
 
     // Direct lighting & ambient light setup
@@ -1268,17 +1260,27 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       });
     };
 
+    let resizePending = false;
+    let renderedFrames = 0;
     engine.runRenderLoop(() => {
       panAway.restore();
       render();
-      remeshCover.advance(performance.now(), !isTransitActiveRef.current);
-      if (!isTransitActiveRef.current) {
-        panAway.apply(remeshCover, celestialEntitiesRef.current, window.innerWidth, window.innerHeight);
-        const occluded = panAway.coverage().occluded;
-        remeshCover.protect(occluded);
-        remeshCover.flush(occluded);
+      // Keep the last space frame while newly created materials/optics compile.
+      const frameReady = scene.isReady() && engine.areAllEffectsReady();
+      if (frameReady && resizePending) {
+        engine.resize();
+        resizePending = false;
       }
+      remeshCover.advance(performance.now(), frameReady && !isTransitActiveRef.current);
+      if (!isTransitActiveRef.current) {
+        panAway.apply(remeshCover, celestialEntitiesRef.current, window.innerWidth, window.innerHeight, particlesRef.current, positions, colors);
+        const occluded = panAway.coverage().occluded;
+        if (frameReady) remeshCover.flush(occluded);
+      }
+      panAway.stars.follow(camera);
+      if (!frameReady) return;
       scene.render();
+      renderedFrames++;
       if (remeshCover.phase !== "idle") {
         remeshCover.afterRender(
           !isTransitActiveRef.current && !particlesRef.current.some(p => p.needsRemesh) && scene.isReady(),
@@ -1294,6 +1296,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     });
 
     const cleanupEvents = setupParticleCanvasEvents({
+      requestResize: () => { resizePending = true; },
       rendererRef,
       hudPlaneRef,
       cameraRef,
@@ -1361,6 +1364,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       getCurrentArchetype: () => archetypeRef.current,
       getEntities: () => celestialEntitiesRef.current,
       getTransitionCover: () => ({
+        renderedFrames,
         phase: remeshCover.phase,
         opacity: remeshCover.opacity,
         mode: remeshCover.mode,
@@ -1447,8 +1451,6 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
   return (
     <div className="relative w-full h-full">
       <canvas ref={canvasRef} className="block w-full h-full" id="canvas-babylon" />
-      <div ref={coverElementRef} data-transition-cover data-phase="idle" aria-hidden="true"
-        style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 70% 30%, #243549, #101923)", opacity: 0, pointerEvents: "none" }} />
     </div>
   );
 };
