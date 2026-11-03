@@ -15,6 +15,10 @@ import type { Particle, CelestialEntity } from "../src/components/ParticleCanvas
 const particle = (): Particle => ({ x: -3000, y: 2500, z: -900, targetX: 10, targetY: 20, targetZ: 30,
   vx: 50, vy: -60, vz: 80, color: "#ffffff", baseColor: "#ffffff", size: 1 });
 
+function reachCorridor(cover: RemeshCover, start = 0) {
+  for (let now = start; now < start + 1100; now += 16) cover.advance(now);
+}
+
 function seeded(seed = 194) {
   return () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
 }
@@ -68,6 +72,7 @@ for (const reduced of [false, true]) {
     assert.equal(writes, 0);
     cover.flush(true);
     assert.equal(writes, 0, "coverage must actually render before remapping");
+    reachCorridor(cover, 9016);
     cover.afterRender(true, true);
     cover.flush(true);
     assert.equal(writes, 1);
@@ -95,6 +100,7 @@ test("coverage loss, rapid navigation and reversed return cannot expose pending 
   cover.request("scene", () => { selected = "stale"; });
   cover.cancelPending();
   cover.request("scene", () => { selected = "latest"; cover.remapped(particles); });
+  reachCorridor(cover);
   cover.afterRender(true, true);
   cover.flush(false);
   assert.equal(selected, "old", "resize/camera coverage must be revalidated before mutations");
@@ -222,11 +228,11 @@ test("superseding a departure with an FX request can finish the canceled pan", (
   const cover = new RemeshCover();
   cover.request("entities", () => assert.fail("superseded work must not run"));
   cover.cancelPending();
+  reachCorridor(cover);
   cover.afterRender(true, true);
   cover.flush(true);
   cover.afterRender(true, true);
   cover.afterRender(true, true);
-  cover.advance(0);
-  cover.advance(64);
+  reachCorridor(cover, 1100);
   assert.equal(cover.phase, "idle");
 });

@@ -2,6 +2,7 @@ import type { Particle } from "./types";
 
 export type CoverPhase = "idle" | "panning" | "remapping" | "settling" | "returning";
 export type CoverMode = "pan" | "cut";
+export const REMESH_FLIGHT_TIMING = { depart: 720, cruise: 160, arrive: 640, cut: 100 } as const;
 
 /** Render-driven handoff. "Covered" means outside the camera frustum, never opacity. */
 export class RemeshCover {
@@ -12,6 +13,8 @@ export class RemeshCover {
   reducedMotion = false;
   revision = 0;
   departure = 0;
+  flightTime = 0;
+  hiddenTime = 0;
   private lastFrame: number | null = null;
   private formedFrames = 0;
   private renderedCovered = false;
@@ -22,6 +25,7 @@ export class RemeshCover {
     if (this.phase === "idle" || this.phase === "returning") {
       this.mode = this.reducedMotion || startup ? "cut" : "pan";
       this.panProgress = 0;
+      this.flightTime = this.hiddenTime = 0;
       this.lastFrame = null;
       this.departure++;
     }
@@ -40,14 +44,16 @@ export class RemeshCover {
     const dt = this.lastFrame === null ? 0 : Math.min(64, Math.max(0, now - this.lastFrame));
     this.lastFrame = now;
     if (this.phase === "idle" || !canPan) return;
+    this.flightTime += dt;
     // Honor a live preference change without finishing a large camera movement.
     if (this.reducedMotion && this.mode === "pan") {
       this.mode = "cut";
       this.renderedCovered = false;
     }
-    if (this.phase === "panning") this.panProgress = this.mode === "cut" ? 1 : Math.min(1, this.panProgress + dt / 420);
+    if (this.panProgress === 1 && this.phase !== "returning") this.hiddenTime += dt;
+    if (this.phase === "panning") this.panProgress = this.mode === "cut" ? 1 : Math.min(1, this.panProgress + dt / REMESH_FLIGHT_TIMING.depart);
     if (this.phase === "returning") {
-      this.panProgress = Math.max(0, this.panProgress - dt / (this.mode === "cut" ? 100 : 520));
+      this.panProgress = Math.max(0, this.panProgress - dt / (this.mode === "cut" ? REMESH_FLIGHT_TIMING.cut : REMESH_FLIGHT_TIMING.arrive));
       if (this.panProgress === 0) this.phase = "idle";
     }
   }
@@ -82,7 +88,8 @@ export class RemeshCover {
     this.renderedCovered = this.isCovered(occluded);
     if (this.phase === "settling") {
       this.formedFrames = formed && this.renderedCovered ? this.formedFrames + 1 : 0;
-      if (this.formedFrames >= 2 && this.jobs.size === 0) this.phase = "returning";
+      if (this.formedFrames >= 2 && this.jobs.size === 0 &&
+          (this.mode === "cut" || this.hiddenTime >= REMESH_FLIGHT_TIMING.cruise)) this.phase = "returning";
     }
   }
 }

@@ -1272,13 +1272,15 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         resizePending = false;
       }
       remeshCover.advance(performance.now(), frameReady && !isTransitActiveRef.current);
+      // Only advance the installed/presented flight pose when this frame can
+      // actually draw. Rapid input during shader warmup must inherit that pose.
+      if (!frameReady) return;
       if (!isTransitActiveRef.current) {
         panAway.apply(remeshCover, celestialEntitiesRef.current, window.innerWidth, window.innerHeight, particlesRef.current, positions, colors);
         const occluded = panAway.coverage().occluded;
-        if (frameReady) remeshCover.flush(occluded);
+        remeshCover.flush(occluded);
       }
       panAway.stars.follow(camera);
-      if (!frameReady) return;
       scene.render();
       renderedFrames++;
       if (remeshCover.phase !== "idle") {
@@ -1369,15 +1371,16 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         opacity: remeshCover.opacity,
         mode: remeshCover.mode,
         panProgress: remeshCover.panProgress,
+        departure: remeshCover.departure,
+        flightTime: remeshCover.flightTime,
+        hiddenTime: remeshCover.hiddenTime,
         pendingJobs: remeshCover.pendingJobs,
         revision: remeshCover.revision,
         ...panAway.diagnostics(),
         pendingParticles: particlesRef.current.filter(p => p.needsRemesh).length,
         reducedMotion: remeshCover.reducedMotion,
         transitActive: isTransitActiveRef.current,
-        cameraZ: cameraRef.current?.position.z,
         cameraFov: cameraRef.current?.fov,
-        cameraRoll: cameraRef.current?.rotation.z,
       }),
       launchProbe: () => {
         const ww = window.innerWidth;

@@ -11,7 +11,7 @@ const browser = await puppeteer.launch({
   headless: true,
   args: ["--no-sandbox", "--enable-unsafe-swiftshader", "--use-angle=swiftshader", "--disable-dev-shm-usage"],
 });
-const artifactDir = process.env.TEST_ARTIFACT_DIR || "/tmp/curtis-cinematic-no-cover";
+const artifactDir = process.env.TEST_ARTIFACT_DIR || "/tmp/curtis-dynamic-camera";
 await mkdir(artifactDir, { recursive: true });
 
 let activePage;
@@ -34,17 +34,25 @@ try {
       window.__coverSamples = [];
       window.__panImages = {};
       window.__blankImages = [];
+      window.__rideImages = [];
+      window.__captureRide = false;
+      let lastRenderedFrame = -1;
       const pixels = document.createElement("canvas");
       const context = pixels.getContext("2d", { willReadFrequently: true });
       const observe = () => {
         const state = window.__cosmicCanvas?.getTransitionCover();
         const element = document.querySelector("[data-transition-cover]");
-        if (state && state.renderedFrames > 0) {
+        if (state && state.renderedFrames > 0 && state.renderedFrames !== lastRenderedFrame) {
+          lastRenderedFrame = state.renderedFrames;
           const beat = state.phase === "panning" && state.panProgress > 0.45 && state.panProgress < 0.75 ? "departing"
             : state.phase === "settling" ? "off-frustum"
             : state.phase === "returning" && state.panProgress < 0.65 ? "returning" : null;
-          if (beat && !window.__panImages[beat]) {
+          if (beat && state.mode === "pan" && !window.__panImages[beat]) {
             window.__panImages[beat] = document.querySelector("#canvas-babylon").toDataURL("image/png");
+          }
+          if (window.__captureRide && state.phase !== "idle" && window.__rideImages.length < 40) {
+            window.__rideImages.push({ phase: state.phase, time: state.flightTime,
+              image: document.querySelector("#canvas-babylon").toDataURL("image/png") });
           }
           const button = document.querySelector('button[title^="01 // SELECTED WORKS"]');
           const rect = button?.getBoundingClientRect();
@@ -84,6 +92,7 @@ try {
     await assertSpaceVisible();
     await page.click('button[title="Pause on this Scene [Space]"]');
 
+    const rides = [];
     const switchScene = async (archetype, kind = "float", stage = 0) => {
       const state = await page.evaluate(({ archetype, kind, stage }) => {
         window.__cosmicCanvas.switchToScene(archetype, kind, stage);
@@ -98,6 +107,33 @@ try {
       await page.waitForFunction(() => window.__cosmicCanvas.getTransitionCover().phase === "idle", { timeout: 30000 });
       await assertSpaceVisible();
       assert.equal(await page.evaluate(() => window.__cosmicCanvas.getCurrentArchetype()), archetype);
+      if (!reduced) {
+        const samples = await page.evaluate(departure => window.__coverSamples.filter(s =>
+          s.departure === departure && s.mode === "pan"), state.departure);
+        const segments = {
+          departure: samples.filter(s => s.phase === "panning" && s.panProgress > 0 && s.panProgress < 1),
+          corridor: samples.filter(s => s.occluded && s.hiddenTime > 0),
+          approach: samples.filter(s => s.phase === "returning" && !s.occluded),
+        };
+        const metrics = {};
+        for (const [name, frames] of Object.entries(segments)) {
+          assert(frames.length >= 3, `${archetype} ${name}: sample the moving path`);
+          metrics[name] = { frames: frames.length };
+          for (const axis of ["cameraX", "cameraY", "cameraZ", "cameraPitch", "cameraYaw", "cameraRoll"]) {
+            const values = frames.map(s => s[axis]);
+            const range = Math.max(...values) - Math.min(...values);
+            metrics[name][axis] = range;
+            const minimum = ["cameraX", "cameraY", "cameraZ"].includes(axis) ? 5 : 0.002;
+            assert(range > minimum, `${archetype} ${name}: ${axis} range ${range}`);
+          }
+          for (let i = 1; i < frames.length; i++) {
+            const distance = Math.hypot(...["cameraX", "cameraY", "cameraZ"].map(axis => frames[i][axis] - frames[i - 1][axis]));
+            assert(distance > 0.01, `${archetype} ${name}: camera cannot park at a hold pose`);
+          }
+          if (name === "corridor") assert(frames.every(s => s.margin > 0 && s.occluded), "moving corridor stays off-frustum");
+        }
+        rides.push({ archetype, ...metrics });
+      }
     };
 
     await page.click('button[title^="01 // SELECTED WORKS"]');
@@ -107,7 +143,9 @@ try {
     await switchScene("SPIRAL_GALAXY");
     assert(await page.evaluate(() => window.__cosmicCanvas.getTransitionCover().cameraZ < 0), "open on the readable side of typography");
     await page.screenshot({ path: `${artifactDir}/galaxy-${width}-${reduced}.png` });
+    await page.evaluate(() => { window.__captureRide = true; });
     await switchScene("BINARY_PLANETS", "morph", 2);
+    await page.evaluate(() => { window.__captureRide = false; });
     await switchScene("NEBULA_CRADLE", "float", 3);
     await page.screenshot({ path: `${artifactDir}/nebula-${width}-${reduced}.png` });
 
@@ -215,6 +253,10 @@ try {
     for (const [beat, data] of Object.entries(captures)) {
       await writeFile(`${artifactDir}/${beat}-${width}-${reduced}.png`, Buffer.from(data.split(",")[1], "base64"));
     }
+    const rideImages = await page.evaluate(() => window.__rideImages);
+    for (const [i, frame] of rideImages.entries()) {
+      await writeFile(`${artifactDir}/ride-${width}-${reduced}-${String(i).padStart(2, "0")}-${frame.phase}.png`, Buffer.from(frame.image.split(",")[1], "base64"));
+    }
     assert(result.pendingFrames > 0, "test must actually sample the remesh window");
     assert.deepEqual(result.leaks, []);
     assert.deepEqual(result.covers, []);
@@ -234,7 +276,7 @@ try {
       assert(Math.abs(result.final.cameraFov - Math.PI / 3) < 0.00001);
     }
     assert.deepEqual(errors, []);
-    await writeFile(`${artifactDir}/metrics-${width}-${reduced}.json`, JSON.stringify(result, null, 2));
+    await writeFile(`${artifactDir}/metrics-${width}-${reduced}.json`, JSON.stringify({ ...result, rides }, null, 2));
     console.log(JSON.stringify({ width, reduced, ...result }));
     await page.close();
   }

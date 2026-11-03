@@ -1,14 +1,15 @@
 import * as BABYLON from "@babylonjs/core";
 
-/** Persistent stars in every direction. Only the camera translates this field;
- * scene remapping never changes its vertices, visibility, or brightness. */
+/** Persistent distant stars plus a sparse, world-anchored foreground field.
+ * The latter supplies translation parallax even while the composition is hidden.
+ * Remapping never changes either field; wrapping happens beyond the visible fade. */
 export class DeepSpaceField {
   readonly mesh: BABYLON.Mesh;
   private material: BABYLON.ShaderMaterial;
 
   constructor(scene: BABYLON.Scene) {
     const count = 7000;
-    const positions: number[] = [], colors: number[] = [];
+    const positions: number[] = [], colors: number[] = [], parallax: number[] = [];
     for (let i = 0; i < count; i++) {
       // Fibonacci sphere: deterministic and evenly populated, including the poles.
       const y = 1 - 2 * (i + 0.5) / count;
@@ -17,24 +18,38 @@ export class DeepSpaceField {
       const brightness = 0.25 + ((i * 73) % 101) / 160;
       colors.push(brightness * (i % 3 === 0 ? 0.78 : 1), brightness * 0.92,
         brightness * (i % 3 === 1 ? 0.75 : 1), i % 17 === 0 ? 2.4 : 1.5);
+      parallax.push(0);
+    }
+    for (let i = 0; i < 1200; i++) {
+      // Deterministic lattice jitter, independent of the mutable particle pool.
+      for (const multiplier of [73, 239, 599]) positions.push(((i * multiplier + 31) % 1201) / 1201 * 12000 - 6000);
+      colors.push(0.55, 0.65, 0.8, i % 9 === 0 ? 2.8 : 1.8);
+      parallax.push(1);
     }
     this.mesh = new BABYLON.Mesh("deep-space-stars", scene);
     this.mesh.setVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
     this.mesh.setVerticesData(BABYLON.VertexBuffer.ColorKind, colors);
-    this.mesh.setIndices(Array.from({ length: count }, (_, i) => i));
+    this.mesh.setVerticesData("parallax", parallax, false, 1);
+    this.mesh.setIndices(Array.from({ length: parallax.length }, (_, i) => i));
     this.mesh.isPickable = false;
     this.mesh.alwaysSelectAsActiveMesh = true;
     this.material = new BABYLON.ShaderMaterial("deep-space-star-light", scene, {
       vertexSource: `precision highp float;
-        attribute vec3 position; attribute vec4 color;
-        uniform mat4 worldViewProjection; varying vec3 vColor;
-        void main() { vColor = color.rgb; gl_PointSize = color.a;
-          gl_Position = worldViewProjection * vec4(position, 1.0); }`,
-      fragmentSource: `precision highp float; varying vec3 vColor;
+        attribute vec3 position; attribute vec4 color; attribute float parallax;
+        uniform mat4 worldViewProjection; uniform vec3 uCameraPos;
+        varying vec3 vColor; varying float vAlpha;
+        void main() {
+          vec3 nearby = mod(position - uCameraPos + vec3(6000.0), vec3(12000.0)) - vec3(6000.0);
+          float distanceToStar = length(nearby);
+          vAlpha = mix(1.0, smoothstep(180.0, 650.0, distanceToStar) *
+            (1.0 - smoothstep(4200.0, 5800.0, distanceToStar)), parallax);
+          vColor = color.rgb; gl_PointSize = color.a;
+          gl_Position = worldViewProjection * vec4(mix(position, nearby, parallax), 1.0); }`,
+      fragmentSource: `precision highp float; varying vec3 vColor; varying float vAlpha;
         void main() { float r = length(gl_PointCoord - vec2(0.5));
           if (r > 0.5) discard;
-          gl_FragColor = vec4(vColor, 1.0 - smoothstep(0.1, 0.5, r)); }`,
-    }, { attributes: ["position", "color"], uniforms: ["worldViewProjection"], needAlphaBlending: true });
+          gl_FragColor = vec4(vColor, vAlpha * (1.0 - smoothstep(0.1, 0.5, r))); }`,
+    }, { attributes: ["position", "color", "parallax"], uniforms: ["worldViewProjection", "uCameraPos"], needAlphaBlending: true });
     this.material.fillMode = BABYLON.Material.PointListDrawMode;
     this.material.alphaMode = BABYLON.Engine.ALPHA_ADD;
     this.material.disableDepthWrite = true;
@@ -42,6 +57,7 @@ export class DeepSpaceField {
   }
 
   follow(camera: BABYLON.TargetCamera) {
+    this.material.setVector3("uCameraPos", camera.position);
     this.mesh.position.copyFrom(camera.position);
     this.mesh.computeWorldMatrix(true);
   }
