@@ -661,7 +661,7 @@ export function executeRenderFrame(ctx: RenderEngineContext) {
   let transitionArcEnvelope = 0;
   const startPos = ctx.transitionStartPosRef.current;
 
-  // RemeshPanAway owns the full ride, including arrival. Retire the old 7.8s
+  // RemeshFlyThrough owns the full ride, including arrival. Retire the old 7.8s
   // morph flight so it cannot drag the destination pose behind the spline.
   if (ctx.remeshCover.phase !== "idle") {
     ctx.transitionActiveRef.current = false;

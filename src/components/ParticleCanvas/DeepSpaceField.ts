@@ -15,15 +15,15 @@ export class DeepSpaceField {
       const y = 1 - 2 * (i + 0.5) / count;
       const r = Math.sqrt(1 - y * y), angle = i * 2.399963229728653;
       positions.push(Math.cos(angle) * r * 24000, y * 24000, Math.sin(angle) * r * 24000);
-      const brightness = 0.25 + ((i * 73) % 101) / 160;
+      const brightness = 0.45 + ((i * 73) % 101) / 110;
       colors.push(brightness * (i % 3 === 0 ? 0.78 : 1), brightness * 0.92,
-        brightness * (i % 3 === 1 ? 0.75 : 1), i % 17 === 0 ? 2.4 : 1.5);
+        brightness * (i % 3 === 1 ? 0.75 : 1), i % 17 === 0 ? 3.0 : 1.8);
       parallax.push(0);
     }
     for (let i = 0; i < 1200; i++) {
       // Deterministic lattice jitter, independent of the mutable particle pool.
       for (const multiplier of [73, 239, 599]) positions.push(((i * multiplier + 31) % 1201) / 1201 * 12000 - 6000);
-      colors.push(0.55, 0.65, 0.8, i % 9 === 0 ? 2.8 : 1.8);
+      colors.push(0.9, 1.05, 1.35, i % 9 === 0 ? 3.5 : 2.4);
       parallax.push(1);
     }
     this.mesh = new BABYLON.Mesh("deep-space-stars", scene);
@@ -43,7 +43,10 @@ export class DeepSpaceField {
           float distanceToStar = length(nearby);
           vAlpha = mix(1.0, smoothstep(180.0, 650.0, distanceToStar) *
             (1.0 - smoothstep(4200.0, 5800.0, distanceToStar)), parallax);
-          vColor = color.rgb; gl_PointSize = color.a;
+          // Nearby stars grow during forward thrust; distant stars stay fixed.
+          // Bound the sprites so close passes always leave open space visible.
+          float perspectiveSize = clamp(2200.0 / max(distanceToStar, 1.0), 0.7, 2.6);
+          vColor = color.rgb; gl_PointSize = min(7.0, color.a * mix(1.0, perspectiveSize, parallax));
           gl_Position = worldViewProjection * vec4(mix(position, nearby, parallax), 1.0); }`,
       fragmentSource: `precision highp float; varying vec3 vColor; varying float vAlpha;
         void main() { float r = length(gl_PointCoord - vec2(0.5));

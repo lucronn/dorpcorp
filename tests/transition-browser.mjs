@@ -11,7 +11,7 @@ const browser = await puppeteer.launch({
   headless: true,
   args: ["--no-sandbox", "--enable-unsafe-swiftshader", "--use-angle=swiftshader", "--disable-dev-shm-usage"],
 });
-const artifactDir = process.env.TEST_ARTIFACT_DIR || "/tmp/curtis-dynamic-camera";
+const artifactDir = process.env.TEST_ARTIFACT_DIR || "/tmp/curtis-first-person";
 await mkdir(artifactDir, { recursive: true });
 
 let activePage;
@@ -32,25 +32,43 @@ try {
     });
     await page.evaluateOnNewDocument(() => {
       window.__coverSamples = [];
-      window.__panImages = {};
+      window.__flightImages = {};
       window.__blankImages = [];
       window.__rideImages = [];
       window.__captureRide = false;
       let lastRenderedFrame = -1;
       const pixels = document.createElement("canvas");
       const context = pixels.getContext("2d", { willReadFrequently: true });
+      const paint = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+      const fullFrameCovers = () => {
+        const canvas = document.querySelector("#canvas-babylon");
+        return [...document.querySelectorAll("body *")].filter(el => {
+          if (el === canvas || el.contains(canvas)) return false;
+          const r = el.getBoundingClientRect(), style = getComputedStyle(el);
+          if (r.left > 1 || r.top > 1 || r.right < innerWidth - 1 || r.bottom < innerHeight - 1 ||
+              style.visibility !== "visible" || style.display === "none") return false;
+          let opacity = 1;
+          for (let parent = el; parent; parent = parent.parentElement) opacity *= Number(getComputedStyle(parent).opacity);
+          if (opacity < 0.8) return false;
+          paint.clearRect(0, 0, 1, 1);
+          paint.fillStyle = style.backgroundColor;
+          paint.fillRect(0, 0, 1, 1);
+          return paint.getImageData(0, 0, 1, 1).data[3] * opacity > 200 ||
+            style.backgroundImage !== "none" || style.backdropFilter !== "none" || el instanceof HTMLCanvasElement;
+        }).map(el => `${el.tagName}#${el.id}.${el.className}`);
+      };
       const observe = () => {
         const state = window.__cosmicCanvas?.getTransitionCover();
         const element = document.querySelector("[data-transition-cover]");
         if (state && state.renderedFrames > 0 && state.renderedFrames !== lastRenderedFrame) {
           lastRenderedFrame = state.renderedFrames;
-          const beat = state.phase === "panning" && state.panProgress > 0.45 && state.panProgress < 0.75 ? "departing"
+          const beat = state.phase === "departing" && state.flightProgress > 0.45 && state.flightProgress < 0.75 ? "departing"
             : state.phase === "settling" ? "off-frustum"
-            : state.phase === "returning" && state.panProgress < 0.65 ? "returning" : null;
-          if (beat && state.mode === "pan" && !window.__panImages[beat]) {
-            window.__panImages[beat] = document.querySelector("#canvas-babylon").toDataURL("image/png");
+            : state.phase === "returning" && state.flightProgress < 0.65 ? "returning" : null;
+          if (beat && state.mode === "flight" && !window.__flightImages[beat]) {
+            window.__flightImages[beat] = document.querySelector("#canvas-babylon").toDataURL("image/png");
           }
-          if (window.__captureRide && state.phase !== "idle" && window.__rideImages.length < 40) {
+          if (window.__captureRide && state.phase !== "idle" && window.__rideImages.length < 80) {
             window.__rideImages.push({ phase: state.phase, time: state.flightTime,
               image: document.querySelector("#canvas-babylon").toDataURL("image/png") });
           }
@@ -74,7 +92,7 @@ try {
               window.__blankImages.push(canvas.toDataURL("image/png"));
             }
           }
-          window.__coverSamples.push({ ...state, hasCoverElement: !!element, imageStats,
+          window.__coverSamples.push({ ...state, hasCoverElement: !!element, fullFrameCovers: fullFrameCovers(), imageStats,
             hudClickable: !!hit?.closest("button") });
         }
         window.__coverObserver = requestAnimationFrame(observe);
@@ -99,7 +117,7 @@ try {
         return window.__cosmicCanvas.getTransitionCover();
       }, { archetype, kind, stage });
       if (kind === "float" || kind === "morph" || reduced) {
-        assert.equal(state.phase, "panning", "navigation queues a departure before changing targets");
+        assert.equal(state.phase, "departing", "navigation queues a departure before changing targets");
         assert.equal(state.pendingParticles, 0);
         assert(state.pendingJobs > 0);
         assert.equal(state.opacity, 0);
@@ -109,9 +127,9 @@ try {
       assert.equal(await page.evaluate(() => window.__cosmicCanvas.getCurrentArchetype()), archetype);
       if (!reduced) {
         const samples = await page.evaluate(departure => window.__coverSamples.filter(s =>
-          s.departure === departure && s.mode === "pan"), state.departure);
+          s.departure === departure && s.mode === "flight"), state.departure);
         const segments = {
-          departure: samples.filter(s => s.phase === "panning" && s.panProgress > 0 && s.panProgress < 1),
+          departure: samples.filter(s => s.phase === "departing" && s.flightProgress > 0 && s.flightProgress < 1),
           corridor: samples.filter(s => s.occluded && s.hiddenTime > 0),
           approach: samples.filter(s => s.phase === "returning" && !s.occluded),
         };
@@ -126,13 +144,29 @@ try {
             const minimum = ["cameraX", "cameraY", "cameraZ"].includes(axis) ? 5 : 0.002;
             assert(range > minimum, `${archetype} ${name}: ${axis} range ${range}`);
           }
+          metrics[name].forwardDistance = 0;
+          metrics[name].minimumForwardAlignment = 1;
+          metrics[name].headingChange = 0;
           for (let i = 1; i < frames.length; i++) {
             const distance = Math.hypot(...["cameraX", "cameraY", "cameraZ"].map(axis => frames[i][axis] - frames[i - 1][axis]));
+            const step = ["cameraX", "cameraY", "cameraZ"].map(axis => frames[i][axis] - frames[i - 1][axis]);
+            const nose = ["forwardX", "forwardY", "forwardZ"].map(axis => frames[i][axis] + frames[i - 1][axis]);
+            const alignment = step.reduce((sum, v, axis) => sum + v * nose[axis], 0) / (distance * Math.hypot(...nose));
+            metrics[name].forwardDistance += distance * alignment;
+            metrics[name].minimumForwardAlignment = Math.min(metrics[name].minimumForwardAlignment, alignment);
+            const headingDot = ["forwardX", "forwardY", "forwardZ"].reduce((sum, axis) => sum + frames[i][axis] * frames[i - 1][axis], 0);
+            metrics[name].headingChange += Math.acos(Math.min(1, Math.max(-1, headingDot)));
+            assert(alignment > 0.85, `${archetype} ${name}: forward alignment ${alignment}; cannot pan sideways or reverse`);
             assert(distance > 0.01, `${archetype} ${name}: camera cannot park at a hold pose`);
           }
+          assert(metrics[name].forwardDistance > 10, `${archetype} ${name}: thrust through space`);
+          assert(metrics[name].headingChange > 0.01, `${archetype} ${name}: turn while flying`);
+          assert(frames.every(s => s.cameraOwner === "first-person-flight"), "one owner for the full flight");
           if (name === "corridor") assert(frames.every(s => s.margin > 0 && s.occluded), "moving corridor stays off-frustum");
         }
         rides.push({ archetype, ...metrics });
+        console.log(JSON.stringify({ width, archetype, forwardAlignment: Object.fromEntries(
+          Object.entries(metrics).map(([segment, values]) => [segment, values.minimumForwardAlignment])) }));
       }
     };
 
@@ -146,6 +180,10 @@ try {
     await page.evaluate(() => { window.__captureRide = true; });
     await switchScene("BINARY_PLANETS", "morph", 2);
     await page.evaluate(() => { window.__captureRide = false; });
+    const rideImages = await page.evaluate(() => window.__rideImages);
+    for (const [i, frame] of rideImages.entries()) {
+      await writeFile(`${artifactDir}/ride-${width}-${reduced}-${String(i).padStart(2, "0")}-${frame.phase}.png`, Buffer.from(frame.image.split(",")[1], "base64"));
+    }
     await switchScene("NEBULA_CRADLE", "float", 3);
     await page.screenshot({ path: `${artifactDir}/nebula-${width}-${reduced}.png` });
 
@@ -161,7 +199,7 @@ try {
       await page.evaluate(() => window.__cosmicCanvas.switchToScene("BINARY_PLANETS", "float", 2));
       await page.waitForFunction(() => {
         const state = window.__cosmicCanvas.getTransitionCover();
-        return state.phase === "returning" && state.panProgress < 0.8;
+        return state.phase === "returning" && state.flightProgress < 0.8;
       });
       // Click the real HTML HUD while the camera is returning.
       await page.click('button[title^="01 // SELECTED WORKS"]');
@@ -218,7 +256,7 @@ try {
       await page.evaluate(() => window.__cosmicCanvas.switchToScene("BINARY_PLANETS", "float", 2));
       await page.waitForFunction(() => {
         const s = window.__cosmicCanvas.getTransitionCover();
-        return s.phase === "panning" && s.panProgress > 0;
+        return s.phase === "departing" && s.flightProgress > 0;
       });
       await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
       await page.waitForFunction(() => window.__cosmicCanvas.getTransitionCover().phase === "idle");
@@ -239,23 +277,19 @@ try {
       const hit = rect && document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
       return { frames: samples.length, pendingFrames: pending.length,
         leaks: pending.filter(s => !(s.occluded && s.margin > 0)),
-        covers: samples.filter(s => s.hasCoverElement || s.opacity !== 0 || s.occluderEnabled),
+        covers: samples.filter(s => s.hasCoverElement || s.fullFrameCovers.length || s.opacity !== 0 || s.occluderEnabled),
         blankFrames: samples.filter(s => s.imageStats && (s.imageStats.darkRatio < 0.18 || s.imageStats.litPixels < 20)),
         missingStars: samples.filter(s => !s.starfieldEnabled),
         minLitPixels: Math.min(...samples.filter(s => s.imageStats).map(s => s.imageStats.litPixels)),
         minDarkRatio: Math.min(...samples.filter(s => s.imageStats).map(s => s.imageStats.darkRatio)),
-        panFrames: samples.filter(s => s.phase === "panning" && s.panProgress > 0 && s.panProgress < 1).length,
+        flightFrames: samples.filter(s => s.phase === "departing" && s.flightProgress > 0 && s.flightProgress < 1).length,
         returnFrames: samples.filter(s => s.phase === "returning").length,
         blockedHudFrames: pending.filter(s => !s.hudClickable),
         hudClickable: !!hit?.closest("button"), final: window.__cosmicCanvas.getTransitionCover() };
     }, reduced);
-    const captures = await page.evaluate(() => window.__panImages);
+    const captures = await page.evaluate(() => window.__flightImages);
     for (const [beat, data] of Object.entries(captures)) {
       await writeFile(`${artifactDir}/${beat}-${width}-${reduced}.png`, Buffer.from(data.split(",")[1], "base64"));
-    }
-    const rideImages = await page.evaluate(() => window.__rideImages);
-    for (const [i, frame] of rideImages.entries()) {
-      await writeFile(`${artifactDir}/ride-${width}-${reduced}-${String(i).padStart(2, "0")}-${frame.phase}.png`, Buffer.from(frame.image.split(",")[1], "base64"));
     }
     assert(result.pendingFrames > 0, "test must actually sample the remesh window");
     assert.deepEqual(result.leaks, []);
@@ -264,7 +298,7 @@ try {
     assert.deepEqual(result.missingStars, []);
     assert.deepEqual(result.blockedHudFrames, []);
     assert(result.returnFrames > 0);
-    if (!reduced) assert(result.panFrames > 0, "observe real camera departures");
+    if (!reduced) assert(result.flightFrames > 0, "observe real camera departures");
     assert(result.hudClickable, "camera transition must leave the HUD interactive");
     assert.equal(result.final.phase, "idle");
     assert.equal(result.final.pendingJobs, 0);

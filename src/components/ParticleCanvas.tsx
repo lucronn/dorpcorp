@@ -34,7 +34,7 @@ import {
 import { updateHudTexture } from "./ParticleCanvas/HUDManager";
 import { simulateParticles } from "./ParticleCanvas/ParticleSimulationEngine";
 import { RemeshCover } from "./ParticleCanvas/RemeshCover";
-import { RemeshPanAway } from "./ParticleCanvas/RemeshPanAway";
+import { RemeshFlyThrough } from "./ParticleCanvas/RemeshFlyThrough";
 import { executeRenderFrame } from "./ParticleCanvas/RenderEngine";
 import { buildParticleSystem } from "./ParticleCanvas/ParticleSystemBuilder";
 import { setupParticleCanvasEvents } from "./ParticleCanvas/ParticleCanvasEvents";
@@ -890,7 +890,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       cameraZRef.current
     );
     const engine = rendererRef.current!;
-    const panAway = new RemeshPanAway(scene, camera);
+    const flyThrough = new RemeshFlyThrough(scene, camera);
 
     // Postprocessing Composer setup for cinematic Bloom, ACES Tone Mapping, Chromatic Aberration, and Grain
     const pipeline = new BABYLON.DefaultRenderingPipeline("pipeline", true, scene, [camera]);
@@ -937,7 +937,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       blurKernelSize: 32,
     });
     glowLayer.intensity = 0.35;
-    glowLayer.addExcludedMesh(panAway.stars.mesh);
+    glowLayer.addExcludedMesh(flyThrough.stars.mesh);
     glowLayerRef.current = glowLayer;
 
     // Direct lighting & ambient light setup
@@ -1263,7 +1263,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     let resizePending = false;
     let renderedFrames = 0;
     engine.runRenderLoop(() => {
-      panAway.restore();
+      flyThrough.restore();
       render();
       // Keep the last space frame while newly created materials/optics compile.
       const frameReady = scene.isReady() && engine.areAllEffectsReady();
@@ -1276,17 +1276,17 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
       // actually draw. Rapid input during shader warmup must inherit that pose.
       if (!frameReady) return;
       if (!isTransitActiveRef.current) {
-        panAway.apply(remeshCover, celestialEntitiesRef.current, window.innerWidth, window.innerHeight, particlesRef.current, positions, colors);
-        const occluded = panAway.coverage().occluded;
+        flyThrough.apply(remeshCover, celestialEntitiesRef.current, window.innerWidth, window.innerHeight, particlesRef.current, positions, colors);
+        const occluded = flyThrough.coverage().occluded;
         remeshCover.flush(occluded);
       }
-      panAway.stars.follow(camera);
+      flyThrough.stars.follow(camera);
       scene.render();
       renderedFrames++;
       if (remeshCover.phase !== "idle") {
         remeshCover.afterRender(
           !isTransitActiveRef.current && !particlesRef.current.some(p => p.needsRemesh) && scene.isReady(),
-          panAway.coverage().occluded
+          flyThrough.coverage().occluded
         );
       }
       // FX camera owners wait for an in-flight remap/return, including rapid input.
@@ -1370,13 +1370,13 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
         phase: remeshCover.phase,
         opacity: remeshCover.opacity,
         mode: remeshCover.mode,
-        panProgress: remeshCover.panProgress,
+        flightProgress: remeshCover.flightProgress,
         departure: remeshCover.departure,
         flightTime: remeshCover.flightTime,
         hiddenTime: remeshCover.hiddenTime,
         pendingJobs: remeshCover.pendingJobs,
         revision: remeshCover.revision,
-        ...panAway.diagnostics(),
+        ...flyThrough.diagnostics(),
         pendingParticles: particlesRef.current.filter(p => p.needsRemesh).length,
         reducedMotion: remeshCover.reducedMotion,
         transitActive: isTransitActiveRef.current,
@@ -1434,7 +1434,7 @@ export const ParticleCanvas: React.FC<ParticleCanvasProps> = ({
     return () => {
       cancelTransitRef.current?.();
       pendingEffectRef.current = null;
-      panAway.dispose();
+      flyThrough.dispose();
       cleanupEvents();
       mappingTimersRef.current.forEach(clearTimeout);
       mappingTimersRef.current = [];

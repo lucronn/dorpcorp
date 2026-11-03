@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { RemeshCover, settleRemappedParticle } from "../src/components/ParticleCanvas/RemeshCover";
+import { REMESH_FLIGHT_TIMING, RemeshCover, settleRemappedParticle } from "../src/components/ParticleCanvas/RemeshCover";
 import { mapParticlesToInterstellar } from "../src/components/ParticleCanvas/ParticleMapper";
 import { simulateParticles, type SimulationContext } from "../src/components/ParticleCanvas/ParticleSimulationEngine";
 import { initializeParticleVolume, updateBackgroundVolumeTarget } from "../src/components/ParticleCanvas/ParticleVolume";
@@ -16,7 +16,7 @@ const particle = (): Particle => ({ x: -3000, y: 2500, z: -900, targetX: 10, tar
   vx: 50, vy: -60, vz: 80, color: "#ffffff", baseColor: "#ffffff", size: 1 });
 
 function reachCorridor(cover: RemeshCover, start = 0) {
-  for (let now = start; now < start + 1100; now += 16) cover.advance(now);
+  for (let now = start; now < start + REMESH_FLIGHT_TIMING.depart + REMESH_FLIGHT_TIMING.cruise + 100; now += 16) cover.advance(now);
 }
 
 function seeded(seed = 194) {
@@ -55,7 +55,7 @@ function assertVolume(points: number[][], minDet = 0.00015) {
 }
 
 for (const reduced of [false, true]) {
-  test(`remaps wait for a rendered look-away and two formed frames (reduced motion ${reduced})`, () => {
+  test(`remaps wait for a rendered departure and two formed frames (reduced motion ${reduced})`, () => {
     const cover = new RemeshCover();
     cover.reducedMotion = reduced;
     const particles = [particle()];
@@ -68,7 +68,7 @@ for (const reduced of [false, true]) {
     });
     cover.advance(0);
     cover.advance(9000);
-    if (!reduced) assert(cover.panProgress < 0.2, "a stalled tab cannot skip the departure");
+    if (!reduced) assert(cover.flightProgress < 0.2, "a stalled tab cannot skip the departure");
     assert.equal(writes, 0);
     cover.flush(true);
     assert.equal(writes, 0, "coverage must actually render before remapping");
@@ -85,7 +85,7 @@ for (const reduced of [false, true]) {
     assert.equal(cover.phase, "settling", "one formed frame is insufficient");
     cover.afterRender(true, true);
     assert.equal(cover.phase, "returning");
-    for (let now = 15016; now < 16000; now += 16) cover.advance(now);
+    for (let now = 15016; now < 17000; now += 16) cover.advance(now);
     assert.equal(cover.phase, "idle");
     assert.equal(cover.opacity, 0);
     assert.equal(particles[0].vx, 0);
@@ -115,11 +115,11 @@ test("coverage loss, rapid navigation and reversed return cannot expose pending 
   cover.advance(60000);
   cover.afterRender(false, false);
   cover.flush(false);
-  assert.equal(cover.phase, "panning");
+  assert.equal(cover.phase, "departing");
   assert.equal(cover.pendingJobs, 1);
 });
 
-test("reduced motion can be enabled during a pan without a long hold", () => {
+test("reduced motion can be enabled during flight without a long hold", () => {
   const cover = new RemeshCover();
   cover.request("scene", () => {});
   cover.advance(0);
@@ -220,11 +220,11 @@ test("resize work maps after replacement entities and coverage loss holds the ca
   cover.afterRender(true, false);
   cover.advance(10000);
   assert.equal(cover.phase, "settling");
-  assert.equal(cover.mode, "pan");
+  assert.equal(cover.mode, "flight");
   assert.equal(cover.opacity, 0);
 });
 
-test("superseding a departure with an FX request can finish the canceled pan", () => {
+test("superseding a departure with an FX request can finish the canceled flight", () => {
   const cover = new RemeshCover();
   cover.request("entities", () => assert.fail("superseded work must not run"));
   cover.cancelPending();
@@ -233,6 +233,6 @@ test("superseding a departure with an FX request can finish the canceled pan", (
   cover.flush(true);
   cover.afterRender(true, true);
   cover.afterRender(true, true);
-  reachCorridor(cover, 1100);
+  reachCorridor(cover, 2000);
   assert.equal(cover.phase, "idle");
 });

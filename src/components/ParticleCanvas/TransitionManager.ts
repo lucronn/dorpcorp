@@ -11,7 +11,8 @@ import {
 
 export { _startWormholeTransit as startWormholeTransit, updateTypographyStage, disperseTypographyParticles };
 
-/** Replace entities at their final coordinates while outside ParticleCanvas's view frustum. */
+/** Called by RemeshCover.flush after rendered frustum exclusion. Install only
+ * formed geometry; RemeshFlyThrough retains camera ownership through arrival. */
 export function transitionToNewEntities(
   currentEntities: CelestialEntity[],
   newEntities: CelestialEntity[],

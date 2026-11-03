@@ -2,23 +2,34 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as BABYLON from "@babylonjs/core";
 import { RemeshCover } from "../src/components/ParticleCanvas/RemeshCover";
-import { RemeshPanAway } from "../src/components/ParticleCanvas/RemeshPanAway";
+import { RemeshFlyThrough } from "../src/components/ParticleCanvas/RemeshFlyThrough";
 import type { Particle } from "../src/components/ParticleCanvas/types";
 
-type Sample = { position: BABYLON.Vector3; rotation: BABYLON.Vector3 };
-function assertRide(samples: Sample[], label: string, minimum = 40) {
+type Sample = { position: BABYLON.Vector3; rotation: BABYLON.Vector3; forward: BABYLON.Vector3 };
+function assertFlight(samples: Sample[], label: string, minimum = 40) {
   for (const axis of ["x", "y", "z"] as const) {
     const positions = samples.map(s => s.position[axis]);
     const angles = samples.map(s => s.rotation[axis]);
     assert(Math.max(...positions) - Math.min(...positions) > minimum, `${label}: no ${axis} travel`);
     assert(Math.max(...angles) - Math.min(...angles) > 0.008, `${label}: no ${axis} rotation`);
   }
+  let forwardDistance = 0;
+  for (let i = 1; i < samples.length; i++) {
+    const step = samples[i].position.subtract(samples[i - 1].position);
+    const nose = samples[i].forward.add(samples[i - 1].forward).normalize();
+    if (step.length() < 0.01) continue;
+    const alignment = BABYLON.Vector3.Dot(step.normalizeToNew(), nose);
+    assert(alignment > 0.9, `${label}: forward/heading alignment ${alignment} at frame ${i} (sideways or backwards travel)`);
+    forwardDistance += BABYLON.Vector3.Dot(step, nose);
+  }
+  assert(forwardDistance > minimum * 2, `${label}: must thrust along the look direction`);
+  assert(samples.some(s => BABYLON.Vector3.Dot(s.forward, samples[0].forward) < 0.999), `${label}: must turn while moving`);
   const moving = samples.slice(1).filter((s, i) => BABYLON.Vector3.Distance(s.position, samples[i].position) > 0.01);
-  assert(moving.length >= samples.length - 2, `${label}: camera stopped during the ride`);
+  assert(moving.length >= samples.length - 2, `${label}: camera stopped during flight`);
 }
 
 for (const width of [390, 1200, 2400]) for (const reduced of [false, true]) {
-  test(`multi-axis ride hides every remesh frame at width ${width}, reduced ${reduced}`, () => {
+  test(`first-person flight hides every remesh frame at width ${width}, reduced ${reduced}`, () => {
     const engine = new BABYLON.NullEngine({ renderWidth: width, renderHeight: 800, textureSize: 256, deterministicLockstep: false, lockstepMaxSteps: 4 });
     const scene = new BABYLON.Scene(engine);
     const camera = new BABYLON.TargetCamera("camera", new BABYLON.Vector3(150, 200, -1500), scene);
@@ -31,13 +42,13 @@ for (const width of [390, 1200, 2400]) for (const reduced of [false, true]) {
     const colors = new Float32Array(8).fill(1);
     const particles = Array.from({ length: 2 }, () => ({ isCosmicAmbient: false } as Particle));
     const entities = [{ type: "planet" as const, x: width / 2, y: 400, z: 0, radius: 250, color: "#fff" }];
-    const pan = new RemeshPanAway(scene, camera);
+    const flight = new RemeshFlyThrough(scene, camera);
     const cover = new RemeshCover();
     cover.reducedMotion = reduced;
     let mutations = 0;
     cover.request("test", () => { assertOutside(); mutations++; });
-    const apply = () => pan.apply(cover, entities, width, 800, particles, positions, colors);
-    const starVertices = [...pan.stars.mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind)!];
+    const apply = () => flight.apply(cover, entities, width, 800, particles, positions, colors);
+    const starVertices = [...flight.stars.mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind)!];
     const assertStars = () => {
       const planes = BABYLON.Frustum.GetPlanes(camera.getTransformationMatrix());
       let visible = 0;
@@ -47,11 +58,11 @@ for (const width of [390, 1200, 2400]) for (const reduced of [false, true]) {
         if (planes.every(p => p.dotCoordinate(world) >= 0)) visible++;
       }
       assert(visible > 100, `only ${visible} distant stars in the frustum`);
-      assert(pan.stars.mesh.isEnabled());
+      assert(flight.stars.mesh.isEnabled());
       assert.equal(scene.meshes.length, 2, "no replacement moon, plane, or cover geometry");
     };
     const assertOutside = () => {
-      assert(pan.coverage().occluded, JSON.stringify(pan.coverage()));
+      assert(flight.coverage().occluded, JSON.stringify(flight.coverage()));
       // Independent Babylon frustum checks, not the controller's safety flag.
       const planes = BABYLON.Frustum.GetPlanes(camera.getTransformationMatrix());
       assert.equal(body.isInFrustum(planes), false);
@@ -62,24 +73,32 @@ for (const width of [390, 1200, 2400]) for (const reduced of [false, true]) {
       assertStars();
     };
     let now = 0;
-    const sample = (): Sample => ({ position: camera.position.clone(), rotation: camera.rotation.clone() });
+    const frameMs = width === 2400 ? 64 : width === 1200 ? 32 : 16;
+    const journey: Sample[] = [];
+    const sample = (): Sample => ({ position: camera.position.clone(), rotation: camera.rotation.clone(), forward: camera.getForwardRay().direction.clone() });
     const tick = () => {
-      pan.restore(); cover.advance(now); now += 16; apply(); scene.render(); assertStars();
-      return sample();
+      flight.restore(); cover.advance(now); now += frameMs; apply(); scene.render(); assertStars();
+      const frame = sample();
+      journey.push(frame);
+      return frame;
     };
     const departure: Sample[] = [];
-    do { departure.push(tick()); cover.flush(pan.coverage().occluded); } while (cover.panProgress < 1);
+    do { departure.push(tick()); cover.flush(flight.coverage().occluded); } while (cover.flightProgress < 1);
     assert.equal(mutations, 0, "must present an off-frustum frame before remapping");
     if (!reduced) {
-      assertRide(departure, "departure");
-      const a = departure[10].position.subtract(departure[0].position).normalize();
-      const b = departure.at(-1)!.position.subtract(departure[25].position).normalize();
+      assertFlight(departure, "departure");
+      const early = Math.floor(departure.length * 0.15), late = Math.floor(departure.length * 0.6);
+      const initialStep = BABYLON.Vector3.Distance(departure[1].position, departure[0].position);
+      const thrustStep = BABYLON.Vector3.Distance(departure[late].position, departure[late - 1].position);
+      assert(thrustStep > initialStep * 4, "accelerate into depth before the turn");
+      const a = departure[early].position.subtract(departure[0].position).normalize();
+      const b = departure.at(-1)!.position.subtract(departure[late].position).normalize();
       assert(BABYLON.Vector3.Cross(a, b).length() > 0.2, "departure must curve through depth, not linearly slide");
     }
     assertOutside();
     cover.afterRender(true, true); cover.flush(true);
     assert.equal(mutations, 1);
-    pan.restore();
+    flight.restore();
     camera.position.set(-800, 400, -2400);
     camera.setTarget(new BABYLON.Vector3(100, -50, 200));
     const destinationRotation = camera.rotation.clone();
@@ -94,13 +113,16 @@ for (const width of [390, 1200, 2400]) for (const reduced of [false, true]) {
       cover.afterRender(false, true); // Delayed formation cannot stop the flight or reveal the scene.
       assert.equal(cover.phase, "settling");
     }
-    if (!reduced) assertRide(cruise, "off-frustum remesh corridor", 20);
+    if (!reduced) assertFlight(cruise, "off-frustum remesh corridor", 20);
     else assert(BABYLON.Vector3.Distance(cruise[0].position, cruise.at(-1)!.position) < 0.001, "reduced motion cuts without cruising");
     cover.afterRender(true, true); cover.afterRender(true, true);
     assert.equal(cover.phase, "returning");
     const approach: Sample[] = [];
     while (cover.phase !== "idle") approach.push(tick());
-    if (!reduced) assertRide(approach, "approach");
+    if (!reduced) {
+      assertFlight(approach, "approach");
+      assertFlight(journey, "complete flight including phase handoffs");
+    }
     else {
       for (const s of approach) assert(BABYLON.Vector3.Distance(s.position, new BABYLON.Vector3(-800, 400, -2400)) < 6, "cut settle stays tiny");
     }
@@ -109,8 +131,8 @@ for (const width of [390, 1200, 2400]) for (const reduced of [false, true]) {
 
     if (!reduced) {
       cover.request("another", () => {});
-      do { tick(); cover.afterRender(true, pan.coverage().occluded); cover.flush(pan.coverage().occluded); } while (cover.phase !== "returning");
-      for (let i = 0; i < 8; i++) tick();
+      do { tick(); cover.afterRender(true, flight.coverage().occluded); cover.flush(flight.coverage().occluded); } while (cover.phase !== "returning");
+      for (let i = 0; i < 4; i++) tick();
       const interrupted = sample();
       cover.request("interrupt", () => assertOutside());
       tick();
@@ -120,11 +142,11 @@ for (const width of [390, 1200, 2400]) for (const reduced of [false, true]) {
       do {
         tick();
         if (cover.covered) assertOutside();
-        cover.afterRender(true, pan.coverage().occluded); cover.flush(pan.coverage().occluded);
+        cover.afterRender(true, flight.coverage().occluded); cover.flush(flight.coverage().occluded);
         assert(++frames < 200, "interrupted flight completes");
       } while (cover.phase !== "idle");
     }
-    assert.deepEqual([...pan.stars.mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind)!], starVertices);
-    pan.dispose(); scene.dispose(); engine.dispose();
+    assert.deepEqual([...flight.stars.mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind)!], starVertices);
+    flight.dispose(); scene.dispose(); engine.dispose();
   });
 }
